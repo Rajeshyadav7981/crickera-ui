@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, createContext, useContext } from 'react';
 import { View, Text, StyleSheet, Animated, TouchableOpacity, Platform, StatusBar } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 
 /**
  * Toast notification system — replaces Alert.alert with beautiful non-blocking toasts.
@@ -177,18 +177,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   toastTitle: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     fontWeight: '700',
     color: '#fff',
     marginBottom: 2,
   },
   toastMessage: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     color: 'rgba(255,255,255,0.8)',
     lineHeight: 18,
   },
   toastMessageOnly: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     fontWeight: '600',
     color: '#fff',
   },

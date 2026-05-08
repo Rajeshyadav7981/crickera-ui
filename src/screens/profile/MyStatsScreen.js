@@ -3,11 +3,10 @@ import {
   View, Text, StyleSheet, ScrollView, InteractionManager, TouchableOpacity, RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../context/AuthContext';
 import { useAuthGate } from '../../hooks/useRequireAuth';
 import { usersAPI } from '../../services/api';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import BackButton from '../../components/BackButton';
 import Avatar from '../../components/Avatar';
 import Skeleton from '../../components/Skeleton';
@@ -152,10 +151,7 @@ const MyStatsScreen = ({ navigation }) => {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.ACCENT} />}
       >
         {/* === HERO: Profile + Key highlight === */}
-        <LinearGradient
-          colors={['#1E293B', '#0F172A']}
-          style={s.hero}
-        >
+        <View style={s.hero}>
           <Avatar
             uri={user?.profile}
             name={user?.full_name || user?.first_name}
@@ -183,7 +179,7 @@ const MyStatsScreen = ({ navigation }) => {
               <Text style={s.heroHighlightLabel}>Teams</Text>
             </View>
           </View>
-        </LinearGradient>
+        </View>
 
         {/* === TAB TOGGLE (Organized / Played) === */}
         <View style={s.tabRow}>
@@ -317,54 +313,53 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.BG },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingBottom: 12, backgroundColor: COLORS.CARD,
-    borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
+    paddingHorizontal: 16, paddingBottom: 12, backgroundColor: COLORS.BG,
   },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
+  headerTitle: { fontFamily: FONTS.family, fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
   content: { paddingBottom: 40 },
 
-  // Hero (gradient)
+  // Hero — solid app bg (no blue gradient), matches ProfileTab
   hero: {
     paddingHorizontal: 24, paddingTop: 24, paddingBottom: 20,
     alignItems: 'center',
+    backgroundColor: COLORS.BG,
   },
-  heroName: { fontSize: 20, fontWeight: '800', color: '#fff', marginTop: 12 },
-  heroUsername: { fontSize: 13, fontWeight: '600', color: COLORS.ACCENT_LIGHT, marginTop: 2 },
+  heroName: { fontFamily: FONTS.family, fontSize: 20, fontWeight: '800', color: COLORS.TEXT, marginTop: 12 },
+  heroUsername: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.ACCENT, marginTop: 2 },
 
   heroHighlights: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 16,
+    backgroundColor: COLORS.CARD,
+    borderRadius: 14,
     paddingVertical: 12, paddingHorizontal: 8,
     marginTop: 18,
     width: '100%',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: COLORS.BORDER,
   },
   heroHighlightItem: { flex: 1, alignItems: 'center' },
-  heroHighlightValue: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: -0.5 },
-  heroHighlightLabel: { fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 },
-  heroHighlightDivider: { width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.15)' },
+  heroHighlightValue: { fontFamily: FONTS.family, fontSize: 22, fontWeight: '900', color: COLORS.TEXT, letterSpacing: -0.5 },
+  heroHighlightLabel: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700', color: COLORS.TEXT_MUTED, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 },
+  heroHighlightDivider: { width: 1, height: 32, backgroundColor: COLORS.BORDER },
 
   // Tab toggle
   tabRow: {
     flexDirection: 'row', marginHorizontal: 16, marginTop: 16,
-    backgroundColor: COLORS.CARD, borderRadius: 14, padding: 4,
-    borderWidth: 1, borderColor: COLORS.BORDER,
+    backgroundColor: COLORS.BG, borderRadius: 14, padding: 4,
   },
   tabBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     paddingVertical: 11, borderRadius: 10,
   },
   tabBtnActive: { backgroundColor: COLORS.ACCENT },
-  tabBtnText: { fontSize: 13, fontWeight: '700', color: COLORS.TEXT_MUTED },
+  tabBtnText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.TEXT_MUTED },
   tabBtnTextActive: { color: '#fff' },
 
   // Primary cards (unified theme)
   primaryRow: { flexDirection: 'row', gap: 12, marginHorizontal: 16, marginTop: 14 },
   primaryCard: {
     flex: 1, borderRadius: 18, padding: 16, minHeight: 140, justifyContent: 'space-between',
-    backgroundColor: COLORS.CARD, borderWidth: 1, borderColor: COLORS.BORDER,
+    backgroundColor: COLORS.BG, borderWidth: 1, borderColor: COLORS.BORDER,
   },
   primaryTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   primaryIconWrap: {
@@ -372,14 +367,13 @@ const s = StyleSheet.create({
     backgroundColor: COLORS.ACCENT_SOFT,
     alignItems: 'center', justifyContent: 'center',
   },
-  primaryValue: { fontSize: 34, fontWeight: '900', color: COLORS.TEXT, letterSpacing: -1, marginTop: 8 },
-  primaryLabel: { fontSize: 12, fontWeight: '700', color: COLORS.TEXT_SECONDARY, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 },
-  primarySub: { fontSize: 11, fontWeight: '500', color: COLORS.TEXT_MUTED, marginTop: 4 },
+  primaryValue: { fontFamily: FONTS.family, fontSize: 34, fontWeight: '900', color: COLORS.TEXT, letterSpacing: -1, marginTop: 8 },
+  primaryLabel: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: COLORS.TEXT_SECONDARY, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 },
+  primarySub: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '500', color: COLORS.TEXT_MUTED, marginTop: 4 },
 
   // Secondary card (row list)
   secondaryCard: {
-    backgroundColor: COLORS.CARD, borderRadius: 16, marginHorizontal: 16, marginTop: 14,
-    borderWidth: 1, borderColor: COLORS.BORDER, overflow: 'hidden',
+    backgroundColor: COLORS.BG, borderRadius: 16, marginHorizontal: 16, marginTop: 14, overflow: 'hidden',
   },
   secondaryRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -391,15 +385,14 @@ const s = StyleSheet.create({
     backgroundColor: COLORS.ACCENT_SOFT,
     alignItems: 'center', justifyContent: 'center',
   },
-  secondaryLabel: { flex: 1, fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
+  secondaryLabel: { fontFamily: FONTS.family, flex: 1, fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
   secondaryRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  secondaryValue: { fontSize: 20, fontWeight: '900', letterSpacing: -0.3 },
+  secondaryValue: { fontFamily: FONTS.family, fontSize: 20, fontWeight: '900', letterSpacing: -0.3 },
 
   // Progress
   progressCard: {
-    backgroundColor: COLORS.CARD, borderRadius: 16, padding: 16,
+    backgroundColor: COLORS.BG, borderRadius: 16, padding: 16,
     marginHorizontal: 16, marginTop: 14,
-    borderWidth: 1, borderColor: COLORS.BORDER,
   },
   progressHeadRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   progressIconWrap: {
@@ -407,15 +400,15 @@ const s = StyleSheet.create({
     backgroundColor: COLORS.ACCENT_SOFT,
     alignItems: 'center', justifyContent: 'center',
   },
-  progressTitle: { fontSize: 14, fontWeight: '700', color: COLORS.TEXT },
-  progressSub: { fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 1 },
-  progressPct: { fontSize: 22, fontWeight: '900', color: COLORS.ACCENT },
+  progressTitle: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT },
+  progressSub: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 1 },
+  progressPct: { fontFamily: FONTS.family, fontSize: 22, fontWeight: '900', color: COLORS.ACCENT },
   progressBar: { height: 10, backgroundColor: COLORS.SURFACE, borderRadius: 5, overflow: 'hidden', flexDirection: 'row' },
   progressSegment: { height: 10 },
   progressLegend: { flexDirection: 'row', gap: 14, marginTop: 12, flexWrap: 'wrap' },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendText: { fontSize: 11, color: COLORS.TEXT_SECONDARY, fontWeight: '500' },
+  legendText: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_SECONDARY, fontWeight: '500' },
 });
 
 export default MyStatsScreen;

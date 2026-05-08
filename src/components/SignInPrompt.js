@@ -6,7 +6,7 @@ import {
 import { createNavigationContainerRef } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, GRADIENTS } from '../theme';
+import { COLORS, GRADIENTS, FONTS } from '../theme';
 
 /** Shared navigation ref — set this on NavigationContainer so the
  *  sign-in modal (which lives outside the navigator tree) can navigate. */
@@ -222,7 +222,7 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   title: {
-    fontSize: 20,
+    fontFamily: FONTS.family,    fontSize: 20,
     fontWeight: '900',
     color: COLORS.TEXT,
     textAlign: 'center',
@@ -230,7 +230,7 @@ const s = StyleSheet.create({
     letterSpacing: -0.3,
   },
   subtitle: {
-    fontSize: 13.5,
+    fontFamily: FONTS.family,    fontSize: 13.5,
     lineHeight: 20,
     color: COLORS.TEXT_SECONDARY,
     textAlign: 'center',
@@ -258,7 +258,7 @@ const s = StyleSheet.create({
     paddingVertical: 14,
   },
   primaryBtnText: {
-    fontSize: 15,
+    fontFamily: FONTS.family,    fontSize: 15,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 0.3,
@@ -276,7 +276,7 @@ const s = StyleSheet.create({
     marginBottom: 4,
   },
   secondaryBtnText: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     fontWeight: '700',
     color: COLORS.TEXT,
   },
@@ -287,7 +287,7 @@ const s = StyleSheet.create({
     marginTop: 2,
   },
   cancelBtnText: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '600',
     color: COLORS.TEXT_MUTED,
   },

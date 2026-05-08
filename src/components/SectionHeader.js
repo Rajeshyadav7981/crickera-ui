@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 
 const SectionHeader = ({ title, onSeeAll, style }) => (
   <View style={[styles.header, style]}>
@@ -22,8 +22,8 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     paddingBottom: 10,
   },
-  title: { fontSize: 17, fontWeight: '800', color: COLORS.TEXT },
-  seeAll: { fontSize: 13, fontWeight: '600', color: COLORS.ACCENT },
+  title: { fontFamily: FONTS.family, fontSize: 17, fontWeight: '800', color: COLORS.TEXT },
+  seeAll: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.ACCENT },
 });
 
 export default React.memo(SectionHeader);

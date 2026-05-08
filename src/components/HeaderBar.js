@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 import Icon from './Icon';
 
 const HeaderBar = ({
@@ -51,7 +51,7 @@ const styles = StyleSheet.create({
   },
   btn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   title: {
-    flex: 1, fontSize: 18, fontWeight: '800', color: COLORS.TEXT,
+    fontFamily: FONTS.family,    flex: 1, fontSize: 18, fontWeight: '800', color: COLORS.TEXT,
     textAlign: 'center', marginHorizontal: 8,
   },
 });

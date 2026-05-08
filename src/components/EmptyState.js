@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 import Icon from './Icon';
 
 const EmptyState = ({
@@ -26,16 +26,16 @@ const EmptyState = ({
 
 const styles = StyleSheet.create({
   container: { alignItems: 'center', paddingVertical: 60, paddingHorizontal: 40 },
-  title: { fontSize: 20, fontWeight: '800', color: COLORS.TEXT, marginTop: 16 },
+  title: { fontFamily: FONTS.family, fontSize: 20, fontWeight: '800', color: COLORS.TEXT, marginTop: 16 },
   message: {
-    fontSize: 14, color: COLORS.TEXT_SECONDARY, marginTop: 8,
+    fontFamily: FONTS.family,    fontSize: 14, color: COLORS.TEXT_SECONDARY, marginTop: 8,
     textAlign: 'center', lineHeight: 20,
   },
   actionBtn: {
     marginTop: 20, backgroundColor: COLORS.ACCENT,
     paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12,
   },
-  actionText: { fontSize: 14, fontWeight: '700', color: COLORS.TEXT },
+  actionText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT },
 });
 
 export default React.memo(EmptyState);

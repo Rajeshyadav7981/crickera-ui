@@ -1,20 +1,22 @@
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import { getSecureItem, setSecureItem, removeAuthItems } from './tokenStorage';
 
 // API URL configuration
-// - In Expo Go dev mode: auto-detects host machine's LAN IP (for physical devices)
-//   and uses localhost for web / simulator. Backend must run on port 7981.
-// - In production builds: uses the deployed cloud URL.
+// Resolution order:
+//   1. EXPO_PUBLIC_API_URL from .env — explicit override, wins everywhere.
+//      Set this to https://creckstars.duckdns.org to point dev builds at
+//      production, or to a LAN IP / localhost for local backend testing.
+//   2. Production builds → PRODUCTION_URL.
+//   3. Dev builds with no env override → auto-detect Metro host's LAN IP
+//      so physical devices on the same Wi-Fi can reach a locally-running
+//      backend on port 7981.
 const PRODUCTION_URL = 'https://creckstars.duckdns.org';
 const LOCAL_PORT = 7981;
 
 const getLocalBaseUrl = () => {
-  // Web: use localhost directly
   if (Platform.OS === 'web') return `http://localhost:${LOCAL_PORT}`;
-  // Android emulator cannot reach host via localhost — use 10.0.2.2
-  // Physical devices / iOS simulator: use Expo debugger host LAN IP
   const hostUri =
     Constants.expoConfig?.hostUri ||
     Constants.manifest?.debuggerHost ||
@@ -27,13 +29,14 @@ const getLocalBaseUrl = () => {
   return `http://localhost:${LOCAL_PORT}`;
 };
 
-const API_BASE_URL = __DEV__ ? getLocalBaseUrl() : PRODUCTION_URL;
+const ENV_API_URL = (process.env.EXPO_PUBLIC_API_URL || '').trim().replace(/\/+$/, '');
+const API_BASE_URL = ENV_API_URL || (__DEV__ ? getLocalBaseUrl() : PRODUCTION_URL);
 
 if (__DEV__) {
   console.log('[API] Using base URL:', API_BASE_URL);
 }
 
-// In-memory token cache to avoid repeated AsyncStorage reads
+// In-memory token cache to avoid hitting SecureStore on every request
 let _cachedToken = null;
 
 export const setTokenCache = (token) => {
@@ -44,15 +47,18 @@ export const clearTokenCache = () => {
   _cachedToken = null;
 };
 
+// 15s timeout: long enough for cold-starts and image uploads, short enough
+// that a dead backend surfaces a real error instead of a spinner forever.
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: { 'Content-Type': 'application/json' },
+  timeout: 15000,
 });
 
 api.interceptors.request.use(async (config) => {
   let token = _cachedToken;
   if (!token) {
-    token = await AsyncStorage.getItem('token');
+    token = await getSecureItem('token');
     if (token) _cachedToken = token;
   }
   if (token) {
@@ -61,13 +67,12 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
-// ── Token refresh handling ────────────────────────────────────────────────
 // Single-flight refresh: when many concurrent requests get 401, only ONE
 // refresh call is in-flight at a time. The rest await its result.
 let _refreshPromise = null;
 
 const performRefresh = async () => {
-  const refreshToken = await AsyncStorage.getItem('refreshToken');
+  const refreshToken = await getSecureItem('refreshToken');
   if (!refreshToken) {
     const e = new Error('No refresh token');
     e._noRefresh = true;
@@ -84,9 +89,9 @@ const performRefresh = async () => {
     e._noRefresh = true;
     throw e;
   }
-  await AsyncStorage.setItem('token', access_token);
+  await setSecureItem('token', access_token);
   if (refresh_token) {
-    await AsyncStorage.setItem('refreshToken', refresh_token);
+    await setSecureItem('refreshToken', refresh_token);
   }
   setTokenCache(access_token);
   return access_token;
@@ -125,18 +130,27 @@ api.interceptors.response.use(
         const explicitAuthFailure = refreshStatus === 401 || refreshStatus === 403;
         const noRefreshAvailable = refreshError?._noRefresh === true;
         if (explicitAuthFailure || noRefreshAvailable) {
-          await AsyncStorage.multiRemove(['token', 'refreshToken', 'user']);
+          await removeAuthItems(['token', 'refreshToken', 'user']);
           clearTokenCache();
         }
         // Surface the ORIGINAL 401 so callers see a consistent failure mode.
         return Promise.reject(error);
       }
     }
-    // Handle rate limiting (429) — auto-retry after delay
+    // Handle rate limiting (429) — auto-retry after delay.
+    // Parse defensively: Retry-After can be seconds, an HTTP-date, missing, or
+    // garbage. Anything we can't interpret falls back to 5s; anything beyond
+    // 60s is clamped so a malicious header can't freeze the app for minutes.
     if (error.response?.status === 429 && !originalRequest._rateLimitRetry) {
       originalRequest._rateLimitRetry = true;
-      const retryAfter = parseInt(error.response.headers?.['retry-after'] || error.response.data?.retry_after || '5', 10);
-      await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+      const raw =
+        error.response.headers?.['retry-after'] ??
+        error.response.data?.retry_after ??
+        '';
+      let retryAfter = parseInt(String(raw), 10);
+      if (!Number.isFinite(retryAfter) || retryAfter < 0) retryAfter = 5;
+      if (retryAfter > 60) retryAfter = 60;
+      await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
       return api(originalRequest);
     }
     return Promise.reject(error);
@@ -147,13 +161,35 @@ export const usersAPI = {
   search: (q, { signal } = {}) => api.get('/api/users/search', { params: { q }, signal }),
   mentionSearch: (q, limit = 10, { signal } = {}) => api.get('/api/users/mention-search', { params: { q, limit }, signal }),
   getProfile: (username, { signal } = {}) => api.get(`/api/users/@${username}`, { signal }),
+  lookupByMobile: (mobile, { signal } = {}) =>
+    api.get('/api/users/lookup-by-mobile', { params: { mobile }, signal }),
   myStats: () => api.get('/api/users/me/stats'),
   setUsername: (username) => api.post('/api/users/username', { username }),
   checkUsername: (username) => api.get('/api/users/username/check', { params: { username } }),
   follow: (userId) => api.post(`/api/users/follow/${userId}`),
   unfollow: (userId) => api.delete(`/api/users/follow/${userId}`),
-  getFollowers: (userId, limit = 20, offset = 0) => api.get(`/api/users/${userId}/followers`, { params: { limit, offset } }),
-  getFollowing: (userId, limit = 20, offset = 0) => api.get(`/api/users/${userId}/following`, { params: { limit, offset } }),
+  // Backward-compat: `limit`/`offset` as positional args still works.
+  // New: pass an opts object `{ limit, cursor, offset }`. Prefer `cursor`
+  // (keyset — constant cost deep into the list); the backend exposes the
+  // next page via the `X-Next-Cursor` response header.
+  getFollowers: (userId, limitOrOpts = 20, offset = 0) => {
+    const opts = typeof limitOrOpts === 'object' && limitOrOpts !== null
+      ? limitOrOpts
+      : { limit: limitOrOpts, offset };
+    const params = { limit: opts.limit ?? 20 };
+    if (opts.cursor) params.cursor = opts.cursor;
+    else if (opts.offset) params.offset = opts.offset;
+    return api.get(`/api/users/${userId}/followers`, { params });
+  },
+  getFollowing: (userId, limitOrOpts = 20, offset = 0) => {
+    const opts = typeof limitOrOpts === 'object' && limitOrOpts !== null
+      ? limitOrOpts
+      : { limit: limitOrOpts, offset };
+    const params = { limit: opts.limit ?? 20 };
+    if (opts.cursor) params.cursor = opts.cursor;
+    else if (opts.offset) params.offset = opts.offset;
+    return api.get(`/api/users/${userId}/following`, { params });
+  },
 };
 
 export const authAPI = {
@@ -168,6 +204,8 @@ export const authAPI = {
     api.post('/api/auth/send-otp', { mobile, purpose }),
   verifyOTP: (mobile, otp, purpose = 'register') =>
     api.post('/api/auth/verify-otp', { mobile, otp, purpose }),
+  resetPassword: (mobile, otp, newPassword) =>
+    api.post('/api/auth/reset-password', { mobile, otp, new_password: newPassword }),
   getMe: () => api.get('/api/auth/me'),
   updateProfile: (data) => api.put('/api/auth/me', data),
   uploadProfilePhoto: async (uri) => {
@@ -183,7 +221,6 @@ export const authAPI = {
       compressedUri = result.uri;
     } catch {}
 
-    // Upload to backend server (not Firebase)
     const formData = new FormData();
     formData.append('file', {
       uri: compressedUri,
@@ -224,6 +261,8 @@ export const venuesAPI = {
 export const tournamentsAPI = {
   create: (data) => api.post('/api/tournaments', data),
   list: (params) => api.get('/api/tournaments', { params }),
+  nearby: (lat, lng, radius = 50, limit = 20) =>
+    api.get('/api/tournaments/nearby', { params: { lat, lng, radius, limit } }),
   get: (id) => api.get(`/api/tournaments/${id}`),
   update: (id, data) => api.put(`/api/tournaments/${id}`, data),
   addTeam: (tournamentId, teamId) => api.post(`/api/tournaments/${tournamentId}/teams`, { team_id: teamId }),
@@ -243,6 +282,28 @@ export const tournamentsAPI = {
   deleteMatch: (tournamentId, matchId) => api.delete(`/api/tournaments/${tournamentId}/matches/${matchId}`),
   resetStage: (tournamentId, stageId) => api.post(`/api/tournaments/${tournamentId}/stages/${stageId}/reset`),
   deleteStage: (tournamentId, stageId) => api.delete(`/api/tournaments/${tournamentId}/stages/${stageId}`),
+  uploadBanner: async (uri) => {
+    let compressedUri = uri;
+    try {
+      const ImageManipulator = require('expo-image-manipulator');
+      const result = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: 1600 } }],
+        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG },
+      );
+      compressedUri = result.uri;
+    } catch {}
+    const formData = new FormData();
+    formData.append('file', {
+      uri: compressedUri,
+      type: 'image/jpeg',
+      name: `banner_${Date.now()}.jpg`,
+    });
+    const res = await api.post('/api/tournaments/upload-banner', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data.image_url || res.data.banner_url;
+  },
 };
 
 export const matchesAPI = {
@@ -279,7 +340,6 @@ export const scoringAPI = {
 };
 
 export const communityAPI = {
-  // Posts
   createPost: (text, title, tag, image_url) => api.post('/api/community/posts', { text, title, tag, image_url }),
   uploadPostImage: async (uri) => {
     let compressedUri = uri;
@@ -313,11 +373,9 @@ export const communityAPI = {
   likeComment: (postId, commentId) => api.post(`/api/community/posts/${postId}/comments/${commentId}/like`),
   editComment: (postId, commentId, text) => api.put(`/api/community/posts/${postId}/comments/${commentId}`, { text }),
   deleteComment: (postId, commentId) => api.delete(`/api/community/posts/${postId}/comments/${commentId}`),
-  // Polls
   createPoll: (question, options) => api.post('/api/community/polls', { question, options }),
   listPolls: (limit = 10, offset = 0) => api.get('/api/community/polls', { params: { limit, offset } }),
   votePoll: (pollId, optionId) => api.post(`/api/community/polls/${pollId}/vote`, { option_id: optionId }),
-  // Hashtags & Mentions
   trendingHashtags: () => api.get('/api/community/hashtags/trending'),
   searchHashtags: (q) => api.get('/api/community/hashtags/search', { params: { q } }),
   hashtagPosts: (name, limit = 20, offset = 0) => api.get(`/api/community/hashtags/${name}/posts`, { params: { limit, offset } }),

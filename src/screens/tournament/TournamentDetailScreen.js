@@ -2,15 +2,18 @@ import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform,
   ActivityIndicator, RefreshControl, Animated, Share, Dimensions,
-  Modal, TextInput, KeyboardAvoidingView,
+  Modal, TextInput, KeyboardAvoidingView, InteractionManager,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import api, { tournamentsAPI, matchesAPI } from '../../services/api';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Skeleton, { MatchCardSkeleton, ListSkeleton } from '../../components/Skeleton';
+import TabContentSkeleton from '../../components/TabContentSkeleton';
+import MatchCard from '../../components/MatchCard';
+import Avatar from '../../components/Avatar';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PRIMARY = COLORS.ACCENT;
@@ -77,6 +80,8 @@ const TournamentDetailScreen = ({ navigation, route }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('Overview');
+  // Defer heavy tab content until interactions finish — masks tap lag with a skeleton.
+  const [contentReady, setContentReady] = useState({ Overview: true });
   const tabPagerRef = useRef(null);
   const tabScrollX = useRef(new Animated.Value(0)).current;
   const tabBarRef = useRef(null);
@@ -85,6 +90,10 @@ const TournamentDetailScreen = ({ navigation, route }) => {
   const [leaderboard, setLeaderboard] = useState(null);
   const [standingsLoading, setStandingsLoading] = useState(false);
   const [statsLoading, setStatsLoading] = useState(false);
+  // Stats tab — sub-tab for Batting / Bowling / Fielding. Previously the tab
+  // dumped all three lists stacked which made it both long and redundant with
+  // the separate Leaderboard screen.
+  const [statsSubTab, setStatsSubTab] = useState('batting');
   const [selectedStageIdx, setSelectedStageIdx] = useState(0);
   const [stageStandings, setStageStandings] = useState({});
   const [matchStageFilter, setMatchStageFilter] = useState('all');
@@ -103,12 +112,10 @@ const TournamentDetailScreen = ({ navigation, route }) => {
     const tab = TABS[idx];
     setActiveTab(tab);
     tabPagerRef.current?.scrollTo({ x: idx * SCREEN_WIDTH, animated: true });
-    // Scroll tab bar to keep active tab visible
     const layout = tabItemLayouts.current[idx];
     if (layout && tabBarRef.current) {
       tabBarRef.current.scrollTo({ x: Math.max(0, layout.x - 30), animated: true });
     }
-    // Load data for tab
     if (tab === 'Standings') {
       if (stages.length > 0) {
         loadStageStandings(stages[selectedStageIdx]?.stage_id || stages[0]?.stage_id);
@@ -117,7 +124,10 @@ const TournamentDetailScreen = ({ navigation, route }) => {
       }
     }
     if (tab === 'Stats') loadLeaderboard();
-  }, [stages, selectedStageIdx, loadStageStandings, loadStandings, loadLeaderboard]);
+    InteractionManager.runAfterInteractions(() => {
+      setContentReady((prev) => (prev[tab] ? prev : { ...prev, [tab]: true }));
+    });
+  }, [activeTab, stages, selectedStageIdx, loadStageStandings, loadStandings, loadLeaderboard]);
 
   const onTabPagerMomentumEnd = useCallback((e) => {
     const newIdx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
@@ -299,6 +309,38 @@ const TournamentDetailScreen = ({ navigation, route }) => {
   const completedCount = completedMatches.length;
   const liveCount = liveMatches.length;
   const isCreator = user?.id === tournament?.created_by;
+
+  /* ─── match-card handlers (must be before the early returns to keep the
+         hook count stable — Rules of Hooks) ─── */
+  const toMatchCardData = useCallback((match) => {
+    const teamA = (teams || []).find((t) => t.id === match.team_a_id);
+    const teamB = (teams || []).find((t) => t.id === match.team_b_id);
+    return {
+      ...match,
+      team_a_name: teamA?.short_name || teamA?.name || 'TBD',
+      team_b_name: teamB?.short_name || teamB?.name || 'TBD',
+      team_a_color: teamA?.color,
+      team_b_color: teamB?.color,
+      overs: match.overs || tournament?.overs_per_match,
+    };
+  }, [teams, tournament?.overs_per_match]);
+
+  const handleMatchCardPress = useCallback((match) => {
+    if (match.status === 'live' || match.status === 'in_progress') {
+      navigation.navigate('LiveScoring', { matchId: match.id });
+    } else {
+      navigation.navigate('MatchDetail', { matchId: match.id, teams });
+    }
+  }, [navigation, teams]);
+
+  const handleSwapOrPress = useCallback((match) => {
+    const isKnockout = match.match_type && match.match_type !== 'group_stage';
+    if (swapMode && isKnockout) {
+      handleSwapTap(match);
+    } else {
+      handleMatchCardPress(match);
+    }
+  }, [swapMode, handleSwapTap, handleMatchCardPress]);
 
   /* ─── loading / error states ─── */
   if (loading) {
@@ -631,7 +673,16 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                 <Text style={styles.sectionTitle}>Live Now</Text>
               </View>
             </View>
-            {liveMatches.slice(0, 2).map(m => renderLiveCard(m))}
+            <View style={{ gap: 10 }}>
+              {liveMatches.slice(0, 2).map(m => (
+                <MatchCard
+                  key={m.id}
+                  match={toMatchCardData(m)}
+                  width="100%"
+                  onPress={() => handleMatchCardPress(m)}
+                />
+              ))}
+            </View>
           </View>
         )}
 
@@ -644,7 +695,16 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                 <Text style={styles.sectionLink}>View All</Text>
               </TouchableOpacity>
             </View>
-            {upcomingMatches.slice(0, 3).map(m => renderUpcomingCard(m))}
+            <View style={{ gap: 10 }}>
+              {upcomingMatches.slice(0, 3).map(m => (
+                <MatchCard
+                  key={m.id}
+                  match={toMatchCardData(m)}
+                  width="100%"
+                  onPress={() => handleMatchCardPress(m)}
+                />
+              ))}
+            </View>
           </View>
         )}
 
@@ -700,8 +760,15 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                 <Text style={styles.sectionLink}>See All</Text>
               </TouchableOpacity>
             </View>
-            <View style={styles.resultsContainer}>
-              {completedMatches.slice(0, 3).map((m, i) => renderResultCard(m, i))}
+            <View style={{ gap: 10 }}>
+              {completedMatches.slice(0, 3).map(m => (
+                <MatchCard
+                  key={m.id}
+                  match={toMatchCardData(m)}
+                  width="100%"
+                  onPress={() => handleMatchCardPress(m)}
+                />
+              ))}
             </View>
           </View>
         )}
@@ -819,179 +886,9 @@ const TournamentDetailScreen = ({ navigation, route }) => {
   };
 
   /* ── live match card (large, hero style) ── */
-  const renderLiveCard = (match) => {
-    const teamA = teams.find((t) => t.id === match.team_a_id);
-    const teamB = teams.find((t) => t.id === match.team_b_id);
-    const matchLabel = match.match_label || match.stage || 'Group Stage';
-    const matchNumber = match.match_number ? `Match ${match.match_number}` : '';
-
-    const scoreA = formatScore(match.team_a_runs, match.team_a_wickets, match.team_a_overs);
-    const scoreB = formatScore(match.team_b_runs, match.team_b_wickets, match.team_b_overs);
-    const battingTeam = match.batting_team_id;
-    const aIsBatting = battingTeam === match.team_a_id;
-    const bIsBatting = battingTeam === match.team_b_id;
-
-    return (
-      <TouchableOpacity
-        key={match.id}
-        activeOpacity={0.85}
-        style={styles.liveCard}
-        onPress={() => navigation.navigate('LiveScoring', { matchId: match.id })}
-      >
-        <View style={styles.liveCardBg}>
-          <View style={styles.liveCardGradient} />
-        </View>
-
-        <View style={styles.liveCardTopRow}>
-          <View style={styles.liveBadge}>
-            <Text style={styles.liveBadgeText}>LIVE</Text>
-          </View>
-          <Text style={styles.liveMatchInfo}>
-            {matchLabel}{matchNumber ? ` - ${matchNumber}` : ''}
-          </Text>
-        </View>
-
-        <View style={styles.liveScoreArea}>
-          <View style={styles.liveTeamCol}>
-            <View style={styles.liveTeamFlag}>
-              <Text style={styles.liveTeamFlagText}>{getShortName(teamA).charAt(0)}</Text>
-            </View>
-            <Text style={[styles.liveTeamAbbr, aIsBatting && styles.liveTeamBatting]}>
-              {getShortName(teamA)}
-            </Text>
-            <Text style={[styles.liveTeamScore, aIsBatting && styles.liveTeamBatting]}>
-              {scoreA || '—'}
-            </Text>
-          </View>
-
-          <Text style={styles.liveVsText}>vs</Text>
-
-          <View style={styles.liveTeamCol}>
-            <View style={styles.liveTeamFlag}>
-              <Text style={styles.liveTeamFlagText}>{getShortName(teamB).charAt(0)}</Text>
-            </View>
-            <Text style={[styles.liveTeamAbbr, bIsBatting && styles.liveTeamBatting]}>
-              {getShortName(teamB)}
-            </Text>
-            <Text style={[styles.liveTeamScore, bIsBatting && styles.liveTeamBatting]}>
-              {scoreB || '—'}
-            </Text>
-          </View>
-        </View>
-
-        {match.status_text ? (
-          <Text style={styles.liveStatusText}>{match.status_text}</Text>
-        ) : null}
-
-        <TouchableOpacity
-          style={styles.watchLiveBtn}
-          onPress={() => navigation.navigate('LiveScoring', { matchId: match.id })}
-        >
-          <Text style={styles.watchLiveBtnText}>Watch Live</Text>
-        </TouchableOpacity>
-      </TouchableOpacity>
-    );
-  };
-
-  /* ── upcoming match card ── */
-  const renderUpcomingCard = (match) => {
-    const teamA = teams.find((t) => t.id === match.team_a_id);
-    const teamB = teams.find((t) => t.id === match.team_b_id);
-    const stageName = stages.find(s => s.stage_id === match.stage_id);
-    const isKnockout = match.match_type && match.match_type !== 'group_stage';
-    const isSwapSelected = swapFirstMatch?.id === match.id;
-
-    return (
-      <TouchableOpacity
-        key={match.id}
-        style={[styles.upcomingCard, isSwapSelected && { borderColor: COLORS.WARNING, borderWidth: 2 }]}
-        activeOpacity={0.7}
-        onPress={swapMode && isKnockout ? () => handleSwapTap(match) : () => navigation.navigate('MatchDetail', { matchId: match.id, teams })}
-      >
-        {(match.time_slot || stageName) && (
-          <Text style={styles.matchStageBadge}>
-            {match.time_slot || stagePrettyName(stageName?.stage_name || match.match_type || '')}
-          </Text>
-        )}
-        <View style={styles.upcomingTeamsRow}>
-          <View style={styles.upcomingTeamInfo}>
-            <View style={[styles.upcomingFlag, teamA?.color && { backgroundColor: teamA.color }]}>
-              <Text style={styles.upcomingFlagText}>{getShortName(teamA).charAt(0)}</Text>
-            </View>
-            <Text style={styles.upcomingTeamName}>{getShortName(teamA)}</Text>
-          </View>
-
-          <Text style={styles.upcomingVs}>vs</Text>
-
-          <View style={styles.upcomingTeamInfo}>
-            <View style={[styles.upcomingFlag, teamB?.color && { backgroundColor: teamB.color }]}>
-              <Text style={styles.upcomingFlagText}>{getShortName(teamB).charAt(0)}</Text>
-            </View>
-            <Text style={styles.upcomingTeamName}>{getShortName(teamB)}</Text>
-          </View>
-
-          {match.match_number && (
-            <View style={styles.matchNumBadge}>
-              <Text style={styles.matchNumText}>#{match.match_number}</Text>
-            </View>
-          )}
-        </View>
-        <Text style={styles.upcomingDate}>
-          {formatDate(match.match_date || match.scheduled_at || match.created_at)}
-          {match.status === 'toss' ? '  •  Toss Done' : ''}
-        </Text>
-      </TouchableOpacity>
-    );
-  };
-
-  /* ── result card ── */
-  const renderResultCard = (match, idx) => {
-    const teamA = teams.find((t) => t.id === match.team_a_id);
-    const teamB = teams.find((t) => t.id === match.team_b_id);
-    const winnerId = match.winner_id;
-    const aWon = winnerId === match.team_a_id;
-    const bWon = winnerId === match.team_b_id;
-    const matchNum = match.match_number ? `Match ${match.match_number}` : `Match ${idx + 1}`;
-    const stageName = stages.find(s => s.stage_id === match.stage_id);
-
-    const scoreA = formatScore(match.team_a_runs, match.team_a_wickets, match.team_a_overs);
-    const scoreB = formatScore(match.team_b_runs, match.team_b_wickets, match.team_b_overs);
-
-    return (
-      <TouchableOpacity
-        key={match.id}
-        style={[styles.resultCard, idx < completedMatches.length - 1 && styles.resultCardBorder]}
-        activeOpacity={0.7}
-        onPress={() => navigation.navigate('MatchDetail', { matchId: match.id })}
-      >
-        <View style={styles.resultTopRow}>
-          <Text style={styles.resultMatchNum}>
-            {matchNum} • {formatDate(match.match_date || match.scheduled_at || match.created_at)}
-          </Text>
-          {(match.time_slot || stageName) && (
-            <View style={styles.resultStagePill}>
-              <Text style={styles.resultStageText}>
-                {match.time_slot || stagePrettyName(stageName?.stage_name || match.match_type || '')}
-              </Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.resultScoreRow}>
-          <Text style={[styles.resultTeamName, aWon && styles.resultWinner]}>{getShortName(teamA)}</Text>
-          <Text style={[styles.resultTeamScore, aWon && styles.resultWinner]}>{scoreA || '—'}</Text>
-        </View>
-        <View style={styles.resultScoreRow}>
-          <Text style={[styles.resultTeamName, bWon && styles.resultWinner]}>{getShortName(teamB)}</Text>
-          <Text style={[styles.resultTeamScore, bWon && styles.resultWinner]}>{scoreB || '—'}</Text>
-        </View>
-
-        {(match.result_text || match.result_summary) ? (
-          <Text style={styles.resultText}>{match.result_text || match.result_summary}</Text>
-        ) : null}
-      </TouchableOpacity>
-    );
-  };
+  // Map tournament match data to MatchCard-compatible format
+  // (These handlers are declared ABOVE the early returns — see section near the useMemo
+  // filters — to preserve a stable hook count across renders.)
 
   /* ════════════════════════════════════════════════════ */
   /* MATCHES TAB                                         */
@@ -1033,9 +930,19 @@ const TournamentDetailScreen = ({ navigation, route }) => {
 
     return (
       <View style={styles.contentArea}>
-        {/* Stage filter pills */}
+        {/* Stage filter pills — nested horizontal scroll inside the vertical
+             tab page + outer horizontal pager, so we need directionalLockEnabled
+             and nestedScrollEnabled or the gesture gets swallowed. */}
         {stages.length > 0 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            nestedScrollEnabled
+            directionalLockEnabled
+            keyboardShouldPersistTaps="handled"
+            style={{ marginBottom: 16, flexGrow: 0 }}
+            contentContainerStyle={{ gap: 8, paddingRight: 16 }}
+          >
             {stageFilters.map(sf => {
               const isCompleted = sf.status === 'completed';
               const isLive = sf.status === 'in_progress';
@@ -1070,7 +977,16 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                 <Text style={styles.sectionTitle}>Live Now</Text>
               </View>
             </View>
-            {filteredLive.map(renderLiveCard)}
+            <View style={{ gap: 10 }}>
+              {filteredLive.map(m => (
+                <MatchCard
+                  key={m.id}
+                  match={toMatchCardData(m)}
+                  width="100%"
+                  onPress={() => handleMatchCardPress(m)}
+                />
+              ))}
+            </View>
           </View>
         )}
 
@@ -1080,7 +996,17 @@ const TournamentDetailScreen = ({ navigation, route }) => {
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitle}>Upcoming ({filteredUpcoming.length})</Text>
             </View>
-            {filteredUpcoming.map(m => renderUpcomingCard(m))}
+            <View style={{ gap: 10 }}>
+              {filteredUpcoming.map(m => (
+                <MatchCard
+                  key={m.id}
+                  match={toMatchCardData(m)}
+                  width="100%"
+                  onPress={() => handleSwapOrPress(m)}
+                  style={swapFirstMatch?.id === m.id ? { borderColor: COLORS.WARNING, borderWidth: 2 } : undefined}
+                />
+              ))}
+            </View>
           </View>
         )}
 
@@ -1090,8 +1016,15 @@ const TournamentDetailScreen = ({ navigation, route }) => {
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitle}>Completed ({filteredCompleted.length})</Text>
             </View>
-            <View style={styles.resultsContainer}>
-              {filteredCompleted.map((m, i) => renderResultCard(m, i))}
+            <View style={{ gap: 10 }}>
+              {filteredCompleted.map(m => (
+                <MatchCard
+                  key={m.id}
+                  match={toMatchCardData(m)}
+                  width="100%"
+                  onPress={() => handleMatchCardPress(m)}
+                />
+              ))}
             </View>
           </View>
         )}
@@ -1140,44 +1073,103 @@ const TournamentDetailScreen = ({ navigation, route }) => {
   };
 
   /* ─── Standings table helper ─── */
-  const renderStandingsTable = (rows, qualTopN) => (
-    <>
-      <View style={styles.standingsHeader}>
-        <Text style={[styles.standingsCell, styles.standingsTeamCell, styles.standingsHeaderText]}>Team</Text>
-        <Text style={[styles.standingsCell, styles.standingsNumCell, styles.standingsHeaderText]}>P</Text>
-        <Text style={[styles.standingsCell, styles.standingsNumCell, styles.standingsHeaderText]}>W</Text>
-        <Text style={[styles.standingsCell, styles.standingsNumCell, styles.standingsHeaderText]}>L</Text>
-        <Text style={[styles.standingsCell, styles.standingsNumCell, styles.standingsHeaderText]}>D</Text>
-        <Text style={[styles.standingsCell, styles.standingsNumCell, styles.standingsHeaderText]}>Pts</Text>
-        <Text style={[styles.standingsCell, styles.standingsNrrCell, styles.standingsHeaderText]}>NRR</Text>
-      </View>
-      {rows.map((s, idx) => {
-        const isQualified = s.qualification_status === 'qualified';
-        const isEliminated = s.qualification_status === 'eliminated';
-        const qualifies = qualTopN ? idx < qualTopN : idx < 2;
-        const dotColor = isQualified ? PRIMARY : isEliminated ? COLORS.RED : qualifies ? PRIMARY : COLORS.TEXT_HINT;
-        return (
-          <View key={s.team_id || idx} style={[styles.standingsRow, idx % 2 === 0 && styles.standingsRowAlt, isEliminated && { opacity: 0.5 }]}>
-            <View style={[styles.standingsCell, styles.standingsTeamCell, { flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
-              <Text style={styles.standingsRank}>{idx + 1}</Text>
-              <View style={[styles.standingsDot, { backgroundColor: dotColor }]} />
-              <Text style={[styles.standingsTeamName, isEliminated && { textDecorationLine: 'line-through' }]} numberOfLines={1}>{s.short_name || s.team_name}</Text>
-              {isQualified && <Text style={{ fontSize: 10, color: PRIMARY }}>Q</Text>}
-              {isEliminated && <Text style={{ fontSize: 10, color: COLORS.RED, fontWeight: '700' }}>E</Text>}
+  const renderStandingsTable = (rows, qualTopN) => {
+    const cutoff = qualTopN || 2;
+    return (
+      <View style={styles.standingsTable}>
+        {/* Column header strip */}
+        <View style={styles.standingsHeader}>
+          <Text style={[styles.standingsHeaderText, { flex: 3, textAlign: 'left' }]}>TEAM</Text>
+          <Text style={[styles.standingsHeaderText, styles.standingsHeaderNum]}>P</Text>
+          <Text style={[styles.standingsHeaderText, styles.standingsHeaderNum]}>W</Text>
+          <Text style={[styles.standingsHeaderText, styles.standingsHeaderNum]}>L</Text>
+          <Text style={[styles.standingsHeaderText, styles.standingsHeaderNum]}>PTS</Text>
+          <Text style={[styles.standingsHeaderText, styles.standingsHeaderNrr]}>NRR</Text>
+        </View>
+        {rows.map((s, idx) => {
+          const isQualified = s.qualification_status === 'qualified';
+          const isEliminated = s.qualification_status === 'eliminated';
+          const qualifies = idx < cutoff;
+          const teamColor = (s.color || COLORS.ACCENT);
+          const nrr = s.nrr ?? 0;
+          const rank = idx + 1;
+          return (
+            <View
+              key={s.team_id || idx}
+              style={[
+                styles.standingsRow,
+                isEliminated && { opacity: 0.55 },
+              ]}
+            >
+              {/* Qualification stripe — subtle vertical accent on the left */}
+              <View
+                style={[
+                  styles.qualStripe,
+                  {
+                    backgroundColor: isEliminated
+                      ? COLORS.DANGER
+                      : (isQualified || qualifies) ? COLORS.SUCCESS : 'transparent',
+                  },
+                ]}
+              />
+              <View style={styles.standingsRankBlock}>
+                <Text style={styles.standingsRankNum}>{rank}</Text>
+              </View>
+              <View style={[styles.teamFlag, { backgroundColor: teamColor, width: 28, height: 28, borderRadius: 14, marginRight: 8 }]}>
+                <Text style={[styles.teamFlagText, { fontSize: 11 }]}>
+                  {(s.short_name || s.team_name || '?').charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.standingsTeamNameWrap}>
+                <Text
+                  style={[
+                    styles.standingsTeamName,
+                    isEliminated && { textDecorationLine: 'line-through', color: COLORS.TEXT_MUTED },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {s.short_name || s.team_name}
+                </Text>
+                {isQualified && (
+                  <View style={[styles.qualChip, { backgroundColor: COLORS.SUCCESS + '22' }]}>
+                    <Text style={[styles.qualChipText, { color: COLORS.SUCCESS_LIGHT }]}>Q</Text>
+                  </View>
+                )}
+                {isEliminated && (
+                  <View style={[styles.qualChip, { backgroundColor: COLORS.DANGER + '22' }]}>
+                    <Text style={[styles.qualChipText, { color: COLORS.DANGER }]}>E</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={styles.standingsNumCell}>{s.played ?? 0}</Text>
+              <Text style={[styles.standingsNumCell, { color: COLORS.SUCCESS_LIGHT, fontWeight: '700' }]}>{s.won ?? 0}</Text>
+              <Text style={[styles.standingsNumCell, { color: COLORS.DANGER }]}>{s.lost ?? 0}</Text>
+              <Text style={[styles.standingsNumCell, { color: COLORS.TEXT, fontWeight: '900' }]}>{s.points ?? 0}</Text>
+              <Text
+                style={[
+                  styles.standingsNrrCell,
+                  { color: nrr >= 0 ? COLORS.SUCCESS_LIGHT : COLORS.DANGER },
+                ]}
+              >
+                {nrr >= 0 ? '+' : ''}{nrr.toFixed(2)}
+              </Text>
             </View>
-            <Text style={[styles.standingsCell, styles.standingsNumCell]}>{s.played ?? 0}</Text>
-            <Text style={[styles.standingsCell, styles.standingsNumCell, { color: COLORS.GREEN_LIGHT, fontWeight: '600' }]}>{s.won ?? 0}</Text>
-            <Text style={[styles.standingsCell, styles.standingsNumCell, { color: COLORS.RED }]}>{s.lost ?? 0}</Text>
-            <Text style={[styles.standingsCell, styles.standingsNumCell]}>{s.drawn ?? 0}</Text>
-            <Text style={[styles.standingsCell, styles.standingsNumCell, styles.standingsPts]}>{s.points ?? 0}</Text>
-            <Text style={[styles.standingsCell, styles.standingsNrrCell, { color: (s.nrr ?? 0) >= 0 ? COLORS.GREEN_LIGHT : COLORS.RED }]}>
-              {(s.nrr ?? 0) >= 0 ? '+' : ''}{(s.nrr ?? 0).toFixed(2)}
-            </Text>
+          );
+        })}
+        {/* Legend — shown once at the bottom of the table so the stripe colors are self-explanatory */}
+        <View style={styles.standingsLegend}>
+          <View style={styles.standingsLegendItem}>
+            <View style={[styles.standingsLegendDot, { backgroundColor: COLORS.SUCCESS }]} />
+            <Text style={styles.standingsLegendText}>Top {cutoff} qualify</Text>
           </View>
-        );
-      })}
-    </>
-  );
+          <View style={styles.standingsLegendItem}>
+            <View style={[styles.standingsLegendDot, { backgroundColor: COLORS.DANGER }]} />
+            <Text style={styles.standingsLegendText}>Eliminated</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
 
   /* ─── Standings tab ─── */
   const renderStandingsTab = () => {
@@ -1226,8 +1218,16 @@ const TournamentDetailScreen = ({ navigation, route }) => {
 
       return (
         <View style={styles.contentArea}>
-          {/* Stage selector pills */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+          {/* Stage selector pills — same nesting as Matches tab; needs the same guards */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            nestedScrollEnabled
+            directionalLockEnabled
+            keyboardShouldPersistTaps="handled"
+            style={{ marginBottom: 16, flexGrow: 0 }}
+            contentContainerStyle={{ gap: 8, paddingRight: 16 }}
+          >
             {stages.map((s, i) => {
               const active = i === selectedStageIdx;
               const badge = statusBadge(s);
@@ -1330,45 +1330,37 @@ const TournamentDetailScreen = ({ navigation, route }) => {
     if (statsLoading) {
       return (
         <View style={styles.contentArea}>
-          {/* Quick stats row skeleton */}
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
-            {[1,2,3].map(i => (
-              <View key={i} style={{ flex: 1, backgroundColor: COLORS.CARD, borderRadius: 14, padding: 16, alignItems: 'center', borderWidth: 1, borderColor: CARD_BORDER }}>
-                <Skeleton width={36} height={24} style={{ marginBottom: 6 }} />
-                <Skeleton width={50} height={10} />
+          {/* Sub-tab bar skeleton */}
+          <Skeleton width="100%" height={44} borderRadius={12} style={{ marginBottom: 16 }} />
+          {/* Section title */}
+          <Skeleton width={120} height={14} style={{ marginBottom: 12 }} />
+          {/* Hero card skeleton (rank #1) */}
+          <View style={{ padding: 14, marginBottom: 10 }}>
+            <Skeleton width={70} height={18} borderRadius={4} style={{ marginBottom: 12 }} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+              <Skeleton width={56} height={56} borderRadius={28} />
+              <View style={{ flex: 1 }}>
+                <Skeleton width="60%" height={16} />
+                <Skeleton width="40%" height={11} style={{ marginTop: 4 }} />
               </View>
-            ))}
-          </View>
-          {/* Leaderboard section skeleton */}
-          <Skeleton width={130} height={14} style={{ marginBottom: 12 }} />
-          <View style={{ backgroundColor: COLORS.CARD, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: CARD_BORDER }}>
-            {[1,2,3,4,5].map(i => (
-              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderTopWidth: i > 1 ? 1 : 0, borderTopColor: COLORS.BORDER }}>
-                <Skeleton width={20} height={14} />
-                <Skeleton width={32} height={32} borderRadius={16} />
-                <View style={{ flex: 1 }}>
-                  <Skeleton width="60%" height={12} />
-                  <Skeleton width="40%" height={9} style={{ marginTop: 4 }} />
-                </View>
-                <Skeleton width={36} height={16} />
+              <View style={{ alignItems: 'flex-end' }}>
+                <Skeleton width={54} height={26} />
+                <Skeleton width={38} height={9} style={{ marginTop: 2 }} />
               </View>
-            ))}
+            </View>
           </View>
-          {/* Second section */}
-          <Skeleton width={120} height={14} style={{ marginTop: 20, marginBottom: 12 }} />
-          <View style={{ backgroundColor: COLORS.CARD, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: CARD_BORDER }}>
-            {[1,2,3].map(i => (
-              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderTopWidth: i > 1 ? 1 : 0, borderTopColor: COLORS.BORDER }}>
-                <Skeleton width={20} height={14} />
-                <Skeleton width={32} height={32} borderRadius={16} />
-                <View style={{ flex: 1 }}>
-                  <Skeleton width="55%" height={12} />
-                  <Skeleton width="35%" height={9} style={{ marginTop: 4 }} />
-                </View>
-                <Skeleton width={36} height={16} />
+          {/* Compact rank rows */}
+          {[2, 3, 4, 5].map(i => (
+            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 4 }}>
+              <Skeleton width={26} height={26} borderRadius={13} />
+              <Skeleton width={34} height={34} borderRadius={17} />
+              <View style={{ flex: 1 }}>
+                <Skeleton width="55%" height={12} />
+                <Skeleton width="35%" height={9} style={{ marginTop: 4 }} />
               </View>
-            ))}
-          </View>
+              <Skeleton width={36} height={16} />
+            </View>
+          ))}
         </View>
       );
     }
@@ -1384,135 +1376,244 @@ const TournamentDetailScreen = ({ navigation, route }) => {
 
     const topBatsmen = leaderboard.top_batsmen || leaderboard.batting || [];
     const topBowlers = leaderboard.top_bowlers || leaderboard.bowling || [];
+    const topFielders = leaderboard.top_fielders || [];
     const highestScores = leaderboard.highest_scores || [];
+
+    // Per-category theming — each sub-tab has its own accent color, icon
+    // and hero label so the page feels purposeful on switch, not monotone.
+    const CATEGORY = {
+      batting:  { color: '#F97316', tint: 'rgba(249,115,22,0.10)', icon: 'cricket',     hero: 'Orange Cap' },
+      bowling:  { color: '#8B5CF6', tint: 'rgba(139,92,246,0.10)', icon: 'baseball',    hero: 'Purple Cap' },
+      fielding: { color: '#10B981', tint: 'rgba(16,185,129,0.10)', icon: 'hand-back-right', hero: 'Best Fielder' },
+    };
+    const MEDAL_COLORS = ['#FFD700', '#C0C0C0', '#CD7F32']; // gold, silver, bronze
+
+    const subTabs = [
+      { key: 'batting',  label: 'Batting' },
+      { key: 'bowling',  label: 'Bowling' },
+      { key: 'fielding', label: 'Fielding' },
+    ];
+
+    // One big hero card for rank 1. Ties the whole sub-tab together visually.
+    const renderHero = ({ item, category, primaryLabel, primaryValue, primaryUnit, secondaryLine, onPress }) => {
+      const theme = CATEGORY[category];
+      return (
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={onPress}
+          style={[styles.heroStatsCard, { backgroundColor: theme.tint, borderColor: theme.color + '40' }]}
+        >
+          <View style={styles.heroStatsRibbon}>
+            <MaterialCommunityIcons name="trophy-variant" size={11} color={theme.color} />
+            <Text style={[styles.heroStatsRibbonText, { color: theme.color }]}>{theme.hero}</Text>
+          </View>
+          <View style={styles.heroStatsBody}>
+            <View style={styles.heroAvatarWrap}>
+              <Avatar
+                uri={item.profile}
+                name={item.name || item.player_name}
+                size={56}
+                color={theme.color}
+                showRing
+                type="player"
+              />
+              <View style={[styles.heroMedal, { backgroundColor: MEDAL_COLORS[0] }]}>
+                <MaterialCommunityIcons name="medal" size={12} color="#1a1a2e" />
+              </View>
+            </View>
+            <View style={styles.heroStatsInfo}>
+              <Text style={styles.heroStatsName} numberOfLines={1}>
+                {item.name || item.player_name || 'Unknown'}
+              </Text>
+              {secondaryLine ? (
+                <Text style={styles.heroStatsMeta} numberOfLines={1}>{secondaryLine}</Text>
+              ) : null}
+            </View>
+            <View style={styles.heroStatsValueBlock}>
+              <Text style={[styles.heroStatsValue, { color: theme.color }]}>{primaryValue}</Text>
+              <Text style={styles.heroStatsValueLabel}>{primaryUnit || primaryLabel}</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      );
+    };
+
+    // Compact row for ranks 2..N. Silver/bronze medal on the rank marker for 2 & 3.
+    const renderCompactRow = ({ item, idx, metaText, value, valueLabel, category, onPress }) => {
+      const theme = CATEGORY[category];
+      const medalColor = idx < 3 ? MEDAL_COLORS[idx] : null;
+      return (
+        <TouchableOpacity
+          key={`${item.player_id ?? item.name}-${idx}`}
+          style={styles.rankRow}
+          onPress={onPress}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.rankMarker, medalColor && { backgroundColor: medalColor + '33', borderColor: medalColor }]}>
+            {medalColor ? (
+              <MaterialCommunityIcons name="medal-outline" size={13} color={medalColor} />
+            ) : (
+              <Text style={styles.rankMarkerText}>{idx + 1}</Text>
+            )}
+          </View>
+          <Avatar
+            uri={item.profile}
+            name={item.name || item.player_name}
+            size={34}
+            color={theme.color}
+            type="player"
+          />
+          <View style={styles.rankInfo}>
+            <Text style={styles.rankName} numberOfLines={1}>
+              {item.name || item.player_name || 'Unknown'}
+            </Text>
+            {metaText ? (
+              <Text style={styles.rankMeta} numberOfLines={1}>{metaText}</Text>
+            ) : null}
+          </View>
+          <View style={styles.rankValueBlock}>
+            <Text style={[styles.rankValue, { color: theme.color }]}>{value}</Text>
+            <Text style={styles.rankValueLabel}>{valueLabel}</Text>
+          </View>
+        </TouchableOpacity>
+      );
+    };
+
+    const renderRanking = ({ title, items, category, formatValue, formatLabel, formatMeta }) => {
+      if (!items.length) return null;
+      const theme = CATEGORY[category];
+      const first = items[0];
+      const rest = items.slice(1, 5);
+      return (
+        <View style={styles.rankingSection}>
+          <View style={styles.rankingHead}>
+            <View style={styles.rankingHeadLeft}>
+              <View style={[styles.rankingIconDot, { backgroundColor: theme.color }]}>
+                <MaterialCommunityIcons name={theme.icon} size={11} color="#fff" />
+              </View>
+              <Text style={styles.rankingTitle}>{title}</Text>
+            </View>
+            <TouchableOpacity onPress={() => navigation.navigate('Leaderboard', { tournamentId })}>
+              <Text style={[styles.rankingLink, { color: theme.color }]}>Full Board ›</Text>
+            </TouchableOpacity>
+          </View>
+          {renderHero({
+            item: first,
+            category,
+            primaryLabel: formatLabel,
+            primaryValue: formatValue(first),
+            primaryUnit: formatLabel,
+            secondaryLine: formatMeta ? formatMeta(first) : null,
+            onPress: () => first.player_id && navigation.navigate('PlayerProfile', { playerId: first.player_id }),
+          })}
+          {rest.length > 0 && (
+            <View style={styles.rankList}>
+              {rest.map((item, i) => renderCompactRow({
+                item,
+                idx: i + 1, // actual rank (2..n)
+                metaText: formatMeta ? formatMeta(item) : null,
+                value: formatValue(item),
+                valueLabel: formatLabel,
+                category,
+                onPress: () => item.player_id && navigation.navigate('PlayerProfile', { playerId: item.player_id }),
+              }))}
+            </View>
+          )}
+        </View>
+      );
+    };
+
+    const empty = topBatsmen.length === 0 && topBowlers.length === 0 && topFielders.length === 0;
 
     return (
       <View style={styles.contentArea}>
-        {/* Quick stat cards */}
-        <View style={styles.statsSummaryRow}>
-          <View style={styles.statSummaryCard}>
-            <Text style={styles.statSummaryValue}>{completedCount}</Text>
-            <Text style={styles.statSummaryLabel}>Matches</Text>
-          </View>
-          <View style={styles.statSummaryCard}>
-            <Text style={styles.statSummaryValue}>{topBatsmen[0]?.runs ?? 0}</Text>
-            <Text style={styles.statSummaryLabel}>Most Runs</Text>
-          </View>
-          <View style={styles.statSummaryCard}>
-            <Text style={styles.statSummaryValue}>{topBowlers[0]?.wickets ?? 0}</Text>
-            <Text style={styles.statSummaryLabel}>Most Wkts</Text>
-          </View>
+        {/* Sub-tab pill bar — colored active state matches the category theme */}
+        <View style={styles.subTabRow}>
+          {subTabs.map((t) => {
+            const active = t.key === statsSubTab;
+            const theme = CATEGORY[t.key];
+            return (
+              <TouchableOpacity
+                key={t.key}
+                style={[styles.subTabPill, active && { backgroundColor: theme.color }]}
+                onPress={() => setStatsSubTab(t.key)}
+                activeOpacity={0.75}
+              >
+                <MaterialCommunityIcons
+                  name={theme.icon}
+                  size={13}
+                  color={active ? '#fff' : theme.color}
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={[styles.subTabText, active && styles.subTabTextActive]}>
+                  {t.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        {/* Top Run Scorers */}
-        {topBatsmen.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Top Run Scorers</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Leaderboard', { tournamentId })}>
-                <Text style={styles.sectionLink}>Full Board</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.statsCard}>
-              {topBatsmen.slice(0, 5).map((b, idx) => (
-                <TouchableOpacity
-                  key={`${b.player_id}-${idx}`}
-                  style={[styles.statsRow, idx < Math.min(topBatsmen.length, 5) - 1 && styles.statsRowBorder]}
-                  onPress={() => b.player_id && navigation.navigate('PlayerProfile', { playerId: b.player_id })}
-                >
-                  <Text style={styles.statsRank}>{idx + 1}</Text>
-                  <View style={styles.statsAvatar}>
-                    <Text style={styles.statsAvatarText}>
-                      {(b.name || b.player_name || 'U').charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={styles.statsPlayerInfo}>
-                    <Text style={styles.statsPlayerName}>{b.name || b.player_name || 'Unknown'}</Text>
-                    <Text style={styles.statsPlayerMeta}>
-                      {b.balls || 0} balls • SR {(b.balls ? (b.runs / b.balls * 100) : 0).toFixed(1)}
-                    </Text>
-                  </View>
-                  <View style={styles.statsValueCol}>
-                    <Text style={styles.statsValue}>{b.runs ?? 0}</Text>
-                    <Text style={styles.statsValueLabel}>runs</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* Top Wicket Takers */}
-        {topBowlers.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Top Wicket Takers</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Leaderboard', { tournamentId })}>
-                <Text style={styles.sectionLink}>Full Board</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.statsCard}>
-              {topBowlers.slice(0, 5).map((b, idx) => (
-                <TouchableOpacity
-                  key={`${b.player_id}-${idx}`}
-                  style={[styles.statsRow, idx < Math.min(topBowlers.length, 5) - 1 && styles.statsRowBorder]}
-                  onPress={() => b.player_id && navigation.navigate('PlayerProfile', { playerId: b.player_id })}
-                >
-                  <Text style={styles.statsRank}>{idx + 1}</Text>
-                  <View style={styles.statsAvatar}>
-                    <Text style={styles.statsAvatarText}>
-                      {(b.name || b.player_name || 'U').charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={styles.statsPlayerInfo}>
-                    <Text style={styles.statsPlayerName}>{b.name || b.player_name || 'Unknown'}</Text>
-                    <Text style={styles.statsPlayerMeta}>
-                      {b.overs || 0} ov • Econ {(b.runs_conceded && b.overs ? (b.runs_conceded / parseFloat(b.overs || 1)).toFixed(1) : '0.0')}
-                    </Text>
-                  </View>
-                  <View style={styles.statsValueCol}>
-                    <Text style={styles.statsValue}>{b.wickets ?? 0}</Text>
-                    <Text style={styles.statsValueLabel}>wkts</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* Highest Scores */}
-        {highestScores.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Highest Scores</Text>
-            <View style={styles.statsCard}>
-              {highestScores.slice(0, 5).map((h, idx) => (
-                <View key={idx} style={[styles.statsRow, idx < Math.min(highestScores.length, 5) - 1 && styles.statsRowBorder]}>
-                  <Text style={styles.statsRank}>{idx + 1}</Text>
-                  <View style={styles.statsAvatar}>
-                    <Text style={styles.statsAvatarText}>
-                      {(h.player_name || 'U').charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={styles.statsPlayerInfo}>
-                    <Text style={styles.statsPlayerName}>{h.player_name || h.name || 'Unknown'}</Text>
-                    <Text style={styles.statsPlayerMeta}>
-                      {h.balls_faced || 0}b • {h.fours || 0}x4 • {h.sixes || 0}x6
-                    </Text>
-                  </View>
-                  <View style={styles.statsValueCol}>
-                    <Text style={styles.statsValue}>{h.runs ?? 0}{h.is_out === false ? '*' : ''}</Text>
-                    <Text style={styles.statsValueLabel}>runs</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {topBatsmen.length === 0 && topBowlers.length === 0 && (
+        {empty ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyText}>No stats available yet</Text>
           </View>
+        ) : statsSubTab === 'batting' ? (
+          <>
+            {renderRanking({
+              title: 'Most Runs',
+              items: topBatsmen,
+              category: 'batting',
+              formatValue: (b) => b.runs ?? 0,
+              formatLabel: 'runs',
+              formatMeta: null,
+            })}
+            {highestScores.length > 0 && renderRanking({
+              title: 'Highest Individual Scores',
+              items: highestScores,
+              category: 'batting',
+              formatValue: (h) => `${h.runs ?? 0}${h.is_out === false ? '*' : ''}`,
+              formatLabel: 'runs',
+              formatMeta: (h) => {
+                const parts = [];
+                if (h.balls_faced > 0) parts.push(`${h.balls_faced} balls`);
+                if (h.fours > 0) parts.push(`${h.fours}×4`);
+                if (h.sixes > 0) parts.push(`${h.sixes}×6`);
+                return parts.join(' • ') || null;
+              },
+            })}
+          </>
+        ) : statsSubTab === 'bowling' ? (
+          renderRanking({
+            title: 'Most Wickets',
+            items: topBowlers,
+            category: 'bowling',
+            formatValue: (b) => b.wickets ?? 0,
+            formatLabel: 'wkts',
+            formatMeta: (b) => {
+              const econ = b.runs_conceded && b.overs
+                ? (b.runs_conceded / parseFloat(b.overs || 1)).toFixed(1)
+                : '0.0';
+              return `${b.overs || 0} ov • Econ ${econ}`;
+            },
+          })
+        ) : (
+          topFielders.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyText}>No fielding data yet</Text>
+            </View>
+          ) : renderRanking({
+            title: 'Most Catches',
+            items: topFielders,
+            category: 'fielding',
+            formatValue: (f) => f.catches ?? 0,
+            formatLabel: 'catches',
+            formatMeta: (f) => {
+              const bits = [];
+              if (f.run_outs > 0) bits.push(`${f.run_outs} run-outs`);
+              if (f.stumpings > 0) bits.push(`${f.stumpings} stumpings`);
+              return bits.length ? bits.join(' • ') : null;
+            },
+          })
         )}
       </View>
     );
@@ -1520,107 +1621,78 @@ const TournamentDetailScreen = ({ navigation, route }) => {
 
   /* ─── Teams tab ─── */
   const renderTeamsTab = () => {
-    // Build a map of team qualification statuses from stages data
-    const teamQualStatus = {};
-    stages.forEach(s => {
-      (s.groups || []).forEach(g => {
-        (g.teams || []).forEach(t => {
-          if (t.qualification_status === 'qualified' || t.qualification_status === 'eliminated') {
-            // Keep the most recent (latest stage) status
-            teamQualStatus[t.team_id] = t.qualification_status;
-          }
-        });
-      });
-    });
-
-    const qualifiedTeams = teams.filter(t => teamQualStatus[t.id] === 'qualified');
-    const eliminatedTeams = teams.filter(t => teamQualStatus[t.id] === 'eliminated');
-    const otherTeams = teams.filter(t => !teamQualStatus[t.id]);
-    const hasQualStatuses = qualifiedTeams.length > 0 || eliminatedTeams.length > 0;
-
+    // Flat list — one row per team, no qualified/eliminated grouping.
+    // Qualification status lives on the Standings tab; the Teams tab is
+    // a directory, not a leaderboard.
     const renderTeamRow = (t) => {
-      const qualStatus = teamQualStatus[t.id];
-      const isEliminated = qualStatus === 'eliminated';
+      const teamMatches = matches.filter(
+        (m) => (m.team_a_id === t.id || m.team_b_id === t.id) && m.status === 'completed',
+      );
+      const played = teamMatches.length;
+      const wins = teamMatches.filter((m) => m.winner_id === t.id).length;
+      const winPct = played > 0 ? Math.round((wins / played) * 100) : 0;
+      const teamColor = t.color || COLORS.ACCENT;
       return (
         <TouchableOpacity
           key={t.id}
-          style={[styles.teamCard, isEliminated && styles.teamCardEliminated]}
+          style={styles.teamRow}
           activeOpacity={0.7}
           onPress={() => navigation.navigate('TeamDetail', { teamId: t.id })}
         >
-          <View style={[styles.teamFlag, t.color && { backgroundColor: t.color }, isEliminated && { opacity: 0.4 }]}>
-            <Text style={styles.teamFlagText}>{(t.short_name || t.name || '?').charAt(0).toUpperCase()}</Text>
+          <View style={[styles.teamBigFlag, { backgroundColor: teamColor }]}>
+            <Text style={styles.teamBigFlagText}>
+              {(t.short_name || t.name || '?').charAt(0).toUpperCase()}
+            </Text>
           </View>
-          <View style={styles.teamInfo}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={[styles.teamName, isEliminated && { color: COLORS.TEXT_MUTED }]}>{t.name}</Text>
-              {qualStatus === 'qualified' && (
-                <View style={styles.qualBadge}>
-                  <Text style={styles.qualBadgeText}>Q</Text>
+          <View style={styles.teamRowInfo}>
+            <Text style={styles.teamRowName} numberOfLines={1}>{t.name}</Text>
+            {t.short_name ? (
+              <Text style={styles.teamRowShort} numberOfLines={1}>{t.short_name}</Text>
+            ) : null}
+            {played > 0 ? (
+              <View style={styles.teamStatStrip}>
+                <View style={styles.teamStatPill}>
+                  <Text style={styles.teamStatPillValue}>{played}</Text>
+                  <Text style={styles.teamStatPillLabel}>P</Text>
                 </View>
-              )}
-              {qualStatus === 'eliminated' && (
-                <View style={styles.elimBadge}>
-                  <Text style={styles.elimBadgeText}>E</Text>
+                <View style={[styles.teamStatPill, { backgroundColor: COLORS.SUCCESS_BG }]}>
+                  <Text style={[styles.teamStatPillValue, { color: COLORS.SUCCESS_LIGHT }]}>{wins}</Text>
+                  <Text style={[styles.teamStatPillLabel, { color: COLORS.SUCCESS_LIGHT }]}>W</Text>
                 </View>
-              )}
-            </View>
-            <Text style={styles.teamShort}>{t.short_name || ''}</Text>
+                <View style={[styles.teamStatPill, { backgroundColor: COLORS.DANGER_SOFT }]}>
+                  <Text style={[styles.teamStatPillValue, { color: COLORS.DANGER }]}>{played - wins}</Text>
+                  <Text style={[styles.teamStatPillLabel, { color: COLORS.DANGER }]}>L</Text>
+                </View>
+                <View style={[styles.teamStatPill, { backgroundColor: COLORS.ACCENT_SOFT }]}>
+                  <Text style={[styles.teamStatPillValue, { color: COLORS.ACCENT_LIGHT }]}>{winPct}%</Text>
+                  <Text style={[styles.teamStatPillLabel, { color: COLORS.ACCENT_LIGHT }]}>WIN</Text>
+                </View>
+              </View>
+            ) : (
+              <Text style={styles.teamRowMeta} numberOfLines={1}>No matches yet</Text>
+            )}
           </View>
-          <View style={styles.teamStatsCol}>
-            {(() => {
-              const teamMatches = matches.filter(m => (m.team_a_id === t.id || m.team_b_id === t.id) && m.status === 'completed');
-              const wins = teamMatches.filter(m => m.winner_id === t.id).length;
-              return (
-                <Text style={[styles.teamStatValue, isEliminated && { color: COLORS.TEXT_MUTED }]}>
-                  {teamMatches.length} P / {wins} W
-                </Text>
-              );
-            })()}
-          </View>
-          <Text style={[styles.teamArrow, isEliminated && { color: COLORS.TEXT_MUTED }]}>›</Text>
+          <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.TEXT_MUTED} />
         </TouchableOpacity>
       );
     };
 
     return (
       <View style={styles.contentArea}>
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Teams ({teams.length})</Text>
+        <View style={styles.teamsHeader}>
+          <Text style={styles.teamsHeaderTitle}>Teams</Text>
+          <View style={styles.teamsCountChip}>
+            <Text style={styles.teamsCountText}>{teams.length}</Text>
           </View>
-
-          {teams.length === 0 && (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>No teams added yet</Text>
-            </View>
-          )}
-
-          {hasQualStatuses ? (
-            <>
-              {qualifiedTeams.length > 0 && (
-                <View style={{ marginBottom: 16 }}>
-                  <Text style={styles.teamSectionLabel}>Qualified</Text>
-                  {qualifiedTeams.map(renderTeamRow)}
-                </View>
-              )}
-              {otherTeams.length > 0 && (
-                <View style={{ marginBottom: 16 }}>
-                  <Text style={styles.teamSectionLabel}>In Progress</Text>
-                  {otherTeams.map(renderTeamRow)}
-                </View>
-              )}
-              {eliminatedTeams.length > 0 && (
-                <View style={{ marginBottom: 16 }}>
-                  <Text style={styles.teamSectionLabel}>Eliminated</Text>
-                  {eliminatedTeams.map(renderTeamRow)}
-                </View>
-              )}
-            </>
-          ) : (
-            teams.map(renderTeamRow)
-          )}
         </View>
+
+        {teams.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>No teams added yet</Text>
+          </View>
+        ) : (
+          <View style={styles.teamsList}>{teams.map(renderTeamRow)}</View>
+        )}
       </View>
     );
   };
@@ -1684,21 +1756,40 @@ const TournamentDetailScreen = ({ navigation, route }) => {
         bounces={false}
         style={{ flex: 1 }}
       >
-        {TABS.map((tab, i) => (
-          <ScrollView
-            key={tab}
-            style={{ width: SCREEN_WIDTH }}
-            showsVerticalScrollIndicator={false}
-            nestedScrollEnabled
-          >
-            {tab === 'Overview' && renderOverviewTab()}
-            {tab === 'Matches' && renderMatchesTab()}
-            {tab === 'Standings' && renderStandingsTab()}
-            {tab === 'Stats' && renderStatsTab()}
-            {tab === 'Teams' && renderTeamsTab()}
-            <View style={{ height: 40 }} />
-          </ScrollView>
-        ))}
+        {TABS.map((tab, i) => {
+          // Only render active tab + immediate neighbors (lazy pager)
+          const isNearby = Math.abs(i - activeTabIdx) <= 1;
+          const isActive = i === activeTabIdx;
+          const ready = contentReady[tab];
+          // Only the ACTIVE tab shows a skeleton — neighbors just stay blank until visited.
+          const showSkeleton = isActive && !ready;
+          const tabSkelVariant =
+            tab === 'Matches' ? 'matches' :
+            tab === 'Standings' ? 'standings' :
+            tab === 'Stats' ? 'leaderboard' :
+            tab === 'Teams' ? 'info' :
+            'summary';
+          return (
+            <ScrollView
+              key={tab}
+              style={{ width: SCREEN_WIDTH }}
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled
+            >
+              {showSkeleton && <TabContentSkeleton variant={tabSkelVariant} />}
+              {!showSkeleton && (
+                <View>
+                  {isNearby && ready && tab === 'Overview' && renderOverviewTab()}
+                  {isNearby && ready && tab === 'Matches' && renderMatchesTab()}
+                  {isNearby && ready && tab === 'Standings' && renderStandingsTab()}
+                  {isNearby && ready && tab === 'Stats' && renderStatsTab()}
+                  {isNearby && ready && tab === 'Teams' && renderTeamsTab()}
+                </View>
+              )}
+              <View style={{ height: 40 }} />
+            </ScrollView>
+          );
+        })}
       </Animated.ScrollView>
 
       {/* ── Edit Tournament Modal ── */}
@@ -1944,18 +2035,17 @@ const styles = StyleSheet.create({
   /* ── header ── */
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: COLORS.CARD,
-    borderBottomWidth: 1, borderBottomColor: CARD_BORDER,
+    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: BG,
   },
-  headerIcon: { fontSize: 22, color: DARK, width: 32, textAlign: 'center' },
+  headerIcon: { fontFamily: FONTS.family, fontSize: 22, color: DARK, width: 32, textAlign: 'center' },
   headerTitle: {
-    flex: 1, fontSize: 17, fontWeight: '700', color: DARK, textAlign: 'center', marginHorizontal: 8,
+    fontFamily: FONTS.family,    flex: 1, fontSize: 17, fontWeight: '700', color: DARK, textAlign: 'center', marginHorizontal: 8,
   },
 
   /* ── tab bar ── */
-  tabBarWrap: { backgroundColor: COLORS.CARD, borderBottomWidth: 1, borderBottomColor: CARD_BORDER, position: 'relative' },
+  tabBarWrap: { backgroundColor: BG, position: 'relative' },
   tab: { width: SCREEN_WIDTH / 5, alignItems: 'center', justifyContent: 'center', paddingVertical: 12 },
-  tabText: { fontSize: 12, color: TAB_INACTIVE, fontWeight: '600' },
+  tabText: { fontFamily: FONTS.family, fontSize: 12, color: TAB_INACTIVE, fontWeight: '600' },
   tabTextActive: { color: DARK, fontWeight: '700' },
   tabIndicator: { position: 'absolute', bottom: 0, height: 3, backgroundColor: PRIMARY, borderRadius: 2 },
 
@@ -1968,7 +2058,7 @@ const styles = StyleSheet.create({
   swapBracketBtnActive: {
     backgroundColor: COLORS.WARNING, borderColor: COLORS.WARNING,
   },
-  swapBracketText: { fontSize: 13, fontWeight: '700', color: COLORS.WARNING },
+  swapBracketText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.WARNING },
 
   /* ── content ── */
   contentArea: { paddingHorizontal: 14, paddingTop: 10 },
@@ -1978,8 +2068,8 @@ const styles = StyleSheet.create({
   sectionHeaderRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8,
   },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: DARK },
-  sectionLink: { fontSize: 13, fontWeight: '600', color: PRIMARY },
+  sectionTitle: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '700', color: DARK },
+  sectionLink: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: PRIMARY },
   liveNowTitle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   pulseDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.LIVE },
 
@@ -1988,37 +2078,37 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,215,0,0.1)', borderRadius: 14, padding: 16, alignItems: 'center',
     marginBottom: 14, borderWidth: 1.5, borderColor: 'rgba(255,215,0,0.3)',
   },
-  championTrophy: { fontSize: 48, marginBottom: 8 },
-  championTitle: { fontSize: 14, fontWeight: '600', color: COLORS.GOLD, textTransform: 'uppercase', letterSpacing: 1 },
+  championTrophy: { fontFamily: FONTS.family, fontSize: 48, marginBottom: 8 },
+  championTitle: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.GOLD, textTransform: 'uppercase', letterSpacing: 1 },
   championTeamRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12, gap: 12 },
   championFlag: {
     width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center',
   },
-  championFlagText: { fontSize: 20, fontWeight: '800', color: '#fff' },
-  championTeamName: { fontSize: 22, fontWeight: '800', color: DARK },
+  championFlagText: { fontFamily: FONTS.family, fontSize: 20, fontWeight: '800', color: '#fff' },
+  championTeamName: { fontFamily: FONTS.family, fontSize: 22, fontWeight: '800', color: DARK },
 
   /* ── info card ── */
   infoCard: {
-    backgroundColor: COLORS.CARD, borderRadius: 16, padding: 16, marginBottom: 20,
+    backgroundColor: COLORS.BG, borderRadius: 16, padding: 16, marginBottom: 20,
     borderWidth: 1, borderColor: CARD_BORDER,
   },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  statusBadgeText: { fontSize: 11, fontWeight: '700', color: '#fff', textTransform: 'uppercase' },
-  typeBadge: { backgroundColor: COLORS.SURFACE, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  typeBadgeText: { fontSize: 10, fontWeight: '600', color: TAB_INACTIVE, letterSpacing: 0.5 },
+  statusBadgeText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: '#fff', textTransform: 'uppercase' },
+  typeBadge: { backgroundColor: COLORS.BG, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  typeBadgeText: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '600', color: TAB_INACTIVE, letterSpacing: 0.5 },
   infoGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   infoItem: {
     width: '25%', alignItems: 'center', paddingVertical: 8,
   },
-  infoLabel: { fontSize: 11, color: TAB_INACTIVE, fontWeight: '500', marginBottom: 4 },
-  infoValue: { fontSize: 16, fontWeight: '700', color: DARK },
+  infoLabel: { fontFamily: FONTS.family, fontSize: 11, color: TAB_INACTIVE, fontWeight: '500', marginBottom: 4 },
+  infoValue: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: DARK },
   infoMetaRow: { borderTopWidth: 1, borderTopColor: CARD_BORDER, paddingTop: 12, gap: 4 },
-  infoMeta: { fontSize: 12, color: TAB_INACTIVE },
+  infoMeta: { fontFamily: FONTS.family, fontSize: 12, color: TAB_INACTIVE },
 
   /* ── timeline ── */
   timelineCard: {
-    backgroundColor: COLORS.CARD, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: CARD_BORDER,
+    backgroundColor: COLORS.BG, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: CARD_BORDER,
   },
   timelineRow: { flexDirection: 'row', minHeight: 56 },
   timelineLeft: { width: 40, alignItems: 'center' },
@@ -2028,21 +2118,21 @@ const styles = StyleSheet.create({
   },
   timelineCircleDone: { backgroundColor: PRIMARY, borderColor: PRIMARY },
   timelineCircleActive: { backgroundColor: COLORS.WARNING, borderColor: COLORS.WARNING },
-  timelineCheck: { fontSize: 14, color: '#fff', fontWeight: '700' },
-  timelineNum: { fontSize: 13, fontWeight: '700', color: TAB_INACTIVE },
+  timelineCheck: { fontFamily: FONTS.family, fontSize: 14, color: '#fff', fontWeight: '700' },
+  timelineNum: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: TAB_INACTIVE },
   timelineLine: {
     width: 2, flex: 1, backgroundColor: CARD_BORDER, marginVertical: 4,
   },
   timelineLineDone: { backgroundColor: PRIMARY },
   timelineContent: { flex: 1, marginLeft: 12, paddingBottom: 16 },
-  timelineStageName: { fontSize: 15, fontWeight: '600', color: COLORS.TEXT_SECONDARY },
+  timelineStageName: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '600', color: COLORS.TEXT_SECONDARY },
   timelineProgress: { marginTop: 6, gap: 4 },
   timelineProgressBar: {
     height: 4, backgroundColor: CARD_BORDER, borderRadius: 2, overflow: 'hidden',
   },
   timelineProgressFill: { height: 4, backgroundColor: PRIMARY, borderRadius: 2 },
-  timelineProgressText: { fontSize: 11, color: TAB_INACTIVE },
-  timelineWaiting: { fontSize: 12, color: TAB_INACTIVE, fontStyle: 'italic', marginTop: 4 },
+  timelineProgressText: { fontFamily: FONTS.family, fontSize: 11, color: TAB_INACTIVE },
+  timelineWaiting: { fontFamily: FONTS.family, fontSize: 12, color: TAB_INACTIVE, fontStyle: 'italic', marginTop: 4 },
 
   /* ── Stage actions (create next stage, add team) ── */
   stageActionsCard: {
@@ -2050,64 +2140,62 @@ const styles = StyleSheet.create({
   },
   stageActionBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: COLORS.CARD, borderRadius: 14,
+    backgroundColor: COLORS.BG, borderRadius: 14,
     paddingVertical: 14, paddingHorizontal: 16,
-    borderWidth: 1, borderColor: COLORS.BORDER,
   },
   stageActionBtnPrimary: {
     backgroundColor: COLORS.ACCENT, borderColor: COLORS.ACCENT,
   },
-  stageActionBtnText: { fontSize: 14, fontWeight: '700', color: COLORS.ACCENT },
+  stageActionBtnText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.ACCENT },
 
   /* ── Admin controls ── */
   adminSection: { marginHorizontal: 16, marginTop: 20, marginBottom: 12 },
   adminToggle: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingVertical: 10, paddingHorizontal: 14,
-    backgroundColor: COLORS.SURFACE, borderRadius: 12,
+    backgroundColor: COLORS.BG, borderRadius: 12,
   },
-  adminToggleText: { flex: 1, fontSize: 13, fontWeight: '600', color: COLORS.TEXT_MUTED },
+  adminToggleText: { fontFamily: FONTS.family, flex: 1, fontSize: 13, fontWeight: '600', color: COLORS.TEXT_MUTED },
   adminContent: { marginTop: 8, gap: 6 },
   adminStageRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: COLORS.CARD, borderRadius: 12, padding: 12,
-    borderWidth: 1, borderColor: COLORS.BORDER,
+    backgroundColor: COLORS.BG, borderRadius: 12, padding: 12,
   },
-  adminStageName: { fontSize: 13, fontWeight: '600', color: COLORS.TEXT },
-  adminStageMeta: { fontSize: 10, color: COLORS.TEXT_MUTED, marginTop: 2 },
+  adminStageName: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.TEXT },
+  adminStageMeta: { fontFamily: FONTS.family, fontSize: 10, color: COLORS.TEXT_MUTED, marginTop: 2 },
   adminBtnWarn: {
     paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8,
     backgroundColor: COLORS.WARNING_BG, borderWidth: 1, borderColor: 'rgba(255,152,0,0.3)',
   },
-  adminBtnWarnText: { fontSize: 11, fontWeight: '700', color: COLORS.WARNING },
+  adminBtnWarnText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.WARNING },
   adminBtnDanger: {
     paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8,
     backgroundColor: COLORS.DANGER_SOFT, borderWidth: 1, borderColor: 'rgba(229,57,53,0.3)',
   },
-  adminBtnDangerText: { fontSize: 11, fontWeight: '700', color: COLORS.DANGER },
+  adminBtnDangerText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.DANGER },
 
   /* ── actions grid ── */
   actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   actionCard: {
-    width: (SCREEN_WIDTH - 58) / 2, backgroundColor: COLORS.CARD, borderRadius: 12,
+    width: (SCREEN_WIDTH - 58) / 2, backgroundColor: COLORS.BG, borderRadius: 12,
     padding: 16, alignItems: 'center', borderWidth: 1, borderColor: CARD_BORDER,
   },
-  actionCardIcon: { fontSize: 28, marginBottom: 8 },
-  actionCardText: { fontSize: 13, fontWeight: '600', color: DARK },
+  actionCardIcon: { fontFamily: FONTS.family, fontSize: 28, marginBottom: 8 },
+  actionCardText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: DARK },
 
   /* ── filter pills ── */
   filterPill: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-    backgroundColor: COLORS.CARD, borderWidth: 1, borderColor: CARD_BORDER, marginRight: 8,
+    backgroundColor: COLORS.BG, borderWidth: 1, borderColor: CARD_BORDER,
   },
   filterPillActive: { backgroundColor: COLORS.ACCENT, borderColor: COLORS.ACCENT },
-  filterPillText: { fontSize: 13, fontWeight: '600', color: DARK },
+  filterPillText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: DARK },
   filterPillTextActive: { color: '#fff' },
 
   /* ── live card ── */
   liveCard: {
-    borderRadius: 16, overflow: 'hidden', marginBottom: 12, backgroundColor: COLORS.CARD_ELEVATED, minHeight: 240,
+    borderRadius: 16, overflow: 'hidden', marginBottom: 12, backgroundColor: COLORS.BG, minHeight: 240,
     borderWidth: 1, borderColor: CARD_BORDER,
   },
   liveCardBg: { ...StyleSheet.absoluteFillObject },
@@ -2117,9 +2205,9 @@ const styles = StyleSheet.create({
   },
   liveBadge: { backgroundColor: COLORS.LIVE, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 },
   liveBadgeText: {
-    color: '#fff', fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8,
+    fontFamily: FONTS.family,    color: '#fff', fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8,
   },
-  liveMatchInfo: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '500' },
+  liveMatchInfo: { fontFamily: FONTS.family, color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '500' },
   liveScoreArea: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingVertical: 20, paddingHorizontal: 16, gap: 24,
@@ -2129,27 +2217,27 @@ const styles = StyleSheet.create({
     width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.1)',
     justifyContent: 'center', alignItems: 'center', marginBottom: 6,
   },
-  liveTeamFlagText: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  liveTeamAbbr: { color: 'rgba(255,255,255,0.8)', fontSize: 14, fontWeight: '600', marginBottom: 4 },
-  liveTeamScore: { color: 'rgba(255,255,255,0.9)', fontSize: 18, fontWeight: '700' },
+  liveTeamFlagText: { fontFamily: FONTS.family, color: '#fff', fontSize: 18, fontWeight: '700' },
+  liveTeamAbbr: { fontFamily: FONTS.family, color: 'rgba(255,255,255,0.8)', fontSize: 14, fontWeight: '600', marginBottom: 4 },
+  liveTeamScore: { fontFamily: FONTS.family, color: 'rgba(255,255,255,0.9)', fontSize: 18, fontWeight: '700' },
   liveTeamBatting: { color: PRIMARY },
-  liveVsText: { color: 'rgba(255,255,255,0.4)', fontSize: 14, fontWeight: '600' },
+  liveVsText: { fontFamily: FONTS.family, color: 'rgba(255,255,255,0.4)', fontSize: 14, fontWeight: '600' },
   liveStatusText: {
-    color: PRIMARY, fontSize: 13, fontWeight: '600', textAlign: 'center', paddingHorizontal: 16, marginBottom: 12,
+    fontFamily: FONTS.family,    color: PRIMARY, fontSize: 13, fontWeight: '600', textAlign: 'center', paddingHorizontal: 16, marginBottom: 12,
   },
   watchLiveBtn: {
     backgroundColor: PRIMARY, marginHorizontal: 16, marginBottom: 16, paddingVertical: 12,
     borderRadius: 10, alignItems: 'center',
   },
-  watchLiveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  watchLiveBtnText: { fontFamily: FONTS.family, color: '#fff', fontSize: 15, fontWeight: '700' },
 
   /* ── upcoming cards ── */
   upcomingCard: {
-    backgroundColor: COLORS.CARD, borderRadius: 12, borderWidth: 1, borderColor: CARD_BORDER,
+    backgroundColor: COLORS.BG, borderRadius: 12, borderWidth: 1, borderColor: CARD_BORDER,
     padding: 14, marginBottom: 10,
   },
   matchStageBadge: {
-    fontSize: 10, fontWeight: '600', color: TAB_INACTIVE, textTransform: 'uppercase',
+    fontFamily: FONTS.family,    fontSize: 10, fontWeight: '600', color: TAB_INACTIVE, textTransform: 'uppercase',
     letterSpacing: 0.5, marginBottom: 8,
   },
   upcomingTeamsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
@@ -2158,36 +2246,36 @@ const styles = StyleSheet.create({
     width: 30, height: 30, borderRadius: 15, backgroundColor: COLORS.SURFACE,
     justifyContent: 'center', alignItems: 'center',
   },
-  upcomingFlagText: { fontSize: 13, fontWeight: '700', color: '#fff' },
-  upcomingTeamName: { fontSize: 14, fontWeight: '600', color: DARK },
-  upcomingVs: { fontSize: 13, color: TAB_INACTIVE, fontWeight: '500', marginHorizontal: 12 },
+  upcomingFlagText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: '#fff' },
+  upcomingTeamName: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: DARK },
+  upcomingVs: { fontFamily: FONTS.family, fontSize: 13, color: TAB_INACTIVE, fontWeight: '500', marginHorizontal: 12 },
   matchNumBadge: {
-    marginLeft: 'auto', backgroundColor: COLORS.SURFACE, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
+    marginLeft: 'auto', backgroundColor: COLORS.BG, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
   },
-  matchNumText: { fontSize: 11, fontWeight: '600', color: TAB_INACTIVE },
-  upcomingDate: { fontSize: 12, color: TAB_INACTIVE, fontWeight: '500' },
+  matchNumText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '600', color: TAB_INACTIVE },
+  upcomingDate: { fontFamily: FONTS.family, fontSize: 12, color: TAB_INACTIVE, fontWeight: '500' },
 
   /* ── result cards ── */
   resultsContainer: {
-    backgroundColor: COLORS.CARD, borderRadius: 12, borderWidth: 1, borderColor: CARD_BORDER, overflow: 'hidden',
+    backgroundColor: COLORS.BG, borderRadius: 12, borderWidth: 1, borderColor: CARD_BORDER, overflow: 'hidden',
   },
   resultCard: { padding: 14 },
   resultCardBorder: { borderBottomWidth: 1, borderBottomColor: CARD_BORDER },
   resultTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  resultMatchNum: { fontSize: 11, color: TAB_INACTIVE, fontWeight: '500' },
-  resultStagePill: { backgroundColor: COLORS.SURFACE, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
-  resultStageText: { fontSize: 9, fontWeight: '600', color: TAB_INACTIVE, textTransform: 'uppercase' },
+  resultMatchNum: { fontFamily: FONTS.family, fontSize: 11, color: TAB_INACTIVE, fontWeight: '500' },
+  resultStagePill: { backgroundColor: COLORS.BG, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  resultStageText: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '600', color: TAB_INACTIVE, textTransform: 'uppercase' },
   resultScoreRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4,
   },
-  resultTeamName: { fontSize: 14, fontWeight: '500', color: COLORS.TEXT_SECONDARY },
-  resultTeamScore: { fontSize: 14, fontWeight: '500', color: COLORS.TEXT_SECONDARY },
+  resultTeamName: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '500', color: COLORS.TEXT_SECONDARY },
+  resultTeamScore: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '500', color: COLORS.TEXT_SECONDARY },
   resultWinner: { color: PRIMARY, fontWeight: '700' },
-  resultText: { fontSize: 12, color: TAB_INACTIVE, marginTop: 6, fontWeight: '500' },
+  resultText: { fontFamily: FONTS.family, fontSize: 12, color: TAB_INACTIVE, marginTop: 6, fontWeight: '500' },
 
   /* ── stage progression bar ── */
   progressionCard: {
-    backgroundColor: COLORS.CARD, borderRadius: 16, padding: 16, marginBottom: 20,
+    backgroundColor: COLORS.BG, borderRadius: 16, padding: 16, marginBottom: 20,
     borderWidth: 1, borderColor: CARD_BORDER,
   },
   progressionRow: {
@@ -2216,131 +2304,265 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.SUCCESS,
   },
   progressionLabel: {
-    fontSize: 10, fontWeight: '600', color: DARK, marginTop: 6, textAlign: 'center',
+    fontFamily: FONTS.family,    fontSize: 10, fontWeight: '600', color: DARK, marginTop: 6, textAlign: 'center',
   },
   progressionSub: {
-    fontSize: 9, color: TAB_INACTIVE, fontWeight: '500', marginTop: 2,
+    fontFamily: FONTS.family,    fontSize: 9, color: TAB_INACTIVE, fontWeight: '500', marginTop: 2,
   },
 
-  /* ── team cards ── */
-  teamCard: {
-    backgroundColor: COLORS.CARD, borderRadius: 12, borderWidth: 1, borderColor: CARD_BORDER,
-    padding: 14, marginBottom: 10, flexDirection: 'row', alignItems: 'center',
+  /* ── Teams tab ── */
+  teamsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
   },
-  teamCardEliminated: {
-    opacity: 0.6,
+  teamsHeaderTitle: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '800', color: DARK, letterSpacing: 0.2 },
+  teamsCountChip: {
+    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10,
+    backgroundColor: COLORS.ACCENT_SOFT,
   },
+  teamsCountText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '800', color: COLORS.ACCENT_LIGHT },
+
+  teamsList: { gap: 8 },
+  teamRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12, paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: COLORS.SURFACE,
+  },
+  teamBigFlag: {
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  teamBigFlagText: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '900', color: '#fff' },
+  teamRowInfo: { flex: 1, minWidth: 0, gap: 2 },
+  teamRowName: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '800', color: DARK },
+  teamRowShort: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '600', color: TAB_INACTIVE },
+  teamRowMeta: { fontFamily: FONTS.family, fontSize: 11, color: TAB_INACTIVE, marginTop: 4 },
+
+  /* Per-row stat strip — P / W / L / WIN% pill group */
+  teamStatStrip: {
+    flexDirection: 'row', gap: 6, marginTop: 6,
+  },
+  teamStatPill: {
+    flexDirection: 'row', alignItems: 'baseline', gap: 3,
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 5,
+    backgroundColor: COLORS.BG,
+  },
+  teamStatPillValue: {
+    fontFamily: FONTS.family,
+    fontSize: 11, fontWeight: '900', color: DARK,
+    fontVariant: ['tabular-nums'],
+  },
+  teamStatPillLabel: {
+    fontFamily: FONTS.family,
+    fontSize: 8, fontWeight: '800', color: TAB_INACTIVE,
+    letterSpacing: 0.5,
+  },
+  // Old team-card key aliases — referenced in 2 places; keep to avoid a sweep
   teamFlag: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.SURFACE,
     justifyContent: 'center', alignItems: 'center', marginRight: 12,
   },
-  teamFlagText: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  teamInfo: { flex: 1 },
-  teamName: { fontSize: 15, fontWeight: '600', color: DARK },
-  teamShort: { fontSize: 12, color: TAB_INACTIVE, marginTop: 2 },
-  teamStatsCol: { marginRight: 8 },
-  teamStatValue: { fontSize: 12, fontWeight: '600', color: TAB_INACTIVE },
-  teamArrow: { fontSize: 22, color: TAB_INACTIVE, fontWeight: '300' },
-  teamSectionLabel: {
-    fontSize: 12, fontWeight: '700', color: TAB_INACTIVE, textTransform: 'uppercase',
-    letterSpacing: 0.8, marginBottom: 8, marginTop: 4,
-  },
-  qualBadge: {
-    backgroundColor: COLORS.SUCCESS, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6,
-  },
-  qualBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
-  elimBadge: {
-    backgroundColor: COLORS.LIVE || COLORS.RED, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6,
-  },
-  elimBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
+  teamFlagText: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: '#fff' },
 
-  /* ── standings ── */
+  /* ── Standings table ── */
+  standingsTable: { marginTop: 4 },
   standingsHeader: {
-    flexDirection: 'row', backgroundColor: COLORS.SURFACE,
-    borderTopLeftRadius: 10, borderTopRightRadius: 10, paddingVertical: 10, paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginBottom: 2,
   },
-  standingsHeaderText: { color: COLORS.TEXT_SECONDARY, fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
+  standingsHeaderText: {
+    fontFamily: FONTS.family, color: TAB_INACTIVE,
+    fontSize: 10, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase',
+  },
+  standingsHeaderNum: { width: 28, textAlign: 'center' },
+  standingsHeaderNrr: { width: 54, textAlign: 'right' },
   standingsRow: {
-    flexDirection: 'row', backgroundColor: COLORS.CARD, paddingVertical: 12, paddingHorizontal: 8,
-    borderBottomWidth: 1, borderBottomColor: CARD_BORDER,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingRight: 4,
+    overflow: 'hidden',
   },
-  standingsRowAlt: { backgroundColor: '#1F1F1F' },
-  standingsCell: { fontSize: 13, color: DARK, fontWeight: '500' },
-  standingsTeamCell: { flex: 3 },
-  standingsNumCell: { flex: 1, textAlign: 'center' },
-  standingsNrrCell: { flex: 1.5, textAlign: 'right', fontSize: 12 },
-  standingsRank: { fontSize: 12, fontWeight: '700', color: TAB_INACTIVE, width: 16 },
-  standingsDot: { width: 8, height: 8, borderRadius: 4 },
-  standingsTeamName: { fontSize: 13, fontWeight: '600', color: DARK, flex: 1 },
-  standingsPts: { fontWeight: '800', color: DARK },
+  qualStripe: {
+    width: 3, alignSelf: 'stretch', borderRadius: 3, marginRight: 8,
+  },
+  standingsRankBlock: { width: 20, alignItems: 'center', marginRight: 2 },
+  standingsRankNum: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '800', color: TAB_INACTIVE },
+  standingsTeamNameWrap: {
+    flex: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minWidth: 0,
+  },
+  standingsTeamName: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: DARK, flexShrink: 1 },
+  qualChip: {
+    paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4,
+  },
+  qualChipText: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
+  standingsNumCell: {
+    fontFamily: FONTS.family,
+    width: 28, textAlign: 'center',
+    fontSize: 13, color: DARK, fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
+  standingsNrrCell: {
+    fontFamily: FONTS.family,
+    width: 54, textAlign: 'right',
+    fontSize: 12, fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  standingsLegend: {
+    flexDirection: 'row',
+    gap: 14,
+    paddingTop: 10,
+    paddingHorizontal: 4,
+  },
+  standingsLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  standingsLegendDot: { width: 8, height: 8, borderRadius: 2 },
+  standingsLegendText: { fontFamily: FONTS.family, fontSize: 10, color: TAB_INACTIVE, fontWeight: '600' },
+
+  /* Points legend shown above the standings tables */
   pointsInfoRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: COLORS.SURFACE, borderRadius: 8, paddingVertical: 6, marginBottom: 16, gap: 8,
+    backgroundColor: COLORS.ACCENT_SOFT,
+    borderRadius: 8, paddingVertical: 7, paddingHorizontal: 10,
+    marginBottom: 14, gap: 8,
   },
-  pointsInfoText: { fontSize: 11, fontWeight: '600', color: TAB_INACTIVE },
-  pointsInfoDot: { fontSize: 8, color: COLORS.TEXT_HINT },
+  pointsInfoText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.ACCENT_LIGHT },
+  pointsInfoDot: { fontFamily: FONTS.family, fontSize: 8, color: COLORS.ACCENT_LIGHT, opacity: 0.5 },
 
-  /* ── stats summary ── */
-  statsSummaryRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  statSummaryCard: {
-    flex: 1, backgroundColor: COLORS.CARD, borderRadius: 12, padding: 14, alignItems: 'center',
-    borderWidth: 1, borderColor: CARD_BORDER,
+  /* Stats sub-tab pill bar — flat container with a colored active pill per category */
+  subTabRow: {
+    flexDirection: 'row',
+    gap: 4,
+    marginBottom: 16,
+    padding: 4,
+    borderRadius: 12,
+    backgroundColor: COLORS.SURFACE,
   },
-  statSummaryValue: { fontSize: 22, fontWeight: '800', color: DARK },
-  statSummaryLabel: { fontSize: 11, color: TAB_INACTIVE, fontWeight: '500', marginTop: 4 },
+  subTabPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  subTabText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: TAB_INACTIVE },
+  subTabTextActive: { color: '#fff' },
 
-  /* ── stats / leaderboard ── */
-  statsCard: {
-    backgroundColor: COLORS.CARD, borderRadius: 12, borderWidth: 1, borderColor: CARD_BORDER,
-    overflow: 'hidden', marginTop: 8,
+  /* ── Ranking section ── */
+  rankingSection: { marginBottom: 20 },
+  rankingHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 2,
+    marginBottom: 12,
   },
-  statsRow: {
-    flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 14,
-  },
-  statsRowBorder: { borderBottomWidth: 1, borderBottomColor: CARD_BORDER },
-  statsRank: { width: 24, fontSize: 14, fontWeight: '700', color: TAB_INACTIVE },
-  statsPlayerInfo: { flex: 1, marginLeft: 4 },
-  statsPlayerName: { fontSize: 14, fontWeight: '600', color: DARK },
-  statsPlayerMeta: { fontSize: 11, color: TAB_INACTIVE, marginTop: 2 },
-  statsAvatar: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: COLORS.ACCENT + '22',
+  rankingHeadLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  rankingIconDot: {
+    width: 20, height: 20, borderRadius: 6,
     alignItems: 'center', justifyContent: 'center',
-    marginRight: 10,
   },
-  statsAvatarText: {
-    fontSize: 13, fontWeight: '700', color: COLORS.ACCENT,
+  rankingTitle: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '800', color: DARK, letterSpacing: 0.2 },
+  rankingLink: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700' },
+
+  /* Hero card for rank #1 */
+  heroStatsCard: {
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    marginBottom: 10,
+    overflow: 'hidden',
   },
-  statsValueCol: { alignItems: 'flex-end', minWidth: 50 },
-  statsValue: { fontSize: 18, fontWeight: '800', color: DARK },
-  statsValueLabel: { fontSize: 10, color: TAB_INACTIVE, fontWeight: '500', textTransform: 'uppercase' },
+  heroStatsRibbon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 5,
+    backgroundColor: 'rgba(0,0,0,0.08)',
+    marginBottom: 10,
+  },
+  heroStatsRibbonText: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  heroStatsBody: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  heroAvatarWrap: { position: 'relative' },
+  heroMedal: {
+    position: 'absolute', right: -2, bottom: -2,
+    width: 20, height: 20, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: COLORS.BG,
+  },
+  heroStatsInfo: { flex: 1, minWidth: 0 },
+  heroStatsName: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '800', color: DARK },
+  heroStatsMeta: { fontFamily: FONTS.family, fontSize: 11, color: TAB_INACTIVE, marginTop: 3 },
+  heroStatsValueBlock: { alignItems: 'flex-end', minWidth: 56 },
+  heroStatsValue: { fontFamily: FONTS.family, fontSize: 24, fontWeight: '900', letterSpacing: -0.5 },
+  heroStatsValueLabel: { fontFamily: FONTS.family, fontSize: 9, color: TAB_INACTIVE, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 1 },
+
+  /* Compact rank rows for #2..#5 */
+  rankList: { gap: 2 },
+  rankRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+  },
+  rankMarker: {
+    width: 26, height: 26, borderRadius: 13,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.SURFACE,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  rankMarkerText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '800', color: TAB_INACTIVE },
+  rankInfo: { flex: 1, minWidth: 0 },
+  rankName: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: DARK },
+  rankMeta: { fontFamily: FONTS.family, fontSize: 10, color: TAB_INACTIVE, marginTop: 2 },
+  rankValueBlock: { alignItems: 'flex-end', minWidth: 48 },
+  rankValue: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '900', letterSpacing: -0.3 },
+  rankValueLabel: { fontFamily: FONTS.family, fontSize: 9, color: TAB_INACTIVE, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
 
   /* ── stage pills ── */
   stagePill: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.CARD, borderRadius: 20,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.BG, borderRadius: 20,
     borderWidth: 1, borderColor: CARD_BORDER, paddingHorizontal: 14, paddingVertical: 8,
-    marginRight: 8, gap: 6,
+    gap: 6,
   },
   stagePillActive: { backgroundColor: COLORS.ACCENT, borderColor: COLORS.ACCENT },
-  stagePillText: { fontSize: 13, fontWeight: '600', color: DARK },
+  stagePillText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: DARK },
   stagePillTextActive: { color: '#fff' },
   stageBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
-  stageBadgeText: { fontSize: 9, fontWeight: '700', color: '#fff', textTransform: 'uppercase' },
+  stageBadgeText: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '700', color: '#fff', textTransform: 'uppercase' },
   stageProgressCard: {
-    backgroundColor: COLORS.CARD, borderRadius: 12, borderWidth: 1, borderColor: CARD_BORDER,
+    backgroundColor: COLORS.ACCENT_SOFT,
+    borderRadius: 12,
     padding: 14, gap: 12, marginBottom: 16,
   },
   stageNode: { width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
-  stageNodeText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  stageNodeText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: '#fff' },
 
   /* ── empty + actions ── */
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: DARK, marginBottom: 8 },
-  emptyText: { color: TAB_INACTIVE, fontSize: 14, fontWeight: '500', textAlign: 'center', paddingHorizontal: 20 },
+  emptyTitle: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '700', color: DARK, marginBottom: 8 },
+  emptyText: { fontFamily: FONTS.family, color: TAB_INACTIVE, fontSize: 14, fontWeight: '500', textAlign: 'center', paddingHorizontal: 20 },
   createMatchBtn: {
     backgroundColor: PRIMARY, paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginBottom: 16,
   },
-  createMatchBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  createMatchBtnText: { fontFamily: FONTS.family, color: '#fff', fontSize: 15, fontWeight: '700' },
 
   /* ── Edit info button ── */
   editInfoBtn: {
@@ -2348,7 +2570,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
     backgroundColor: COLORS.ACCENT + '15',
   },
-  editInfoBtnText: { fontSize: 12, fontWeight: '600', color: COLORS.ACCENT },
+  editInfoBtnText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '600', color: COLORS.ACCENT },
 });
 
 /* ── Edit Modal Styles (matches CreateTournamentScreen) ── */
@@ -2360,17 +2582,17 @@ const eStyles = StyleSheet.create({
     backgroundColor: COLORS.CARD, borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
   },
   headerSideBtn: { width: 60 },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: DARK, textAlign: 'center', flex: 1 },
-  cancelText: { fontSize: 15, color: COLORS.TEXT_SECONDARY, fontWeight: '500' },
-  saveText: { fontSize: 15, color: PRIMARY, fontWeight: '700', textAlign: 'right' },
+  headerTitle: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '700', color: DARK, textAlign: 'center', flex: 1 },
+  cancelText: { fontFamily: FONTS.family, fontSize: 15, color: COLORS.TEXT_SECONDARY, fontWeight: '500' },
+  saveText: { fontFamily: FONTS.family, fontSize: 15, color: PRIMARY, fontWeight: '700', textAlign: 'right' },
 
   sectionLabel: {
-    fontSize: 11, fontWeight: '600', color: COLORS.TEXT_MUTED,
+    fontFamily: FONTS.family,    fontSize: 11, fontWeight: '600', color: COLORS.TEXT_MUTED,
     letterSpacing: 1, textTransform: 'uppercase', marginTop: 24, marginBottom: 12,
   },
-  inputLabel: { fontSize: 13, fontWeight: '500', color: COLORS.TEXT_SECONDARY, marginBottom: 8 },
+  inputLabel: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '500', color: COLORS.TEXT_SECONDARY, marginBottom: 8 },
   input: {
-    height: 48, backgroundColor: COLORS.SURFACE,
+    fontFamily: FONTS.family,    height: 48, backgroundColor: COLORS.SURFACE,
     borderWidth: 1, borderColor: COLORS.BORDER, borderRadius: 8,
     paddingHorizontal: 16, fontSize: 15, color: DARK, marginBottom: 16,
   },
@@ -2379,9 +2601,9 @@ const eStyles = StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.BORDER, borderRadius: 8,
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, marginBottom: 16,
   },
-  inputInner: { flex: 1, height: 48, fontSize: 15, color: DARK },
-  inputInnerText: { flex: 1, fontSize: 15, color: DARK, lineHeight: 48 },
-  currencyPrefix: { fontSize: 15, fontWeight: '600', color: COLORS.TEXT_SECONDARY, marginRight: 4 },
+  inputInner: { fontFamily: FONTS.family, flex: 1, height: 48, fontSize: 15, color: DARK },
+  inputInnerText: { fontFamily: FONTS.family, flex: 1, fontSize: 15, color: DARK, lineHeight: 48 },
+  currencyPrefix: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '600', color: COLORS.TEXT_SECONDARY, marginRight: 4 },
 
   toggleRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   toggleBtn: {
@@ -2389,14 +2611,14 @@ const eStyles = StyleSheet.create({
     backgroundColor: COLORS.CARD, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
   },
   toggleBtnActive: { borderWidth: 2, borderColor: COLORS.ACCENT, backgroundColor: COLORS.ACCENT_SOFT },
-  toggleText: { fontSize: 14, fontWeight: '500', color: COLORS.TEXT_SECONDARY },
+  toggleText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '500', color: COLORS.TEXT_SECONDARY },
   toggleTextActive: { color: COLORS.ACCENT },
 
   gridRow: { flexDirection: 'row', gap: 12 },
 
   dateOverlay: { flex: 1, backgroundColor: COLORS.OVERLAY, justifyContent: 'center', paddingHorizontal: 30 },
-  dateCard: { backgroundColor: COLORS.CARD, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: COLORS.BORDER },
-  dateTitle: { fontSize: 16, fontWeight: '700', color: DARK, marginBottom: 16 },
+  dateCard: { backgroundColor: COLORS.BG, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: COLORS.BORDER },
+  dateTitle: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: DARK, marginBottom: 16 },
 
   bottomBar: {
     paddingHorizontal: 16, paddingTop: 12,
@@ -2406,7 +2628,7 @@ const eStyles = StyleSheet.create({
     backgroundColor: COLORS.ACCENT, borderRadius: 12, paddingVertical: 16,
     alignItems: 'center', justifyContent: 'center',
   },
-  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  saveBtnText: { fontFamily: FONTS.family, color: '#fff', fontSize: 16, fontWeight: '700' },
 });
 
 export default TournamentDetailScreen;

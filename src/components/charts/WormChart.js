@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import Svg, { Polyline, Line, Circle, Text as SvgText, G, Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -111,11 +111,11 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.CARD, borderRadius: 16, padding: 16,
     borderWidth: 1, borderColor: COLORS.BORDER,
   },
-  title: { fontSize: 14, fontWeight: '700', color: COLORS.TEXT, marginBottom: 8 },
+  title: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT, marginBottom: 8 },
   legend: { flexDirection: 'row', gap: 20, marginTop: 8, justifyContent: 'center' },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 140 },
   legendDot: { width: 10, height: 4, borderRadius: 2 },
-  legendText: { fontSize: 10, color: COLORS.TEXT_MUTED },
+  legendText: { fontFamily: FONTS.family, fontSize: 10, color: COLORS.TEXT_MUTED },
 });
 
 export default React.memo(WormChart);

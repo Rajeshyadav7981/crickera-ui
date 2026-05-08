@@ -7,7 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { teamsAPI } from '../../services/api';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import BackButton from '../../components/BackButton';
 import Skeleton from '../../components/Skeleton';
 
@@ -280,12 +280,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   backArrow: {
-    fontSize: 18,
+    fontFamily: FONTS.family,    fontSize: 18,
     color: COLORS.TEXT,
     marginTop: -1,
   },
   headerTitle: {
-    fontSize: 18,
+    fontFamily: FONTS.family,    fontSize: 18,
     fontWeight: '700',
     color: COLORS.TEXT,
     flex: 1,
@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   editIcon: {
-    fontSize: 16,
+    fontFamily: FONTS.family,    fontSize: 16,
     color: COLORS.TEXT,
   },
   headerSpacer: {
@@ -317,10 +317,8 @@ const styles = StyleSheet.create({
   },
   // Hero Card
   heroCard: {
-    backgroundColor: COLORS.CARD,
+    backgroundColor: COLORS.BG,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
     overflow: 'hidden',
     marginTop: 8,
   },
@@ -342,12 +340,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   heroInitial: {
-    color: COLORS.WHITE,
+    fontFamily: FONTS.family,    color: COLORS.WHITE,
     fontSize: 26,
     fontWeight: '700',
   },
   heroName: {
-    fontSize: 22,
+    fontFamily: FONTS.family,    fontSize: 22,
     fontWeight: '700',
     color: COLORS.TEXT,
     textAlign: 'center',
@@ -359,7 +357,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   shortNameText: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '700',
     letterSpacing: 1,
   },
@@ -368,31 +366,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginTop: 10,
-    backgroundColor: COLORS.SURFACE,
+    backgroundColor: COLORS.BG,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
   },
   teamCodeLabel: {
-    fontSize: 10,
+    fontFamily: FONTS.family,    fontSize: 10,
     fontWeight: '800',
     color: COLORS.TEXT_MUTED,
     letterSpacing: 1,
   },
   teamCodeValue: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     fontWeight: '700',
     color: COLORS.ACCENT_LIGHT,
     letterSpacing: 1.5,
   },
   // Stats
   statsCard: {
-    backgroundColor: COLORS.CARD,
+    backgroundColor: COLORS.BG,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 18,
@@ -403,12 +397,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statValue: {
-    fontSize: 22,
+    fontFamily: FONTS.family,    fontSize: 22,
     fontWeight: '700',
     color: COLORS.TEXT,
   },
   statLabel: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     color: COLORS.TEXT_SECONDARY,
     marginTop: 4,
     fontWeight: '500',
@@ -426,39 +420,35 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: {
-    fontSize: 17,
+    fontFamily: FONTS.family,    fontSize: 17,
     fontWeight: '700',
     color: COLORS.TEXT,
   },
   sectionCount: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '600',
     color: COLORS.TEXT_SECONDARY,
     marginLeft: 8,
-    backgroundColor: COLORS.SURFACE,
+    backgroundColor: COLORS.BG,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
     overflow: 'hidden',
   },
   emptyCard: {
-    backgroundColor: COLORS.CARD,
+    backgroundColor: COLORS.BG,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
     padding: 24,
     alignItems: 'center',
   },
   emptyText: {
-    color: COLORS.TEXT_MUTED,
+    fontFamily: FONTS.family,    color: COLORS.TEXT_MUTED,
     fontSize: 14,
     fontStyle: 'italic',
   },
   playerCard: {
-    backgroundColor: COLORS.CARD,
+    backgroundColor: COLORS.BG,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
     padding: 14,
     marginBottom: 8,
     flexDirection: 'row',
@@ -472,7 +462,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   playerInitial: {
-    fontSize: 17,
+    fontFamily: FONTS.family,    fontSize: 17,
     fontWeight: '700',
   },
   playerInfo: {
@@ -480,7 +470,7 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   playerName: {
-    fontSize: 15,
+    fontFamily: FONTS.family,    fontSize: 15,
     fontWeight: '600',
     color: COLORS.TEXT,
   },
@@ -496,7 +486,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   roleText: {
-    fontSize: 11,
+    fontFamily: FONTS.family,    fontSize: 11,
     fontWeight: '600',
     textTransform: 'capitalize',
   },
@@ -507,17 +497,17 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   tagText: {
-    fontSize: 11,
+    fontFamily: FONTS.family,    fontSize: 11,
     fontWeight: '700',
     color: '#FBBF24',
   },
   jerseyText: {
-    fontSize: 11,
+    fontFamily: FONTS.family,    fontSize: 11,
     fontWeight: '600',
     color: COLORS.TEXT_MUTED,
   },
   chevron: {
-    fontSize: 22,
+    fontFamily: FONTS.family,    fontSize: 22,
     color: COLORS.TEXT_MUTED,
     marginLeft: 4,
   },
@@ -531,7 +521,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   addPlayerBtnText: {
-    color: COLORS.WHITE,
+    fontFamily: FONTS.family,    color: COLORS.WHITE,
     fontSize: 16,
     fontWeight: '700',
   },

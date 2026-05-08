@@ -83,10 +83,8 @@ export const nextRoundFor = (qualifiedCount) => {
   return null;
 };
 
-// ---------------------------------------------------------------------------
 // Pair strategies — used by the team-swap UX to render the right preview
 // (groups view for league/round-robin, pairs view for cross-seed bracket).
-// ---------------------------------------------------------------------------
 
 export const pairTeams = (strategy, teamIds) => {
   if (strategy === 'cross_seed') {

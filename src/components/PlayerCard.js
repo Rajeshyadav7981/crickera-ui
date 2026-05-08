@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 import Avatar from './Avatar';
 import Icon from './Icon';
 
@@ -62,13 +62,13 @@ const styles = StyleSheet.create({
     width: 90,
   },
   cardSelected: { borderColor: COLORS.ACCENT, backgroundColor: COLORS.ACCENT_SOFT },
-  name: { fontSize: 11, fontWeight: '700', color: COLORS.TEXT, textAlign: 'center' },
+  name: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.TEXT, textAlign: 'center' },
   nameSelected: { color: COLORS.ACCENT_LIGHT },
   roleBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, marginTop: 4,
   },
-  roleText: { fontSize: 8, fontWeight: '700' },
+  roleText: { fontFamily: FONTS.family, fontSize: 8, fontWeight: '700' },
 });
 
 export default React.memo(PlayerCard);

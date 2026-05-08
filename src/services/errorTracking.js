@@ -4,15 +4,6 @@ import api from './api';
 
 const APP_VERSION = Constants.expoConfig?.version || '1.0.0';
 
-/**
- * Lightweight error tracking — logs errors to your own backend.
- * No Sentry/Crashlytics SDK needed. Errors stored in your DB.
- *
- * Usage:
- *   import { trackError, trackEvent } from './errorTracking';
- *   trackError(error, { screen: 'LiveScoring', action: 'scoreDelivery' });
- */
-
 let errorQueue = [];
 let flushTimer = null;
 
@@ -48,7 +39,6 @@ export const trackError = (error, context = {}) => {
   errorQueue.push(entry);
   scheduleFlush();
 
-  // Also log to console in dev
   if (__DEV__) {
     console.warn('[ErrorTracker]', entry.message, context);
   }
@@ -67,7 +57,6 @@ export const trackEvent = (name, data = {}) => {
   scheduleFlush();
 };
 
-// Global error handler — catches unhandled JS errors
 if (!__DEV__) {
   const originalHandler = ErrorUtils.getGlobalHandler();
   ErrorUtils.setGlobalHandler((error, isFatal) => {

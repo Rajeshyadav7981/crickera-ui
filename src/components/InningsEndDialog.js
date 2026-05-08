@@ -32,9 +32,10 @@ import {
   Animated, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, GRADIENTS } from '../theme';
+import { COLORS, GRADIENTS, FONTS } from '../theme';
 
 const isSecondInningsOfPair = (inningsNumber) => (inningsNumber || 1) % 2 === 0;
 
@@ -210,7 +211,6 @@ const InningsEndDialog = ({
   // scorer can revert a wrong final ball before the Super Over begins.
   const showUndo = true;
 
-  // ── Inner content (shared across all variants) ─────────────────────────
   const Content = (
     <Animated.View
       style={[
@@ -434,18 +434,22 @@ const InningsEndDialog = ({
     </Animated.View>
   );
 
-  // ── Render variants ────────────────────────────────────────────────────
   if (variant === 'modal') {
     return (
       <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
-        <Animated.View
-          style={[
+        <KeyboardAwareScrollView
+          contentContainerStyle={[
             styles.modalOverlay,
-            { opacity: fadeAnim, paddingTop: insets.top, paddingBottom: insets.bottom },
+            { paddingTop: insets.top, paddingBottom: insets.bottom },
           ]}
+          enableOnAndroid
+          extraScrollHeight={40}
+          keyboardShouldPersistTaps="handled"
         >
-          {Content}
-        </Animated.View>
+          <Animated.View style={{ opacity: fadeAnim }}>
+            {Content}
+          </Animated.View>
+        </KeyboardAwareScrollView>
       </Modal>
     );
   }
@@ -454,12 +458,15 @@ const InningsEndDialog = ({
     return <View style={styles.bannerWrap}>{Content}</View>;
   }
 
-  // fullscreen — pad by safe-area insets so the card visually centers in the
-  // area between the status bar / notch and the home indicator, not the raw
-  // screen rectangle (which would push it slightly above center on notched
-  // devices).
+  // fullscreen — pad by safe-area insets, KeyboardAwareScrollView so the
+  // type-to-confirm input stays visible when keyboard opens.
   return (
-    <View style={[styles.fullscreenWrap, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <KeyboardAwareScrollView
+      contentContainerStyle={[styles.fullscreenWrap, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
+      enableOnAndroid
+      extraScrollHeight={40}
+      keyboardShouldPersistTaps="handled"
+    >
       {/* Background gradient — subtle blue radial vibe */}
       <LinearGradient
         colors={[COLORS.BG, COLORS.BG_DEEP, COLORS.BG]}
@@ -467,13 +474,12 @@ const InningsEndDialog = ({
         pointerEvents="none"
       />
       {Content}
-    </View>
+    </KeyboardAwareScrollView>
   );
 };
 
 
 const styles = StyleSheet.create({
-  // ── Layout wrappers ────────────────────────────────────────────────────
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.78)',
@@ -494,7 +500,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
 
-  // ── Card ───────────────────────────────────────────────────────────────
   card: {
     width: '100%',
     maxWidth: 380,
@@ -546,7 +551,6 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
 
-  // ── Hero icon ──────────────────────────────────────────────────────────
   heroWrap: {
     alignItems: 'center',
     marginBottom: 14,
@@ -571,9 +575,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.04)',
   },
 
-  // ── Text ───────────────────────────────────────────────────────────────
   title: {
-    fontSize: 22,
+    fontFamily: FONTS.family,    fontSize: 22,
     fontWeight: '900',
     color: COLORS.TEXT,
     marginBottom: 6,
@@ -581,10 +584,10 @@ const styles = StyleSheet.create({
     letterSpacing: -0.4,
   },
   titleBanner: {
-    fontSize: 19,
+    fontFamily: FONTS.family,    fontSize: 19,
   },
   subtitle: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     color: COLORS.TEXT_SECONDARY,
     marginBottom: 18,
     textAlign: 'center',
@@ -592,7 +595,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
 
-  // ── Score box ──────────────────────────────────────────────────────────
   scoreBox: {
     width: '100%',
     borderRadius: 16,
@@ -617,7 +619,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.ACCENT,
   },
   teamName: {
-    fontSize: 11,
+    fontFamily: FONTS.family,    fontSize: 11,
     fontWeight: '800',
     color: COLORS.TEXT_MUTED,
     letterSpacing: 1.2,
@@ -630,25 +632,25 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   score: {
-    fontSize: 42,
+    fontFamily: FONTS.family,    fontSize: 42,
     fontWeight: '900',
     color: COLORS.TEXT,
     letterSpacing: -1.5,
     lineHeight: 46,
   },
   scoreSlash: {
-    fontSize: 28,
+    fontFamily: FONTS.family,    fontSize: 28,
     fontWeight: '300',
     color: COLORS.TEXT_MUTED,
     marginHorizontal: 4,
   },
   scoreWickets: {
-    fontSize: 28,
+    fontFamily: FONTS.family,    fontSize: 28,
     fontWeight: '700',
     color: COLORS.TEXT_SECONDARY,
   },
   overs: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     color: COLORS.TEXT_MUTED,
     fontWeight: '600',
     marginTop: 2,
@@ -667,19 +669,18 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(30,136,229,0.35)',
   },
   targetText: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     fontWeight: '800',
     color: COLORS.ACCENT_LIGHT,
     letterSpacing: 0.3,
   },
 
-  // ── Tied: team picker ──────────────────────────────────────────────────
   teamPickerWrap: {
     width: '100%',
     marginBottom: 14,
   },
   teamPickerLabel: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     fontWeight: '700',
     color: COLORS.TEXT_SECONDARY,
     marginBottom: 8,
@@ -711,12 +712,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   teamCardAvatarText: {
-    color: '#fff',
+    fontFamily: FONTS.family,    color: '#fff',
     fontWeight: '800',
     fontSize: 14,
   },
   teamCardName: {
-    flex: 1,
+    fontFamily: FONTS.family,    flex: 1,
     fontSize: 14,
     fontWeight: '700',
     color: COLORS.TEXT_SECONDARY,
@@ -731,19 +732,18 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   teamCardBadgeText: {
-    color: '#000',
+    fontFamily: FONTS.family,    color: '#000',
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 0.5,
   },
 
-  // ── Confirmation input ─────────────────────────────────────────────────
   confirmWrap: {
     width: '100%',
     marginBottom: 14,
   },
   confirmLabel: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     fontWeight: '600',
     color: COLORS.TEXT_SECONDARY,
     marginBottom: 8,
@@ -755,7 +755,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   confirmInput: {
-    borderWidth: 1.5,
+    fontFamily: FONTS.family,    borderWidth: 1.5,
     borderColor: COLORS.BORDER,
     backgroundColor: 'rgba(0,0,0,0.4)',
     borderRadius: 12,
@@ -772,7 +772,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(30,136,229,0.10)',
   },
 
-  // ── Primary button ─────────────────────────────────────────────────────
   primaryBtnWrap: {
     width: '100%',
     borderRadius: 14,
@@ -795,13 +794,12 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
   },
   primaryBtnText: {
-    color: '#fff',
+    fontFamily: FONTS.family,    color: '#fff',
     fontSize: 16,
     fontWeight: '900',
     letterSpacing: 0.4,
   },
 
-  // ── Tied: End as Tie button ────────────────────────────────────────────
   tieBtn: {
     marginTop: 10,
     paddingVertical: 12,
@@ -814,12 +812,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tieBtnText: {
-    color: COLORS.TEXT_SECONDARY,
+    fontFamily: FONTS.family,    color: COLORS.TEXT_SECONDARY,
     fontSize: 14,
     fontWeight: '700',
   },
 
-  // ── Undo button ────────────────────────────────────────────────────────
   undoBtn: {
     marginTop: 12,
     flexDirection: 'row',
@@ -833,19 +830,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(30,136,229,0.06)',
   },
   undoBtnText: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     color: COLORS.ACCENT_LIGHT,
     fontWeight: '800',
     letterSpacing: 0.2,
   },
   undoBtnHint: {
-    fontSize: 11,
+    fontFamily: FONTS.family,    fontSize: 11,
     color: COLORS.TEXT_MUTED,
     fontWeight: '600',
     marginLeft: 2,
   },
 
-  // ── Viewer waiting state ───────────────────────────────────────────────
   waitingPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -859,7 +855,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   waitingText: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     color: COLORS.TEXT_SECONDARY,
     fontWeight: '600',
   },
@@ -874,7 +870,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   viewScorecardText: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     color: COLORS.ACCENT,
     fontWeight: '700',
   },

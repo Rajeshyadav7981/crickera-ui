@@ -8,10 +8,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { scoringAPI, matchesAPI } from '../../services/api';
 import matchWS from '../../services/websocket';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import Icon from '../../components/Icon';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import CelebrationOverlay from '../../components/CelebrationOverlay';
+import ShotZonePicker from '../../components/ShotZonePicker';
 import OfflineBanner from '../../components/OfflineBanner';
 import InningsEndDialog from '../../components/InningsEndDialog';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -121,6 +122,10 @@ const LiveScoringScreen = ({ navigation, route }) => {
   const [undoLoading, setUndoLoading] = useState(false);
   const [reverting, setReverting] = useState(false);
   const [celebration, setCelebration] = useState(null); // 'four' | 'six' | 'wicket' | 'fifty' | 'hundred'
+  // Shot-zone picker state: { runs, isBoundary, isSix } | null
+  const [pendingShot, setPendingShot] = useState(null);
+  // Latest commentary line (shown under the over summary)
+  const [lastCommentary, setLastCommentary] = useState(null);
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [broadcastText, setBroadcastText] = useState('');
   const [activeBroadcast, setActiveBroadcast] = useState(null);
@@ -219,31 +224,102 @@ const LiveScoringScreen = ({ navigation, route }) => {
     }
     setScoring(true);
 
-    // Optimistic UI update — immediately reflect expected state change
+    // Optimistic UI update — every field the header/over-strip reads needs to
+    // move in the same frame as the score, otherwise the user sees a two-step
+    // flicker (score jumps, then the "0.3 ov" badge / per-ball circles catch up
+    // ~500ms later when the WS echo triggers loadState).
     const isExtra = data.extra_type === 'wide' || data.extra_type === 'noball';
     const runsToAdd = (data.batsman_runs || 0) + (data.extra_runs || 0) + (isExtra ? 1 : 0);
     const isLegalBall = !isExtra;
+    const prevStrikerRuns = state?.striker?.runs || 0;
+    const newStrikerRuns = prevStrikerRuns + (data.batsman_runs || 0);
+
+    // Build the display label for the per-ball strip (same rules as backend
+    // scorecard_service.get_live_state). Matters because state.this_over is
+    // rendered as colored circles next to the score.
+    const buildBallLabel = () => {
+      if (data.is_wicket) return 'W';
+      const total = (data.batsman_runs || 0) + (data.extra_runs || 0) + (isExtra ? 1 : 0);
+      if (data.extra_type === 'wide') return `${total}wd`;
+      if (data.extra_type === 'noball') return `${total}nb`;
+      if (data.extra_type === 'bye' || data.extra_type === 'legbye') return `${total}b`;
+      return String(total);
+    };
+
     setState(prev => {
       if (!prev) return prev;
       const newBall = isLegalBall ? (prev.current_ball || 0) + 1 : (prev.current_ball || 0);
       const overIncrement = newBall >= 6 ? 1 : 0;
+      const nextOver = (prev.current_over || 0) + overIncrement;
+      const nextBall = overIncrement ? 0 : newBall;
+      // total_overs is rendered as "0.3 ov" / "1.2 ov" — recompute here so the
+      // overs badge doesn't lag the score.
+      const legalBallsTotal = nextOver * 6 + nextBall;
+      const nextTotalOvers = Math.floor(legalBallsTotal / 6) + (legalBallsTotal % 6) / 10;
+      const nextTotalRuns = (prev.total_runs || 0) + runsToAdd;
+      // Run rate from completed balls so far.
+      const totalBalls = nextOver * 6 + nextBall;
+      const nextRunRate = totalBalls > 0
+        ? Number(((nextTotalRuns / (totalBalls / 6))).toFixed(2))
+        : 0;
+      // Keep the per-ball strip in step. On over rollover we reset the list.
+      const prevThisOver = overIncrement ? [] : (prev.this_over || []);
+      const nextThisOver = [...prevThisOver, buildBallLabel()];
+      // Chase info if we're in a target innings.
+      const hadTarget = typeof prev.target === 'number' && prev.target > 0;
+      let nextRemRuns = prev.remaining_runs;
+      let nextRemBalls = prev.remaining_balls;
+      let nextReqRate = prev.required_rate;
+      if (hadTarget) {
+        nextRemRuns = Math.max(0, prev.target - nextTotalRuns);
+        if (typeof prev.remaining_balls === 'number') {
+          nextRemBalls = Math.max(0, prev.remaining_balls - (isLegalBall ? 1 : 0));
+          nextReqRate = nextRemBalls > 0
+            ? Number((nextRemRuns / (nextRemBalls / 6)).toFixed(2))
+            : 0;
+        }
+      }
+
       return {
         ...prev,
-        total_runs: (prev.total_runs || 0) + runsToAdd,
-        current_ball: overIncrement ? 0 : newBall,
-        current_over: (prev.current_over || 0) + overIncrement,
+        total_runs: nextTotalRuns,
+        current_ball: nextBall,
+        current_over: nextOver,
+        total_overs: nextTotalOvers,
         total_wickets: data.is_wicket ? (prev.total_wickets || 0) + 1 : (prev.total_wickets || 0),
+        run_rate: nextRunRate,
+        remaining_runs: nextRemRuns,
+        remaining_balls: nextRemBalls,
+        required_rate: nextReqRate,
+        this_over: nextThisOver,
         striker: prev.striker ? {
           ...prev.striker,
           runs: (prev.striker.runs || 0) + (data.batsman_runs || 0),
-          balls: (prev.striker.balls || 0) + (isLegalBall ? 1 : 0),
+          balls: (prev.striker.balls || 0) + (isLegalBall || data.extra_type === 'noball' ? 1 : 0),
+          fours: (prev.striker.fours || 0) + (data.is_boundary && !data.is_six ? 1 : 0),
+          sixes: (prev.striker.sixes || 0) + (data.is_six ? 1 : 0),
         } : prev.striker,
       };
     });
 
-    // Show celebration overlay immediately
-    if (data.is_wicket) {
-      setCelebration('wicket');
+    // Celebration priority: match_won > wicket > hundred > fifty > six > four.
+    // Milestones are detected from runs transition (crossing the threshold on this ball).
+    const newTotal = (state?.total_runs || 0) + runsToAdd;
+    const target = state?.target;
+    const isChaseWin = target && (state?.innings_number || 1) >= 2 && newTotal >= target && !data.is_wicket;
+    if (isChaseWin) {
+      setCelebration('match_won');
+    } else if (data.is_wicket) {
+      const wt = data.wicket_type;
+      if (wt === 'bowled') setCelebration('wicket_bowled');
+      else if (wt === 'caught') setCelebration('wicket_caught');
+      else if (wt === 'lbw') setCelebration('wicket_lbw');
+      else if (wt === 'run_out') setCelebration('wicket_runout');
+      else setCelebration('wicket');
+    } else if (prevStrikerRuns < 100 && newStrikerRuns >= 100) {
+      setCelebration('hundred');
+    } else if (prevStrikerRuns < 50 && newStrikerRuns >= 50) {
+      setCelebration('fifty');
     } else if (data.is_six || data.batsman_runs === 6) {
       setCelebration('six');
     } else if (data.is_boundary || data.batsman_runs === 4) {
@@ -594,10 +670,51 @@ const LiveScoringScreen = ({ navigation, route }) => {
     return (state?.total_wickets || 0) >= maxWickets || totalBalls >= maxBalls || (state?.target && (state?.total_runs || 0) >= state?.target);
   }, [state?.current_over, state?.current_ball, state?.innings_number, state?.total_wickets, state?.total_runs, state?.target, matchData?.overs]);
 
-  // Stable callbacks for run scoring buttons (must be before early returns)
-  const scoreRun = useCallback((runs) => scoreDelivery({ batsman_runs: runs }), [state, matchData, scoring]);
-  const scoreFour = useCallback(() => scoreDelivery({ batsman_runs: 4, is_boundary: true }), [state, matchData, scoring]);
-  const scoreSix = useCallback(() => scoreDelivery({ batsman_runs: 6, is_six: true }), [state, matchData, scoring]);
+  // Stable callbacks for run scoring buttons (must be before early returns).
+  // Dot ball (0) scores immediately — no zone picker needed.
+  // Runs 1-6 open the ShotZonePicker; the picker's Skip/Confirm commits the ball.
+  const scoreRun = useCallback(
+    (runs) => {
+      if (runs === 0) return scoreDelivery({ batsman_runs: 0 });
+      setPendingShot({ runs, isBoundary: false, isSix: false });
+    },
+    [state, matchData, scoring]
+  );
+  const scoreFour = useCallback(() => setPendingShot({ runs: 4, isBoundary: true, isSix: false }), []);
+  const scoreSix = useCallback(() => setPendingShot({ runs: 6, isBoundary: false, isSix: true }), []);
+  // Stable callback so CelebrationOverlay's React.memo can skip re-renders.
+  const clearCelebration = useCallback(() => setCelebration(null), []);
+
+  const handleShotConfirm = useCallback(
+    ({ zone, commentary, battingHand }) => {
+      const shot = pendingShot;
+      setPendingShot(null);
+      if (!shot) return;
+      if (commentary) setLastCommentary(commentary);
+      scoreDelivery({
+        batsman_runs: shot.runs,
+        is_boundary: shot.isBoundary,
+        is_six: shot.isSix,
+        field_zone: zone,
+        commentary,
+        batting_hand: battingHand,
+      });
+    },
+    [pendingShot, state, matchData, scoring]
+  );
+
+  const handleShotSkip = useCallback(() => {
+    const shot = pendingShot;
+    setPendingShot(null);
+    if (!shot) return;
+    scoreDelivery({
+      batsman_runs: shot.runs,
+      is_boundary: shot.isBoundary,
+      is_six: shot.isSix,
+    });
+  }, [pendingShot, state, matchData, scoring]);
+
+  const handleShotClose = useCallback(() => setPendingShot(null), []);
 
   if (loading) return <View style={s.center}><ActivityIndicator size="large" color={COLORS.ACCENT} /></View>;
 
@@ -711,11 +828,24 @@ const LiveScoringScreen = ({ navigation, route }) => {
       {/* Offline indicator banner */}
       <OfflineBanner />
 
-      {/* Celebration overlay for boundaries/wickets */}
+      {/* Celebration overlay for boundaries/wickets/milestones */}
       <CelebrationOverlay
         type={celebration}
         visible={!!celebration}
-        onFinish={() => setCelebration(null)}
+        onFinish={clearCelebration}
+      />
+
+      {/* Shot-zone picker — opens on run tap (1-6), skippable.
+          Pre-oriented from the striker's batting hand; user can override. */}
+      <ShotZonePicker
+        visible={!!pendingShot}
+        runs={pendingShot?.runs || 0}
+        isBoundary={!!pendingShot?.isBoundary}
+        isSix={!!pendingShot?.isSix}
+        battingHand={state?.striker?.batting_hand || state?.striker?.batting_style || 'right'}
+        onConfirm={handleShotConfirm}
+        onSkip={handleShotSkip}
+        onClose={handleShotClose}
       />
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + 16 }} showsVerticalScrollIndicator={false}>
@@ -849,6 +979,13 @@ const LiveScoringScreen = ({ navigation, route }) => {
               {/* Pulsing dot for next ball */}
               {(state.this_over || []).length < 6 && <PulsingDot />}
             </View>
+            {/* ===== LAST BALL COMMENTARY ===== */}
+            {lastCommentary ? (
+              <View style={s.commentaryStrip}>
+                <Text style={s.commentaryIcon}>"</Text>
+                <Text style={s.commentaryText} numberOfLines={2}>{lastCommentary}</Text>
+              </View>
+            ) : null}
           </View>
         )}
 
@@ -1520,7 +1657,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.BG },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.BG },
-  noMatch: { fontSize: 16, color: COLORS.COMPLETED },
+  noMatch: { fontFamily: FONTS.family, fontSize: 16, color: COLORS.COMPLETED },
 
   /* ---- Header ---- */
   header: {
@@ -1533,12 +1670,12 @@ const s = StyleSheet.create({
     borderBottomColor: COLORS.BORDER,
   },
   headerBack: { padding: 4, marginRight: 12 },
-  headerBackIcon: { fontSize: 22, color: COLORS.TEXT, fontWeight: '600' },
+  headerBackIcon: { fontFamily: FONTS.family, fontSize: 22, color: COLORS.TEXT, fontWeight: '600' },
   headerCenter: { flex: 1 },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: COLORS.TEXT },
-  headerSubtitle: { fontSize: 11, fontWeight: '700', color: COLORS.ACCENT, marginTop: 2, letterSpacing: 0.5 },
+  headerTitle: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '700', color: COLORS.TEXT },
+  headerSubtitle: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.ACCENT, marginTop: 2, letterSpacing: 0.5 },
   headerSettings: { padding: 4, marginLeft: 12 },
-  headerSettingsIcon: { fontSize: 22, color: COLORS.TEXT_SECONDARY },
+  headerSettingsIcon: { fontFamily: FONTS.family, fontSize: 22, color: COLORS.TEXT_SECONDARY },
 
   /* ---- Score Display Header (prominent) ---- */
   scoreHeader: {
@@ -1560,7 +1697,7 @@ const s = StyleSheet.create({
     marginBottom: 12,
   },
   scoreHeaderTeam: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '800',
     color: COLORS.ACCENT_LIGHT,
     letterSpacing: 1.5,
@@ -1572,7 +1709,7 @@ const s = StyleSheet.create({
     gap: 12,
   },
   scoreHeaderScore: {
-    fontSize: 42,
+    fontFamily: FONTS.family,    fontSize: 42,
     fontWeight: '900',
     color: COLORS.TEXT,
     letterSpacing: -1,
@@ -1584,7 +1721,7 @@ const s = StyleSheet.create({
     paddingVertical: 4,
   },
   oversBadgeText: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     fontWeight: '700',
     color: COLORS.TEXT_SECONDARY,
   },
@@ -1600,26 +1737,26 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   rateLabel: {
-    fontSize: 10,
+    fontFamily: FONTS.family,    fontSize: 10,
     fontWeight: '700',
     color: COLORS.TEXT_MUTED,
     letterSpacing: 0.8,
     marginBottom: 2,
   },
   rateLabelAccent: {
-    fontSize: 10,
+    fontFamily: FONTS.family,    fontSize: 10,
     fontWeight: '700',
     color: COLORS.ACCENT_LIGHT,
     letterSpacing: 0.8,
     marginBottom: 2,
   },
   rateValue: {
-    fontSize: 18,
+    fontFamily: FONTS.family,    fontSize: 18,
     fontWeight: '700',
     color: COLORS.TEXT,
   },
   rateValueAccent: {
-    fontSize: 18,
+    fontFamily: FONTS.family,    fontSize: 18,
     fontWeight: '800',
     color: COLORS.ACCENT_LIGHT,
   },
@@ -1648,13 +1785,13 @@ const s = StyleSheet.create({
     paddingBottom: 8,
   },
   cardHeaderLabel: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     fontWeight: '700',
     color: COLORS.TEXT,
     letterSpacing: 1,
     textTransform: 'uppercase',
   },
-  cardHeaderRight: { fontSize: 12, fontWeight: '600', color: COLORS.TEXT_SECONDARY },
+  cardHeaderRight: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '600', color: COLORS.TEXT_SECONDARY },
 
   battingHeaderBar: {
     backgroundColor: 'rgba(19, 236, 19, 0.05)',
@@ -1663,7 +1800,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 6,
   },
-  battingHeaderBarText: { fontSize: 10, fontWeight: '600', color: COLORS.TEXT_MUTED, textTransform: 'uppercase' },
+  battingHeaderBarText: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '600', color: COLORS.TEXT_MUTED, textTransform: 'uppercase' },
 
   batsmanRow: {
     flexDirection: 'row',
@@ -1689,8 +1826,8 @@ const s = StyleSheet.create({
     backgroundColor: 'transparent',
     marginRight: 10,
   },
-  batsmanName: { flex: 1, fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
-  batsmanScore: { fontSize: 14, fontWeight: '700', color: COLORS.TEXT },
+  batsmanName: { fontFamily: FONTS.family, flex: 1, fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
+  batsmanScore: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT },
 
   /* ---- Bowling Card ---- */
   bowlerRow: {
@@ -1699,9 +1836,9 @@ const s = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  bowlerIcon: { fontSize: 16, marginRight: 8 },
-  bowlerName: { flex: 1, fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
-  bowlerStats: { fontSize: 13, fontWeight: '600', color: COLORS.TEXT_SECONDARY },
+  bowlerIcon: { fontFamily: FONTS.family, fontSize: 16, marginRight: 8 },
+  bowlerName: { fontFamily: FONTS.family, flex: 1, fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
+  bowlerStats: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.TEXT_SECONDARY },
 
   overBallsRow: {
     flexDirection: 'row',
@@ -1710,6 +1847,21 @@ const s = StyleSheet.create({
     paddingTop: 4,
     gap: 6,
   },
+  commentaryStrip: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginHorizontal: 14,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: COLORS.SURFACE,
+    borderRadius: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.ACCENT,
+  },
+  commentaryIcon: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '900', color: COLORS.ACCENT, lineHeight: 18 },
+  commentaryText: { fontFamily: FONTS.family, flex: 1, fontSize: 13, color: COLORS.TEXT, fontStyle: 'italic', lineHeight: 18 },
   overBallCircle: {
     width: 32,
     height: 32,
@@ -1725,7 +1877,7 @@ const s = StyleSheet.create({
   overBallExtra: { backgroundColor: 'rgba(255,152,0,0.25)', borderWidth: 1.5, borderColor: COLORS.WARNING },
   overBallNext: { backgroundColor: COLORS.SURFACE, borderWidth: 2, borderColor: COLORS.BORDER_LIGHT, borderStyle: 'dashed' },
   nextBallDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.TEXT_MUTED },
-  overBallText: { fontSize: 11, fontWeight: '700' },
+  overBallText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700' },
   overBallTextDot: { color: '#999999' },
   overBallTextDefault: { color: COLORS.TEXT },
   overBallTextFour: { color: COLORS.SUCCESS },
@@ -1745,7 +1897,7 @@ const s = StyleSheet.create({
     backgroundColor: COLORS.CARD, paddingHorizontal: 24, paddingVertical: 14,
     borderRadius: 12, borderWidth: 1, borderColor: COLORS.BORDER,
   },
-  scoringOverlayText: { fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
+  scoringOverlayText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
 
   /* Run buttons row: 0, 1, 2, 3 */
   runRow: {
@@ -1766,9 +1918,9 @@ const s = StyleSheet.create({
     backgroundColor: '#333333',
     borderColor: '#555555',
   },
-  runBtnNumber: { fontSize: 28, fontWeight: '700', color: COLORS.TEXT },
+  runBtnNumber: { fontFamily: FONTS.family, fontSize: 28, fontWeight: '700', color: COLORS.TEXT },
   runBtnNumberDot: { color: '#999999' },
-  runBtnLabel: { fontSize: 10, fontWeight: '600', color: COLORS.TEXT_MUTED, marginTop: 2, textTransform: 'uppercase' },
+  runBtnLabel: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '600', color: COLORS.TEXT_MUTED, marginTop: 2, textTransform: 'uppercase' },
   runBtnLabelDot: { color: '#777777' },
 
   /* Boundary row: 4, 6 */
@@ -1794,10 +1946,10 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(30,136,229,0.12)',
     borderColor: 'rgba(30,136,229,0.4)',
   },
-  boundaryBtnNumberFour: { fontSize: 28, fontWeight: '700', color: COLORS.SUCCESS },
-  boundaryBtnLabelFour: { fontSize: 10, fontWeight: '700', color: COLORS.SUCCESS, marginTop: 2, letterSpacing: 0.5 },
-  boundaryBtnNumberSix: { fontSize: 28, fontWeight: '700', color: COLORS.ACCENT_LIGHT },
-  boundaryBtnLabelSix: { fontSize: 10, fontWeight: '700', color: COLORS.ACCENT_LIGHT, marginTop: 2, letterSpacing: 0.5 },
+  boundaryBtnNumberFour: { fontFamily: FONTS.family, fontSize: 28, fontWeight: '700', color: COLORS.SUCCESS },
+  boundaryBtnLabelFour: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700', color: COLORS.SUCCESS, marginTop: 2, letterSpacing: 0.5 },
+  boundaryBtnNumberSix: { fontFamily: FONTS.family, fontSize: 28, fontWeight: '700', color: COLORS.ACCENT_LIGHT },
+  boundaryBtnLabelSix: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700', color: COLORS.ACCENT_LIGHT, marginTop: 2, letterSpacing: 0.5 },
 
   /* Extras row: Wide, No Ball, Bye/LB */
   extrasRow: {
@@ -1814,7 +1966,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  extraBtnText: { fontSize: 11, fontWeight: '700', color: COLORS.TEXT_SECONDARY, letterSpacing: 0.3 },
+  extraBtnText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.TEXT_SECONDARY, letterSpacing: 0.3 },
 
   /* Wicket button */
   wicketBtn: {
@@ -1831,8 +1983,8 @@ const s = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  wicketBtnIcon: { fontSize: 16, marginRight: 8 },
-  wicketBtnText: { fontSize: 15, fontWeight: '700', color: COLORS.TEXT, letterSpacing: 0.5 },
+  wicketBtnIcon: { fontFamily: FONTS.family, fontSize: 16, marginRight: 8 },
+  wicketBtnText: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '700', color: COLORS.TEXT, letterSpacing: 0.5 },
 
   /* Undo button */
   undoBtn: {
@@ -1844,8 +1996,8 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 10,
   },
-  undoBtnIcon: { fontSize: 16, color: COLORS.TEXT, marginRight: 8 },
-  undoBtnText: { fontSize: 15, fontWeight: '700', color: COLORS.TEXT, letterSpacing: 0.5 },
+  undoBtnIcon: { fontFamily: FONTS.family, fontSize: 16, color: COLORS.TEXT, marginRight: 8 },
+  undoBtnText: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '700', color: COLORS.TEXT, letterSpacing: 0.5 },
 
   /* ---- Broadcast ---- */
   adminActionsRow: {
@@ -1856,33 +2008,33 @@ const s = StyleSheet.create({
     paddingVertical: 12, borderRadius: 12,
     borderWidth: 1, borderColor: COLORS.WARNING + '40', backgroundColor: COLORS.WARNING + '10',
   },
-  broadcastBtnText: { fontSize: 11, fontWeight: '700', color: COLORS.WARNING, letterSpacing: 0.3 },
+  broadcastBtnText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.WARNING, letterSpacing: 0.3 },
   noResultBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     paddingVertical: 12, borderRadius: 12,
     borderWidth: 1, borderColor: COLORS.DANGER + '40', backgroundColor: COLORS.DANGER + '10',
   },
-  noResultBtnText: { fontSize: 11, fontWeight: '700', color: COLORS.DANGER, letterSpacing: 0.3 },
+  noResultBtnText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.DANGER, letterSpacing: 0.3 },
   broadcastBlockOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: COLORS.BG + 'F0', zIndex: 10,
     alignItems: 'center', justifyContent: 'center', padding: 24, borderRadius: 16,
   },
-  broadcastBlockTitle: { fontSize: 18, fontWeight: '800', color: COLORS.WARNING, marginTop: 12 },
-  broadcastBlockText: { fontSize: 14, color: COLORS.TEXT_SECONDARY, marginTop: 8, textAlign: 'center', lineHeight: 20 },
+  broadcastBlockTitle: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '800', color: COLORS.WARNING, marginTop: 12 },
+  broadcastBlockText: { fontFamily: FONTS.family, fontSize: 14, color: COLORS.TEXT_SECONDARY, marginTop: 8, textAlign: 'center', lineHeight: 20 },
   broadcastBlockBtn: {
     marginTop: 20, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12,
     backgroundColor: COLORS.WARNING, alignItems: 'center',
   },
-  broadcastBlockBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  broadcastBlockBtnText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: '#fff' },
   activeBroadcastBar: {
     flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10,
     paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10,
     backgroundColor: COLORS.WARNING + '15', borderWidth: 1, borderColor: COLORS.WARNING + '30',
   },
-  activeBroadcastText: { flex: 1, fontSize: 13, fontWeight: '600', color: COLORS.WARNING },
+  activeBroadcastText: { fontFamily: FONTS.family, flex: 1, fontSize: 13, fontWeight: '600', color: COLORS.WARNING },
   broadcastInput: {
-    backgroundColor: COLORS.SURFACE, borderRadius: 12, padding: 14,
+    fontFamily: FONTS.family,    backgroundColor: COLORS.SURFACE, borderRadius: 12, padding: 14,
     fontSize: 15, color: COLORS.TEXT, borderWidth: 1, borderColor: COLORS.BORDER,
     minHeight: 56, textAlignVertical: 'top',
   },
@@ -1890,21 +2042,21 @@ const s = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
     backgroundColor: COLORS.SURFACE, borderWidth: 1, borderColor: COLORS.BORDER,
   },
-  broadcastPresetText: { fontSize: 12, fontWeight: '600', color: COLORS.TEXT_SECONDARY },
+  broadcastPresetText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '600', color: COLORS.TEXT_SECONDARY },
 
   /* ---- Viewer bottom ---- */
   viewerBottom: { paddingHorizontal: 20, paddingTop: 40 },
   viewerInfoBox: { alignItems: 'center', marginBottom: 30 },
-  viewerInfoIcon: { fontSize: 40 },
-  viewerInfoTitle: { fontSize: 18, fontWeight: '700', color: COLORS.TEXT, marginTop: 12 },
-  viewerInfoSub: { fontSize: 13, color: COLORS.TEXT_MUTED, marginTop: 4 },
+  viewerInfoIcon: { fontFamily: FONTS.family, fontSize: 40 },
+  viewerInfoTitle: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '700', color: COLORS.TEXT, marginTop: 12 },
+  viewerInfoSub: { fontFamily: FONTS.family, fontSize: 13, color: COLORS.TEXT_MUTED, marginTop: 4 },
   viewerActions: { flexDirection: 'row', justifyContent: 'center', gap: 16 },
   viewerBtn: {
     backgroundColor: COLORS.CARD, borderRadius: 14, padding: 20, alignItems: 'center', minWidth: 120,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
   },
-  viewerBtnIcon: { fontSize: 28 },
-  viewerBtnText: { fontSize: 13, fontWeight: '600', color: COLORS.TEXT, marginTop: 6 },
+  viewerBtnIcon: { fontFamily: FONTS.family, fontSize: 28 },
+  viewerBtnText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.TEXT, marginTop: 6 },
 
   /* ---- Modals ---- */
   modalOverlay: { flex: 1, backgroundColor: COLORS.OVERLAY, justifyContent: 'flex-end' },
@@ -1912,31 +2064,31 @@ const s = StyleSheet.create({
     backgroundColor: COLORS.CARD, borderTopLeftRadius: 20, borderTopRightRadius: 20,
     padding: 20, paddingBottom: 40,
   },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: COLORS.TEXT, marginBottom: 16 },
+  modalTitle: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '700', color: COLORS.TEXT, marginBottom: 16 },
   modalGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   modalExtraBtn: {
     paddingHorizontal: 16, paddingVertical: 14, borderRadius: 12,
     backgroundColor: COLORS.SURFACE, borderWidth: 1, borderColor: COLORS.BORDER,
   },
   modalExtraBtnActive: { backgroundColor: COLORS.ACCENT, borderColor: COLORS.ACCENT },
-  modalExtraBtnText: { fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
-  modalExtraDesc: { fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 2 },
+  modalExtraBtnText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
+  modalExtraDesc: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 2 },
   confirmBtn: {
     backgroundColor: COLORS.ACCENT, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 16, minHeight: 48,
   },
-  confirmBtnText: { color: COLORS.TEXT, fontSize: 15, fontWeight: '700' },
+  confirmBtnText: { fontFamily: FONTS.family, color: COLORS.TEXT, fontSize: 15, fontWeight: '700' },
   modalClose: { alignItems: 'center', marginTop: 12 },
-  modalCloseText: { color: COLORS.TEXT_MUTED, fontSize: 14, fontWeight: '600' },
+  modalCloseText: { fontFamily: FONTS.family, color: COLORS.TEXT_MUTED, fontSize: 14, fontWeight: '600' },
 
   bowlerOption: {
     paddingVertical: 14, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: COLORS.SURFACE,
   },
   bowlerOptionActive: { backgroundColor: COLORS.SUCCESS_BG },
-  bowlerOptionText: { fontSize: 15, color: COLORS.TEXT, fontWeight: '500' },
+  bowlerOptionText: { fontFamily: FONTS.family, fontSize: 15, color: COLORS.TEXT, fontWeight: '500' },
 
-  modalSubtitle: { fontSize: 14, color: COLORS.TEXT_SECONDARY, marginBottom: 12 },
-  checkMark: { fontSize: 18, color: COLORS.ACCENT, fontWeight: '700' },
-  playerRole: { fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 2, textTransform: 'capitalize' },
+  modalSubtitle: { fontFamily: FONTS.family, fontSize: 14, color: COLORS.TEXT_SECONDARY, marginBottom: 12 },
+  checkMark: { fontFamily: FONTS.family, fontSize: 18, color: COLORS.ACCENT, fontWeight: '700' },
+  playerRole: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 2, textTransform: 'capitalize' },
 
   /* ---- Run Out Details ---- */
   runOutRunsRow: {
@@ -1958,7 +2110,7 @@ const s = StyleSheet.create({
     borderColor: COLORS.ACCENT,
   },
   runOutRunBtnText: {
-    fontSize: 18,
+    fontFamily: FONTS.family,    fontSize: 18,
     fontWeight: '700',
     color: COLORS.TEXT_SECONDARY,
   },
@@ -1985,7 +2137,7 @@ const s = StyleSheet.create({
     backgroundColor: COLORS.SUCCESS_BG,
   },
   runOutEndBtnText: {
-    flex: 1,
+    fontFamily: FONTS.family,    flex: 1,
     fontSize: 14,
     fontWeight: '600',
     color: COLORS.TEXT_SECONDARY,
@@ -2006,7 +2158,7 @@ const s = StyleSheet.create({
     backgroundColor: COLORS.SURFACE,
   },
   swapBattersText: {
-    fontSize: 11,
+    fontFamily: FONTS.family,    fontSize: 11,
     fontWeight: '700',
     color: COLORS.ACCENT,
     letterSpacing: 0.5,
@@ -2034,7 +2186,7 @@ const s = StyleSheet.create({
     borderColor: COLORS.RED,
   },
   wicketTypeBtnText: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     fontWeight: '600',
     color: COLORS.TEXT_SECONDARY,
     textTransform: 'capitalize',
@@ -2057,7 +2209,7 @@ const s = StyleSheet.create({
     backgroundColor: COLORS.SUCCESS_BG,
   },
   playerOptionText: {
-    flex: 1,
+    fontFamily: FONTS.family,    flex: 1,
     fontSize: 15,
     color: COLORS.TEXT,
     fontWeight: '500',
@@ -2078,7 +2230,7 @@ const s = StyleSheet.create({
     borderColor: COLORS.SUCCESS,
   },
   playerAvatarText: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '700',
     color: COLORS.TEXT_SECONDARY,
   },
@@ -2093,7 +2245,7 @@ const s = StyleSheet.create({
     marginRight: 8,
   },
   battingOrderText: {
-    fontSize: 10,
+    fontFamily: FONTS.family,    fontSize: 10,
     fontWeight: '700',
     color: COLORS.ACCENT_LIGHT,
   },
@@ -2114,12 +2266,12 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   overSummaryStatValue: {
-    fontSize: 22,
+    fontFamily: FONTS.family,    fontSize: 22,
     fontWeight: '800',
     color: COLORS.TEXT,
   },
   overSummaryStatLabel: {
-    fontSize: 10,
+    fontFamily: FONTS.family,    fontSize: 10,
     fontWeight: '600',
     color: COLORS.TEXT_MUTED,
     textTransform: 'uppercase',
@@ -2146,9 +2298,9 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.WARNING,
   },
-  chaseBarText: { fontSize: 14, fontWeight: '700', color: COLORS.WARNING },
-  chaseBarDLS: { fontSize: 11, fontWeight: '600', color: COLORS.TEXT_SECONDARY, marginTop: 3 },
-  chaseBarRR: { fontSize: 13, fontWeight: '700', color: COLORS.WARNING },
+  chaseBarText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.WARNING },
+  chaseBarDLS: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '600', color: COLORS.TEXT_SECONDARY, marginTop: 3 },
+  chaseBarRR: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.WARNING },
 
   /* ---- Free Hit Badge ---- */
   freeHitBadge: {
@@ -2161,7 +2313,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.LIVE,
   },
-  freeHitText: { fontSize: 13, fontWeight: '700', color: COLORS.LIVE },
+  freeHitText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.LIVE },
 });
 
 export default LiveScoringScreen;

@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import BackButton from '../../components/BackButton';
 
 const FAQ_ITEMS = [
@@ -100,15 +100,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.BG },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingBottom: 12, backgroundColor: COLORS.CARD,
-    borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
+    paddingHorizontal: 16, paddingBottom: 12, backgroundColor: COLORS.BG,
   },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  backArrow: { fontSize: 22, color: COLORS.TEXT, fontWeight: '600' },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
+  backArrow: { fontFamily: FONTS.family, fontSize: 22, color: COLORS.TEXT, fontWeight: '600' },
+  headerTitle: { fontFamily: FONTS.family, fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
   content: { padding: 20, paddingBottom: 40 },
 
-  sectionLabel: { fontSize: 13, fontWeight: '600', color: COLORS.TEXT_SECONDARY, marginBottom: 8, marginTop: 16 },
+  sectionLabel: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.TEXT_SECONDARY, marginBottom: 8, marginTop: 16 },
   card: {
     backgroundColor: COLORS.CARD, borderRadius: 14, borderWidth: 1, borderColor: COLORS.BORDER,
     overflow: 'hidden',
@@ -119,20 +118,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 14,
   },
-  faqQuestion: { fontSize: 14, fontWeight: '600', color: COLORS.TEXT, flex: 1, marginRight: 8 },
-  faqArrow: { fontSize: 18, color: COLORS.TEXT_SECONDARY },
+  faqQuestion: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.TEXT, flex: 1, marginRight: 8 },
+  faqArrow: { fontFamily: FONTS.family, fontSize: 18, color: COLORS.TEXT_SECONDARY },
   faqAnswerWrap: { paddingHorizontal: 16, paddingBottom: 14 },
-  faqAnswer: { fontSize: 13, color: COLORS.TEXT_SECONDARY, lineHeight: 20 },
+  faqAnswer: { fontFamily: FONTS.family, fontSize: 13, color: COLORS.TEXT_SECONDARY, lineHeight: 20 },
 
   contactRow: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14,
   },
-  contactIcon: { fontSize: 20, marginRight: 12 },
-  contactTitle: { fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
-  contactDesc: { fontSize: 12, color: COLORS.ACCENT, marginTop: 2 },
+  contactIcon: { fontFamily: FONTS.family, fontSize: 20, marginRight: 12 },
+  contactTitle: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
+  contactDesc: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.ACCENT, marginTop: 2 },
 
   appInfo: { alignItems: 'center', marginTop: 32 },
-  appInfoText: { fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 4 },
+  appInfoText: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 4 },
 });
 
 export default HelpScreen;

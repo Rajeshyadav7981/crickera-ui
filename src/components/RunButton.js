@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { Text, TouchableOpacity, Animated, StyleSheet, Platform } from 'react-native';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 
 let Haptics;
 try { Haptics = require('expo-haptics'); } catch {}
@@ -95,15 +95,15 @@ const VARIANT_STYLES = {
 const SIZE_STYLES = {
   small: {
     button: { width: 48, height: 48, borderRadius: 14 },
-    label: { fontSize: 14 },
+    label: { fontFamily: FONTS.family, fontSize: 14 },
   },
   medium: {
     button: { width: 56, height: 56, borderRadius: 16 },
-    label: { fontSize: 16 },
+    label: { fontFamily: FONTS.family, fontSize: 16 },
   },
   large: {
     button: { width: 68, height: 68, borderRadius: 20 },
-    label: { fontSize: 22 },
+    label: { fontFamily: FONTS.family, fontSize: 22 },
   },
 };
 

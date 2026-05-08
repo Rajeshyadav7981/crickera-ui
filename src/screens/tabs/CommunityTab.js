@@ -13,7 +13,7 @@ import { useToast } from '../../components/Toast';
 import { communityAPI } from '../../services/api';
 import { usePosts, usePolls, COMMUNITY_KEYS } from '../../hooks/useCommunity';
 import { useQueryClient } from '@tanstack/react-query';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import Avatar from '../../components/Avatar';
 import PostCard from '../../components/PostCard';
 import HashtagBar from '../../components/HashtagBar';
@@ -35,10 +35,10 @@ const TAGS = [
 const DEPTH_COLORS = [COLORS.ACCENT, COLORS.SUCCESS, COLORS.WARNING, COLORS.PURPLE, '#00BCD4'];
 
 const SORT_OPTIONS = [
-  { key: 'hot', label: 'Hot', icon: 'fire' },
-  { key: 'new', label: 'New', icon: 'clock-outline' },
-  { key: 'top', label: 'Top', icon: 'arrow-up-bold' },
-  { key: 'mine', label: 'Mine', icon: 'account-outline' },
+  { key: 'hot', label: 'Hot', icon: 'fire', activeColor: '#FF6B35' },
+  { key: 'new', label: 'New', icon: 'clock-outline', activeColor: COLORS.ACCENT },
+  { key: 'top', label: 'Top', icon: 'arrow-up-bold', activeColor: COLORS.SUCCESS },
+  { key: 'mine', label: 'Mine', icon: 'account-outline', activeColor: COLORS.PURPLE },
 ];
 
 // ── Main Component ──
@@ -60,7 +60,12 @@ const CommunityTab = () => {
   const posts = useMemo(() => postsPages?.pages?.flatMap(p => p.posts) || [], [postsPages]);
   const polls = pollsData || [];
   const loading = postsLoading;
-  const refreshing = postsFetching && !postsLoading && !isFetchingNextPage;
+  // Manual refresh = the user pulled to refresh (we want skeleton).
+  // postsFetching is also true on background refetches we trigger from
+  // mutations — those should NOT show the skeleton (Instagram doesn't reload
+  // the feed when you tap like). Track manual pulls explicitly.
+  const [manualRefreshing, setManualRefreshing] = useState(false);
+  const refreshing = manualRefreshing;
 
   // Create/Edit post
   const [showCompose, setShowCompose] = useState(false);
@@ -95,10 +100,44 @@ const CommunityTab = () => {
     feedListRef.current?.scrollToOffset({ offset: 0, animated: false });
   }, [sortBy, requireAuth]);
 
-  const onCommunityRefresh = useCallback(() => {
-    refetchPosts();
-    refetchPolls();
+  const onCommunityRefresh = useCallback(async () => {
+    setManualRefreshing(true);
+    try {
+      await Promise.all([refetchPosts(), refetchPolls()]);
+    } finally {
+      setManualRefreshing(false);
+    }
   }, [refetchPosts, refetchPolls]);
+
+  // Surgical cache updaters — keep the feed visually stable so a like or
+  // comment doesn't trigger a refetch + repaint flash. Applies the updater
+  // to every sort variant (hot/new/top/mine) so switching tabs doesn't
+  // surface stale counts.
+  const mutatePostInCache = useCallback((postId, updater) => {
+    queryClient.setQueriesData({ queryKey: ['community', 'posts'] }, (old) => {
+      if (!old) return old;
+      return {
+        ...old,
+        pages: (old.pages || []).map(page => ({
+          ...page,
+          posts: (page.posts || []).map(p => p.id === postId ? updater(p) : p),
+        })),
+      };
+    });
+  }, [queryClient]);
+
+  const removePostFromCache = useCallback((postId) => {
+    queryClient.setQueriesData({ queryKey: ['community', 'posts'] }, (old) => {
+      if (!old) return old;
+      return {
+        ...old,
+        pages: (old.pages || []).map(page => ({
+          ...page,
+          posts: (page.posts || []).filter(p => p.id !== postId),
+        })),
+      };
+    });
+  }, [queryClient]);
 
 
   // ── Post Actions ──
@@ -125,11 +164,15 @@ const CommunityTab = () => {
 
       if (editingPost) {
         await communityAPI.updatePost(editingPost.id, { text, title, tag, image_url });
+        // Edit in place — no feed reload.
+        mutatePostInCache(editingPost.id, (p) => ({ ...p, text, title, tag, image_url }));
       } else {
+        // Creates need a new row injected at the top — refetch is the simplest
+        // correct path here (compose flow already shows a modal exit).
         await communityAPI.createPost(text, title, tag, image_url);
+        queryClient.invalidateQueries({ queryKey: COMMUNITY_KEYS.all });
       }
       resetCompose();
-      queryClient.invalidateQueries({ queryKey: COMMUNITY_KEYS.all });
     } catch {
       toast.error('Failed to save post');
     } finally {
@@ -156,12 +199,23 @@ const CommunityTab = () => {
   const handleLike = useCallback(async (postId) => {
     if (!postId) return;
     if (!requireAuth('like a post')) return;
-    // PostCard handles optimistic UI internally — just fire the API
-    // Fire-and-forget — PostCard handles optimistic UI
-    communityAPI.toggleLike(postId)
-      .then(() => queryClient.invalidateQueries({ queryKey: COMMUNITY_KEYS.all }))
-      .catch(() => {});
-  }, [queryClient, requireAuth]);
+    // Optimistic mutation against the React Query cache — PostCard's local
+    // heart state stays in sync because the prop `liked`/`likes_count` it
+    // reads are now flipped immediately. No invalidate, no refetch, no flash.
+    mutatePostInCache(postId, (p) => ({
+      ...p,
+      liked: !p.liked,
+      likes_count: Math.max(0, (p.likes_count || 0) + (p.liked ? -1 : 1)),
+    }));
+    // Fire-and-forget. On failure, revert the optimistic flip.
+    communityAPI.toggleLike(postId).catch(() => {
+      mutatePostInCache(postId, (p) => ({
+        ...p,
+        liked: !p.liked,
+        likes_count: Math.max(0, (p.likes_count || 0) + (p.liked ? -1 : 1)),
+      }));
+    });
+  }, [requireAuth, mutatePostInCache]);
 
   const showPostOptions = (post) => {
     if (post.user?.id !== user?.id) return;
@@ -187,10 +241,14 @@ const CommunityTab = () => {
               confirmLabel: 'Delete',
               destructive: true,
               onConfirm: async () => {
+                // Optimistic remove — feed updates instantly.
+                removePostFromCache(post.id);
                 try {
                   await communityAPI.deletePost(post.id);
+                } catch {
+                  // On failure, refetch so the post reappears authoritatively.
                   queryClient.invalidateQueries({ queryKey: COMMUNITY_KEYS.all });
-                } catch {}
+                }
               },
             });
           },
@@ -250,12 +308,15 @@ const CommunityTab = () => {
     };
     setComments(prev => [...prev, optimistic]);
     setNewComment('');
+    // Bump the count on the post card in place — no feed refetch.
+    mutatePostInCache(commentModal, (p) => ({ ...p, comments_count: (p.comments_count || 0) + 1 }));
     try {
       await communityAPI.addComment(commentModal, text);
       refreshComments();
-      queryClient.invalidateQueries({ queryKey: COMMUNITY_KEYS.all });
     } catch {
       setComments(prev => prev.filter(c => c.id !== optimistic.id));
+      // Revert the count bump.
+      mutatePostInCache(commentModal, (p) => ({ ...p, comments_count: Math.max(0, (p.comments_count || 0) - 1) }));
     }
   };
 
@@ -277,15 +338,16 @@ const CommunityTab = () => {
       copy.splice(idx + 1, 0, optimistic);
       return copy;
     });
-    // comment count will update on next refetch
     setReplyText('');
     setReplyingTo(null);
+    // Bump comment count optimistically — no feed refetch.
+    mutatePostInCache(commentModal, (p) => ({ ...p, comments_count: (p.comments_count || 0) + 1 }));
     try {
       await communityAPI.addComment(commentModal, text, parentId);
       refreshComments();
-      queryClient.invalidateQueries({ queryKey: COMMUNITY_KEYS.all });
     } catch {
       setComments(prev => prev.filter(c => c.id !== optimistic.id));
+      mutatePostInCache(commentModal, (p) => ({ ...p, comments_count: Math.max(0, (p.comments_count || 0) - 1) }));
     }
   };
 
@@ -310,11 +372,12 @@ const CommunityTab = () => {
               destructive: true,
               onConfirm: async () => {
                 setComments(prev => prev.filter(c => c.id !== comment.id));
+                // Decrement count in feed without refetching.
+                mutatePostInCache(commentModal, (p) => ({ ...p, comments_count: Math.max(0, (p.comments_count || 0) - 1) }));
                 try {
                   await communityAPI.deleteComment(commentModal, comment.id);
                 } catch {}
                 refreshComments();
-                queryClient.invalidateQueries({ queryKey: COMMUNITY_KEYS.all });
               },
             });
           },
@@ -445,43 +508,43 @@ const CommunityTab = () => {
 
   return (
     <View style={[s.container, { paddingTop: insets.top }]}>
-      {/* Header */}
-      <View style={s.header}>
-        <Text style={s.headerTitle}>Community</Text>
-        <View style={s.headerRight}>
-          <TouchableOpacity style={s.headerIconBtn} onPress={() => {
-            if (!requireAuth('create a post')) return;
-            resetCompose();
-            setShowCompose(true);
-          }}>
-            <MaterialCommunityIcons name="plus-circle" size={28} color={COLORS.ACCENT} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* ── Tab Bar ── */}
-      <View style={s.tabBar}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabBarContent}>
+      {/* ── Segmented Tab Bar ── */}
+      <View style={s.tabBarWrap}>
+        <View style={s.tabBarInner}>
           {SORT_OPTIONS.map((opt) => {
             const isActive = sortBy === opt.key;
             return (
               <TouchableOpacity
                 key={opt.key}
-                style={s.tab}
+                style={[s.tab, isActive && s.tabActive]}
                 onPress={() => switchTab(opt.key)}
-                activeOpacity={0.7}
+                activeOpacity={0.8}
               >
-                <MaterialCommunityIcons name={opt.icon} size={16} color={isActive ? COLORS.ACCENT : COLORS.TEXT_MUTED} />
+                <MaterialCommunityIcons
+                  name={opt.icon}
+                  size={16}
+                  color={isActive ? COLORS.ACCENT : COLORS.TEXT_MUTED}
+                />
                 <Text style={[s.tabLabel, isActive && s.tabLabelActive]}>{opt.label}</Text>
-                {isActive && <View style={s.tabIndicator} />}
               </TouchableOpacity>
             );
           })}
-        </ScrollView>
+        </View>
+
+        {/* Compose button */}
+        <TouchableOpacity style={s.composeBtn} onPress={() => {
+          if (!requireAuth('create a post')) return;
+          resetCompose();
+          setShowCompose(true);
+        }} activeOpacity={0.8}>
+          <Feather name="plus" size={20} color="#fff" />
+        </TouchableOpacity>
       </View>
 
       {/* ── Feed ── */}
-      {loading ? <FeedSkeleton /> : (
+      {/* Skeleton on initial load AND on pull-to-refresh, so the user gets a
+          clear loading affordance instead of a stale → fresh content flash. */}
+      {(loading || manualRefreshing) ? <FeedSkeleton /> : (
         <FlashList
           ref={feedListRef}
           data={feedData}
@@ -867,24 +930,24 @@ const cs = StyleSheet.create({
   commentBody: { flex: 1 },
   commentBubble: {},
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  commentName: { fontSize: 13, fontWeight: '700', color: COLORS.TEXT },
-  commentTime: { fontSize: 11, fontWeight: '400', color: COLORS.TEXT_MUTED },
+  commentName: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.TEXT },
+  commentTime: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '400', color: COLORS.TEXT_MUTED },
   editRow: { marginTop: 2 },
   editInput: {
-    backgroundColor: COLORS.SURFACE, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
+    fontFamily: FONTS.family,    backgroundColor: COLORS.BG, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
     fontSize: 14, color: COLORS.TEXT, borderWidth: 1, borderColor: COLORS.ACCENT + '40', minHeight: 40,
   },
   editBtns: { flexDirection: 'row', justifyContent: 'flex-end', gap: 14, marginTop: 6 },
-  editCancel: { fontSize: 13, fontWeight: '600', color: COLORS.TEXT_MUTED },
-  editSave: { fontSize: 13, fontWeight: '700', color: COLORS.ACCENT },
-  commentText: { fontSize: 14, color: COLORS.TEXT_SECONDARY, lineHeight: 19, marginTop: 2 },
+  editCancel: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.TEXT_MUTED },
+  editSave: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.ACCENT },
+  commentText: { fontFamily: FONTS.family, fontSize: 14, color: COLORS.TEXT_SECONDARY, lineHeight: 19, marginTop: 2 },
   commentActions: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 4 },
   cAction: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 2 },
-  cActionText: { fontSize: 12, color: COLORS.TEXT_MUTED, fontWeight: '600' },
-  cActionTime: { fontSize: 11, color: COLORS.TEXT_HINT },
+  cActionText: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, fontWeight: '600' },
+  cActionTime: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_HINT },
   replyInputRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
   replyInput: {
-    flex: 1, backgroundColor: COLORS.SURFACE, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 6,
+    fontFamily: FONTS.family,    flex: 1, backgroundColor: COLORS.BG, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 6,
     fontSize: 13, color: COLORS.TEXT, maxHeight: 60,
   },
   replySend: { width: 26, height: 26, borderRadius: 13, backgroundColor: COLORS.ACCENT, alignItems: 'center', justifyContent: 'center' },
@@ -896,24 +959,38 @@ const s = StyleSheet.create({
   center: { flex: 1, backgroundColor: COLORS.BG, alignItems: 'center', justifyContent: 'center' },
 
   // Header
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 12 },
-  headerTitle: { fontSize: 24, fontWeight: '900', color: COLORS.TEXT },
-  headerRight: { flexDirection: 'row', gap: 12 },
-  headerIconBtn: { padding: 4 },
+  // Compose FAB
+  composeBtn: {
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: COLORS.ACCENT,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: COLORS.ACCENT, shadowOpacity: 0.3, shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 }, elevation: 4,
+  },
 
   // Tab Bar
-  tabBar: { backgroundColor: COLORS.CARD, borderBottomWidth: 0.5, borderBottomColor: COLORS.BORDER },
-  tabBarContent: { paddingHorizontal: 8 },
+  tabBarWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: COLORS.CARD,
+    borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
+  },
+  tabBarInner: {
+    flex: 1, flexDirection: 'row',
+    backgroundColor: COLORS.BG,
+    borderRadius: 12, padding: 3,
+  },
   tab: {
-    alignItems: 'center', paddingHorizontal: 18, paddingVertical: 10,
-    flexDirection: 'row', gap: 6, position: 'relative',
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 4, paddingVertical: 9, borderRadius: 10,
   },
-  tabLabel: { fontSize: 14, fontWeight: '600', color: COLORS.TEXT_MUTED },
+  tabActive: {
+    backgroundColor: COLORS.CARD,
+    shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 }, elevation: 2,
+  },
+  tabLabel: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '600', color: COLORS.TEXT_MUTED },
   tabLabelActive: { color: COLORS.ACCENT, fontWeight: '700' },
-  tabIndicator: {
-    position: 'absolute', bottom: 0, left: 12, right: 12, height: 3,
-    backgroundColor: COLORS.ACCENT, borderTopLeftRadius: 3, borderTopRightRadius: 3,
-  },
 
 
   // Compose Modal (Full-screen)
@@ -930,10 +1007,10 @@ const s = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.BORDER,
   },
-  composeCancel: { fontSize: 15, color: COLORS.TEXT_MUTED, fontWeight: '600' },
-  composeHeaderTitle: { fontSize: 17, fontWeight: '800', color: COLORS.TEXT },
+  composeCancel: { fontFamily: FONTS.family, fontSize: 15, color: COLORS.TEXT_MUTED, fontWeight: '600' },
+  composeHeaderTitle: { fontFamily: FONTS.family, fontSize: 17, fontWeight: '800', color: COLORS.TEXT },
   composePostBtn: { backgroundColor: COLORS.ACCENT, paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20 },
-  composePostText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  composePostText: { fontFamily: FONTS.family, color: '#fff', fontWeight: '700', fontSize: 14 },
   composeBody: {
     flex: 1,
     paddingHorizontal: 16,
@@ -964,14 +1041,14 @@ const s = StyleSheet.create({
     borderRadius: 4,
   },
   tagChipText: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '600',
     color: COLORS.TEXT_SECONDARY,
   },
 
   // Compose Inputs
   composeTitleInput: {
-    fontSize: 20,
+    fontFamily: FONTS.family,    fontSize: 20,
     fontWeight: '700',
     color: COLORS.TEXT,
     paddingVertical: 12,
@@ -979,7 +1056,7 @@ const s = StyleSheet.create({
     borderBottomColor: COLORS.BORDER,
   },
   composeTextInput: {
-    fontSize: 16,
+    fontFamily: FONTS.family,    fontSize: 16,
     color: COLORS.TEXT,
     minHeight: 150,
     lineHeight: 24,
@@ -989,14 +1066,14 @@ const s = StyleSheet.create({
   imageUrlRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.SURFACE,
+    backgroundColor: COLORS.BG,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginTop: 8,
   },
   imageUrlInput: {
-    flex: 1,
+    fontFamily: FONTS.family,    flex: 1,
     fontSize: 14,
     color: COLORS.TEXT,
   },
@@ -1021,41 +1098,41 @@ const s = StyleSheet.create({
 
   // Post type selector
   typeRow: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 8, gap: 8, borderBottomWidth: 1, borderBottomColor: COLORS.BORDER },
-  typeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 12, backgroundColor: COLORS.SURFACE },
+  typeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 12, backgroundColor: COLORS.BG },
   typeBtnActive: { backgroundColor: COLORS.ACCENT },
-  typeBtnText: { fontSize: 14, fontWeight: '600', color: COLORS.TEXT_MUTED },
+  typeBtnText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.TEXT_MUTED },
   typeBtnTextActive: { color: '#fff' },
 
   // Compose user row
   composeUserRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 16, marginBottom: 8 },
-  composePrompt: { fontSize: 15, color: COLORS.TEXT_MUTED, fontWeight: '500' },
+  composePrompt: { fontFamily: FONTS.family, fontSize: 15, color: COLORS.TEXT_MUTED, fontWeight: '500' },
 
   // Character counter
-  charCounter: { fontSize: 12, color: COLORS.TEXT_MUTED, textAlign: 'right', paddingTop: 4 },
+  charCounter: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, textAlign: 'right', paddingTop: 4 },
 
   // Image toolbar
 
   // Poll creator
-  pollQuestionInput: { fontSize: 18, fontWeight: '700', color: COLORS.TEXT, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: COLORS.BORDER, minHeight: 60 },
-  pollOptionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12, backgroundColor: COLORS.SURFACE, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
+  pollQuestionInput: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '700', color: COLORS.TEXT, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: COLORS.BORDER, minHeight: 60 },
+  pollOptionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12, backgroundColor: COLORS.BG, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
   pollOptionDot: { width: 10, height: 10, borderRadius: 5 },
-  pollOptionInput: { flex: 1, fontSize: 15, color: COLORS.TEXT, padding: 0 },
+  pollOptionInput: { fontFamily: FONTS.family, flex: 1, fontSize: 15, color: COLORS.TEXT, padding: 0 },
   addOptionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, paddingVertical: 10 },
-  addOptionText: { fontSize: 14, fontWeight: '600', color: COLORS.ACCENT },
+  addOptionText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.ACCENT },
 
   // Comments Modal
   modalOverlay: { flex: 1, backgroundColor: COLORS.OVERLAY, justifyContent: 'flex-end' },
   modalHandle: { width: 40, height: 4, backgroundColor: COLORS.SURFACE, borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
-  commentsModal: { backgroundColor: COLORS.CARD, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '92%', flex: 1 },
+  commentsModal: { backgroundColor: COLORS.BG, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '92%', flex: 1 },
   commentsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  commentsTitle: { fontSize: 18, fontWeight: '800', color: COLORS.TEXT },
+  commentsTitle: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '800', color: COLORS.TEXT },
 
   noComments: { alignItems: 'center', paddingVertical: 40, gap: 6 },
-  noCommentsText: { fontSize: 15, fontWeight: '600', color: COLORS.TEXT },
-  noCommentsSub: { fontSize: 12, color: COLORS.TEXT_MUTED },
+  noCommentsText: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '600', color: COLORS.TEXT },
+  noCommentsSub: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED },
 
   commentInputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12, borderTopWidth: 1, borderTopColor: COLORS.BORDER, paddingTop: 12, gap: 8 },
-  commentInput: { flex: 1, backgroundColor: COLORS.SURFACE, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, fontSize: 14, color: COLORS.TEXT, maxHeight: 80 },
+  commentInput: { fontFamily: FONTS.family, flex: 1, backgroundColor: COLORS.BG, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, fontSize: 14, color: COLORS.TEXT, maxHeight: 80 },
   sendBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.ACCENT, alignItems: 'center', justifyContent: 'center' },
 });
 

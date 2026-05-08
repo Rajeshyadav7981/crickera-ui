@@ -1,12 +1,14 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Switch,
+  ActivityIndicator, Switch,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { playersAPI, teamsAPI, usersAPI } from '../../services/api';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
+import Avatar from '../../components/Avatar';
 
 const RADIUS = 12;
 
@@ -14,18 +16,17 @@ const AddPlayerScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const { teamId } = route.params;
 
-  // Mode: 'search' (default) or 'guest'
-  const [mode, setMode] = useState('search');
+  // Mode: 'mobile' (default) or 'guest'
+  //   mobile — admin types a mobile. If a registered user exists with that
+  //            mobile, their identity is used; otherwise a stub player is
+  //            created that auto-links when they later register.
+  //   guest  — walk-ins / kids / players with no phone. Permanent unlinkable
+  //            stub (is_guest=true). Name only.
+  const [mode, setMode] = useState('mobile');
 
-  // Search state
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState([]);
-  const [searching, setSearching] = useState(false);
-  const [selectedUser, setSelectedUser] = useState(null);
-  const debounceRef = useRef(null);
-
-  // Team-player options (shared between search-add and guest)
-  const [playerName, setPlayerName] = useState('');
+  // Common fields
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [jersey, setJersey] = useState('');
   const [isCaptain, setIsCaptain] = useState(false);
   const [isViceCaptain, setIsViceCaptain] = useState(false);
@@ -34,10 +35,11 @@ const AddPlayerScreen = ({ navigation, route }) => {
   const [battingStyle, setBattingStyle] = useState('right');
   const [bowlingStyle, setBowlingStyle] = useState('fast');
 
-  // Guest form state
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+  // Mobile-mode state
   const [mobile, setMobile] = useState('');
+  const [lookup, setLookup] = useState({ state: 'idle', user: null });
+  //   state: 'idle' | 'checking' | 'match' | 'no_match' | 'invalid'
+  const lookupDebounce = useRef(null);
 
   const [loading, setLoading] = useState(false);
 
@@ -48,82 +50,70 @@ const AddPlayerScreen = ({ navigation, route }) => {
     { key: 'wicket_keeper', label: 'Wicket Keeper', icon: 'shield-account' },
   ];
 
-  const handleSearch = useCallback((text) => {
-    setQuery(text);
-    setSelectedUser(null);
+  // Live lookup when mobile changes in mobile-mode
+  useEffect(() => {
+    if (mode !== 'mobile') return;
+    if (lookupDebounce.current) clearTimeout(lookupDebounce.current);
 
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-
-    if (text.trim().length < 2) {
-      setResults([]);
-      setSearching(false);
+    const m = mobile.trim();
+    if (m.length === 0) {
+      setLookup({ state: 'idle', user: null });
       return;
     }
-
-    setSearching(true);
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const res = await usersAPI.search(text.trim());
-        setResults(res.data || []);
-      } catch (e) {
-        setResults([]);
-      } finally {
-        setSearching(false);
-      }
-    }, 300);
-  }, []);
-
-  const handleSelectUser = (u) => {
-    setSelectedUser(u);
-    setResults([]);
-    setQuery(u.full_name || `${u.first_name} ${u.last_name}`);
-    setPlayerName(u.full_name || `${u.first_name} ${u.last_name}`);
-  };
-
-  const handleAddFromSearch = async () => {
-    if (!selectedUser) return Alert.alert('Error', 'Select a user first');
-    setLoading(true);
-    try {
-      const res = await playersAPI.create({
-        first_name: selectedUser.first_name,
-        last_name: selectedUser.last_name,
-        mobile: selectedUser.mobile,
-        role,
-        batting_style: battingStyle,
-        bowling_style: bowlingStyle,
-        user_id: selectedUser.id,
-      });
-      await teamsAPI.addPlayer(teamId, {
-        player_id: res.data.id,
-        jersey_number: jersey ? parseInt(jersey) : null,
-        is_captain: isCaptain,
-        is_vice_captain: isViceCaptain,
-        is_wicket_keeper: isWk,
-      });
-      Alert.alert('Success', 'Player added!');
-      navigation.goBack();
-    } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to add player');
-    } finally {
-      setLoading(false);
+    if (!/^\d{10}$/.test(m)) {
+      setLookup({ state: 'invalid', user: null });
+      return;
     }
-  };
+    setLookup({ state: 'checking', user: null });
+    lookupDebounce.current = setTimeout(async () => {
+      try {
+        const res = await usersAPI.lookupByMobile(m);
+        if (res.data?.exists) {
+          setLookup({ state: 'match', user: res.data });
+          // Auto-fill + lock the name fields to the user's registered identity.
+          setFirstName(res.data.first_name || '');
+          setLastName(res.data.last_name || '');
+        } else {
+          setLookup({ state: 'no_match', user: null });
+        }
+      } catch {
+        // Lookup failure → don't block; treat as no_match so admin can still type
+        setLookup({ state: 'no_match', user: null });
+      }
+    }, 400);
+    return () => lookupDebounce.current && clearTimeout(lookupDebounce.current);
+  }, [mobile, mode]);
 
-  const handleAddGuest = async () => {
-    if (!playerName.trim() && !firstName.trim()) return Alert.alert('Error', 'Player name is required');
+  const handleAdd = async () => {
+    // Validation
+    if (mode === 'mobile') {
+      if (!/^\d{10}$/.test(mobile.trim())) {
+        return Alert.alert('Invalid', 'Enter a valid 10-digit mobile number.');
+      }
+      if (lookup.state !== 'match' && !firstName.trim()) {
+        return Alert.alert('Required', 'Player name is required.');
+      }
+    } else {
+      if (!firstName.trim()) {
+        return Alert.alert('Required', 'Guest player name is required.');
+      }
+    }
+
     setLoading(true);
     try {
-      const nameParts = playerName.trim().split(' ');
-      const fName = firstName.trim() || nameParts[0] || '';
-      const lName = lastName.trim() || nameParts.slice(1).join(' ') || '';
-      const res = await playersAPI.create({
-        first_name: fName,
-        last_name: lName || null,
-        mobile: mobile.trim() || null,
+      const payload = {
+        first_name: firstName.trim(),
+        last_name: lastName.trim() || null,
         role,
         batting_style: battingStyle,
         bowling_style: bowlingStyle,
-      });
+      };
+      if (mode === 'mobile') {
+        payload.mobile = mobile.trim();
+      } else {
+        payload.is_guest = true;
+      }
+      const res = await playersAPI.create(payload);
       await teamsAPI.addPlayer(teamId, {
         player_id: res.data.id,
         jersey_number: jersey ? parseInt(jersey) : null,
@@ -131,7 +121,14 @@ const AddPlayerScreen = ({ navigation, route }) => {
         is_vice_captain: isViceCaptain,
         is_wicket_keeper: isWk,
       });
-      Alert.alert('Success', 'Guest player added!');
+      Alert.alert(
+        'Success',
+        mode === 'guest'
+          ? 'Guest player added — no account linked.'
+          : lookup.state === 'match'
+            ? `Linked to ${lookup.user.full_name}`
+            : 'Player added — will link when they register.',
+      );
       navigation.goBack();
     } catch (e) {
       Alert.alert('Error', e.response?.data?.detail || 'Failed to add player');
@@ -148,14 +145,15 @@ const AddPlayerScreen = ({ navigation, route }) => {
     setRole('batsman');
     setBattingStyle('right');
     setBowlingStyle('fast');
-    setSelectedUser(null);
-    setQuery('');
-    setResults([]);
-    setPlayerName('');
     setFirstName('');
     setLastName('');
     setMobile('');
+    setLookup({ state: 'idle', user: null });
   };
+
+  // When lookup finds a match, lock the name fields (editing would defeat the
+  // purpose of the link). When there's no match, name fields are editable.
+  const nameLocked = mode === 'mobile' && lookup.state === 'match';
 
   const renderToggleButton = (label, isSelected, onPress, style) => (
     <TouchableOpacity
@@ -184,112 +182,120 @@ const AddPlayerScreen = ({ navigation, route }) => {
         <View style={styles.headerSpacer} />
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
+      <KeyboardAwareScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        enableOnAndroid
+        extraScrollHeight={40}
+      >
           {/* Mode toggle */}
           <View style={styles.modeRow}>
             <TouchableOpacity
-              style={[styles.modeBtn, mode === 'search' && styles.modeBtnActive]}
-              onPress={() => { setMode('search'); resetForm(); }}
+              style={[styles.modeBtn, mode === 'mobile' && styles.modeBtnActive]}
+              onPress={() => { setMode('mobile'); resetForm(); }}
             >
-              <Icon name="magnify" size={18} color={mode === 'search' ? '#fff' : COLORS.TEXT_MUTED} />
-              <Text style={[styles.modeBtnText, mode === 'search' && styles.modeBtnTextActive]}>
-                Search Users
+              <Icon name="cellphone" size={18} color={mode === 'mobile' ? '#fff' : COLORS.TEXT_MUTED} />
+              <Text style={[styles.modeBtnText, mode === 'mobile' && styles.modeBtnTextActive]}>
+                By Mobile
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.modeBtn, mode === 'guest' && styles.modeBtnActive]}
               onPress={() => { setMode('guest'); resetForm(); }}
             >
-              <Icon name="account-plus" size={18} color={mode === 'guest' ? '#fff' : COLORS.TEXT_MUTED} />
+              <Icon name="account-question-outline" size={18} color={mode === 'guest' ? '#fff' : COLORS.TEXT_MUTED} />
               <Text style={[styles.modeBtnText, mode === 'guest' && styles.modeBtnTextActive]}>
-                Add Guest
+                Guest
               </Text>
             </TouchableOpacity>
           </View>
 
           {/* Form Card */}
           <View style={styles.card}>
-            {mode === 'search' ? (
+            {mode === 'mobile' ? (
               <>
-                {/* Search bar */}
+                {/* Mobile input with live lookup */}
                 <View style={styles.inputWrapper}>
-                  <Icon name="magnify" size={20} color={COLORS.TEXT_MUTED} style={styles.inputIcon} />
+                  <Icon name="cellphone" size={20} color={COLORS.TEXT_MUTED} style={styles.inputIcon} />
                   <TextInput
                     style={styles.inputField}
-                    value={query}
-                    onChangeText={handleSearch}
-                    placeholder="Search by name or mobile..."
+                    value={mobile}
+                    onChangeText={(v) => setMobile(v.replace(/\D/g, '').slice(0, 10))}
+                    placeholder="10-digit mobile number"
                     placeholderTextColor={COLORS.TEXT_MUTED}
-                    autoCapitalize="none"
+                    keyboardType="phone-pad"
+                    maxLength={10}
                   />
+                  {lookup.state === 'checking' && (
+                    <ActivityIndicator size="small" color={COLORS.ACCENT} style={{ marginLeft: 8 }} />
+                  )}
                 </View>
 
-                {/* Search results */}
-                {searching && (
-                  <View style={styles.searchingRow}>
-                    <ActivityIndicator size="small" color={COLORS.ACCENT} />
-                    <Text style={styles.searchingText}>Searching...</Text>
-                  </View>
+                {/* Lookup state feedback */}
+                {lookup.state === 'invalid' && (
+                  <Text style={styles.lookupHint}>Enter a valid 10-digit mobile number</Text>
                 )}
-
-                {results.length > 0 && !selectedUser && (
-                  <View style={styles.resultsList}>
-                    {results.map((u) => (
-                      <TouchableOpacity key={u.id} style={styles.resultItem} onPress={() => handleSelectUser(u)}>
-                        <View style={styles.resultAvatar}>
-                          <Text style={styles.resultInitial}>{u.first_name?.charAt(0)?.toUpperCase()}</Text>
-                        </View>
-                        <View style={{ flex: 1, marginLeft: 12 }}>
-                          <Text style={styles.resultName}>{u.full_name || `${u.first_name} ${u.last_name}`}</Text>
-                          <Text style={styles.resultMobile}>{u.mobile}</Text>
-                        </View>
-                        <Icon name="chevron-right" size={20} color={COLORS.TEXT_MUTED} />
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-
-                {query.length >= 2 && !searching && results.length === 0 && !selectedUser && (
-                  <Text style={styles.noResults}>No users found. Try "Add Guest" to add manually.</Text>
-                )}
-
-                {/* Selected user card */}
-                {selectedUser && (
-                  <View style={styles.selectedCard}>
-                    <View style={styles.selectedAvatar}>
-                      <Text style={styles.selectedInitial}>{selectedUser.first_name?.charAt(0)?.toUpperCase()}</Text>
-                    </View>
+                {lookup.state === 'match' && lookup.user && (
+                  <View style={styles.matchCard}>
+                    <Avatar
+                      uri={lookup.user.profile}
+                      name={lookup.user.full_name}
+                      size={40}
+                      color={COLORS.ACCENT}
+                      type="player"
+                    />
                     <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={styles.selectedName}>{selectedUser.full_name || `${selectedUser.first_name} ${selectedUser.last_name}`}</Text>
-                      <Text style={styles.selectedMobile}>{selectedUser.mobile}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                        <Icon name="check-decagram" size={14} color={COLORS.SUCCESS_LIGHT} />
+                        <Text style={styles.matchBadge}>Registered user</Text>
+                      </View>
+                      <Text style={styles.matchName}>{lookup.user.full_name}</Text>
                     </View>
-                    <TouchableOpacity onPress={() => { setSelectedUser(null); setQuery(''); }}>
-                      <Text style={styles.changeLink}>Change</Text>
-                    </TouchableOpacity>
+                  </View>
+                )}
+                {lookup.state === 'no_match' && (
+                  <View style={styles.noMatchCard}>
+                    <Icon name="information-outline" size={14} color={COLORS.ACCENT_LIGHT} />
+                    <Text style={styles.noMatchText}>
+                      No account yet — enter their name. Will link automatically when they register.
+                    </Text>
                   </View>
                 )}
               </>
             ) : (
-              <>
-                {/* Player Name */}
-                <View style={styles.inputWrapper}>
-                  <Icon name="account-outline" size={20} color={COLORS.TEXT_MUTED} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.inputField}
-                    value={playerName}
-                    onChangeText={setPlayerName}
-                    placeholder="Full name"
-                    placeholderTextColor={COLORS.TEXT_MUTED}
-                  />
-                </View>
-              </>
+              <View style={styles.noMatchCard}>
+                <Icon name="information-outline" size={14} color={COLORS.ACCENT_LIGHT} />
+                <Text style={styles.noMatchText}>
+                  Guest player — no mobile, no future app link. Use for walk-ins / kids without phones.
+                </Text>
+              </View>
             )}
+
+            {/* Name fields — lock when lookup matched; editable otherwise */}
+            <View style={[styles.inputWrapper, { marginTop: 12, opacity: nameLocked ? 0.6 : 1 }]}>
+              <Icon name="account-outline" size={20} color={COLORS.TEXT_MUTED} style={styles.inputIcon} />
+              <TextInput
+                style={styles.inputField}
+                value={firstName}
+                onChangeText={setFirstName}
+                placeholder="First name"
+                placeholderTextColor={COLORS.TEXT_MUTED}
+                editable={!nameLocked}
+              />
+            </View>
+            <View style={[styles.inputWrapper, { marginTop: 10, opacity: nameLocked ? 0.6 : 1 }]}>
+              <Icon name="account-outline" size={20} color={COLORS.TEXT_MUTED} style={styles.inputIcon} />
+              <TextInput
+                style={styles.inputField}
+                value={lastName}
+                onChangeText={setLastName}
+                placeholder="Last name (optional)"
+                placeholderTextColor={COLORS.TEXT_MUTED}
+                editable={!nameLocked}
+              />
+            </View>
 
             {/* Jersey Number */}
             <View style={[styles.inputWrapper, { marginTop: 12 }]}>
@@ -390,7 +396,7 @@ const AddPlayerScreen = ({ navigation, route }) => {
           {/* Add Player Button */}
           <TouchableOpacity
             style={[styles.addBtn, loading && styles.addBtnDisabled]}
-            onPress={mode === 'search' ? handleAddFromSearch : handleAddGuest}
+            onPress={handleAdd}
             disabled={loading}
             activeOpacity={0.8}
           >
@@ -405,8 +411,7 @@ const AddPlayerScreen = ({ navigation, route }) => {
           </TouchableOpacity>
 
           <View style={{ height: 40 }} />
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </View>
   );
 };
@@ -436,7 +441,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.BORDER,
   },
   headerTitle: {
-    fontSize: 18,
+    fontFamily: FONTS.family,    fontSize: 18,
     fontWeight: '700',
     color: COLORS.TEXT,
   },
@@ -476,7 +481,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.ACCENT,
   },
   modeBtnText: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     fontWeight: '600',
     color: COLORS.TEXT_MUTED,
   },
@@ -513,7 +518,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   inputField: {
-    flex: 1,
+    fontFamily: FONTS.family,    flex: 1,
     fontSize: 15,
     color: COLORS.TEXT,
     height: 48,
@@ -521,7 +526,7 @@ const styles = StyleSheet.create({
 
   // Section labels
   sectionLabel: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '600',
     color: COLORS.TEXT_SECONDARY,
     marginTop: 20,
@@ -553,7 +558,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.ACCENT_SOFT,
   },
   roleBtnText: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '500',
     color: COLORS.TEXT_MUTED,
   },
@@ -581,7 +586,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.ACCENT_SOFT,
   },
   toggleBtnText: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '500',
     color: COLORS.TEXT_MUTED,
   },
@@ -606,19 +611,51 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   switchLabel: {
-    fontSize: 15,
+    fontFamily: FONTS.family,    fontSize: 15,
     fontWeight: '500',
     color: COLORS.TEXT,
   },
 
-  // Search
+  /* Lookup feedback card — green when a registered user was matched */
+  matchCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: COLORS.SUCCESS_BG,
+    borderRadius: RADIUS,
+    padding: 12, marginTop: 10,
+    borderWidth: 1, borderColor: COLORS.SUCCESS + '40',
+  },
+  matchBadge: {
+    fontFamily: FONTS.family,
+    fontSize: 11, fontWeight: '800', color: COLORS.SUCCESS_LIGHT,
+    letterSpacing: 0.4, textTransform: 'uppercase',
+  },
+  matchName: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT, marginTop: 2 },
+
+  /* No-match info card — gentle blue tint, explains the stub-linking behaviour */
+  noMatchCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: COLORS.ACCENT_SOFT,
+    borderRadius: RADIUS,
+    paddingVertical: 9, paddingHorizontal: 12,
+    marginTop: 10,
+  },
+  noMatchText: {
+    fontFamily: FONTS.family,
+    flex: 1, fontSize: 11, fontWeight: '600', color: COLORS.ACCENT_LIGHT,
+  },
+  lookupHint: {
+    fontFamily: FONTS.family,
+    fontSize: 11, color: COLORS.DANGER, marginTop: 6, marginLeft: 4,
+  },
+
+  // Search (legacy — preserved for any other callers)
   searchingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 12,
   },
   searchingText: {
-    marginLeft: 8,
+    fontFamily: FONTS.family,    marginLeft: 8,
     color: COLORS.TEXT_MUTED,
     fontSize: 13,
   },
@@ -644,22 +681,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   resultInitial: {
-    color: COLORS.ACCENT,
+    fontFamily: FONTS.family,    color: COLORS.ACCENT,
     fontSize: 16,
     fontWeight: '700',
   },
   resultName: {
-    fontSize: 15,
+    fontFamily: FONTS.family,    fontSize: 15,
     fontWeight: '600',
     color: COLORS.TEXT,
   },
   resultMobile: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     color: COLORS.TEXT_MUTED,
     marginTop: 2,
   },
   noResults: {
-    color: COLORS.TEXT_MUTED,
+    fontFamily: FONTS.family,    color: COLORS.TEXT_MUTED,
     fontSize: 13,
     fontStyle: 'italic',
     marginTop: 12,
@@ -685,22 +722,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   selectedInitial: {
-    color: '#fff',
+    fontFamily: FONTS.family,    color: '#fff',
     fontSize: 17,
     fontWeight: '700',
   },
   selectedName: {
-    fontSize: 15,
+    fontFamily: FONTS.family,    fontSize: 15,
     fontWeight: '700',
     color: COLORS.TEXT,
   },
   selectedMobile: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     color: COLORS.TEXT_SECONDARY,
     marginTop: 2,
   },
   changeLink: {
-    color: COLORS.ACCENT_LIGHT,
+    fontFamily: FONTS.family,    color: COLORS.ACCENT_LIGHT,
     fontSize: 13,
     fontWeight: '600',
   },
@@ -719,7 +756,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   addBtnText: {
-    color: '#fff',
+    fontFamily: FONTS.family,    color: '#fff',
     fontSize: 16,
     fontWeight: '700',
   },

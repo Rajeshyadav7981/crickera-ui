@@ -4,10 +4,11 @@ import {
   Platform, Modal, Image, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import * as ImagePicker from 'expo-image-picker';
 import { tournamentsAPI, venuesAPI } from '../../services/api';
 import { useAuthGate } from '../../hooks/useRequireAuth';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import BackButton from '../../components/BackButton';
 import CurrentLocationButton from '../../components/CurrentLocationButton';
 import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
@@ -141,20 +142,20 @@ const calStyles = StyleSheet.create({
   wrap: { backgroundColor: COLORS.CARD, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: COLORS.BORDER },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   navBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.SURFACE, alignItems: 'center', justifyContent: 'center' },
-  navText: { fontSize: 12, color: COLORS.TEXT_SECONDARY },
-  monthYear: { fontSize: 16, fontWeight: '700', color: COLORS.TEXT },
+  navText: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_SECONDARY },
+  monthYear: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: COLORS.TEXT },
   row: { flexDirection: 'row' },
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   cell: { width: '14.28%', height: 40, alignItems: 'center', justifyContent: 'center' },
   cellSelected: { backgroundColor: COLORS.ACCENT, borderRadius: 20 },
   cellToday: { borderWidth: 1.5, borderColor: COLORS.ACCENT, borderRadius: 20 },
-  dayHeader: { fontSize: 11, fontWeight: '700', color: COLORS.TEXT_MUTED, textTransform: 'uppercase' },
-  dayText: { fontSize: 14, fontWeight: '500', color: COLORS.TEXT },
+  dayHeader: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.TEXT_MUTED, textTransform: 'uppercase' },
+  dayText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '500', color: COLORS.TEXT },
   dayTextSelected: { color: '#fff', fontWeight: '700' },
   dayTextToday: { color: COLORS.ACCENT, fontWeight: '700' },
   footer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12, paddingHorizontal: 4 },
-  todayText: { fontSize: 14, fontWeight: '600', color: COLORS.ACCENT, paddingVertical: 8 },
-  cancelText: { fontSize: 14, fontWeight: '600', color: COLORS.ACCENT_LIGHT, paddingVertical: 8 },
+  todayText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.ACCENT, paddingVertical: 8 },
+  cancelText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.ACCENT_LIGHT, paddingVertical: 8 },
 });
 
 const CreateTournamentScreen = ({ navigation }) => {
@@ -237,31 +238,8 @@ const CreateTournamentScreen = ({ navigation }) => {
 
   const uploadBanner = async () => {
     if (!bannerUri) return null;
-
-    // Compress banner before upload
-    let compressedUri = bannerUri;
-    try {
-      const ImageManipulator = require('expo-image-manipulator');
-      const result = await ImageManipulator.manipulateAsync(
-        bannerUri,
-        [{ resize: { width: 1024 } }],
-        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG },
-      );
-      compressedUri = result.uri;
-    } catch {}
-
-    // Upload to backend server
-    const { default: api } = require('../../services/api');
-    const formData = new FormData();
-    formData.append('file', {
-      uri: compressedUri,
-      type: 'image/jpeg',
-      name: `banner_${Date.now()}.jpg`,
-    });
-    const res = await api.post('/api/community/upload-image', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-    return res.data.image_url;
+    // Dedicated tournament endpoint — stores under uploads/tournaments/ on the VM.
+    return await tournamentsAPI.uploadBanner(bannerUri);
   };
 
   const handleCreate = async () => {
@@ -329,11 +307,13 @@ const CreateTournamentScreen = ({ navigation }) => {
       </View>
 
       {/* ===== SCROLLABLE FORM ===== */}
-      <ScrollView
+      <KeyboardAwareScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        enableOnAndroid
+        extraScrollHeight={40}
       >
         {/* ---- MEDIA ---- */}
         {renderSectionLabel('MEDIA')}
@@ -585,7 +565,7 @@ const CreateTournamentScreen = ({ navigation }) => {
 
         {/* Bottom spacer for fixed button */}
         <View style={{ height: 100 }} />
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {/* ===== FIXED BOTTOM BUTTON ===== */}
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16 }]}>
@@ -630,16 +610,16 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.SURFACE,
   },
   backArrow: {
-    fontSize: 20,
+    fontFamily: FONTS.family,    fontSize: 20,
     color: COLORS.TEXT,
   },
   headerTitle: {
-    fontSize: 18,
+    fontFamily: FONTS.family,    fontSize: 18,
     fontWeight: '700',
     color: COLORS.TEXT,
   },
   draftsBtn: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     fontWeight: '600',
     color: COLORS.ACCENT,
   },
@@ -655,7 +635,7 @@ const styles = StyleSheet.create({
 
   /* ── Section label ── */
   sectionLabel: {
-    fontSize: 11,
+    fontFamily: FONTS.family,    fontSize: 11,
     fontWeight: '600',
     color: COLORS.TEXT_MUTED,
     letterSpacing: 1,
@@ -666,7 +646,7 @@ const styles = StyleSheet.create({
 
   /* ── Input label ── */
   inputLabel: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '500',
     color: COLORS.TEXT_SECONDARY,
     marginBottom: 8,
@@ -689,17 +669,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cameraIcon: {
-    fontSize: 32,
+    fontFamily: FONTS.family,    fontSize: 32,
     marginBottom: 8,
   },
   bannerText: {
-    fontSize: 15,
+    fontFamily: FONTS.family,    fontSize: 15,
     fontWeight: '600',
     color: COLORS.TEXT_SECONDARY,
     marginBottom: 4,
   },
   bannerSubtext: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     color: COLORS.TEXT_MUTED,
   },
   bannerImage: {
@@ -719,7 +699,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)',
   },
   bannerEditText: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     fontWeight: '600',
     color: '#fff',
   },
@@ -736,7 +716,7 @@ const styles = StyleSheet.create({
 
   /* ── Inputs ── */
   input: {
-    height: 48,
+    fontFamily: FONTS.family,    height: 48,
     backgroundColor: COLORS.SURFACE,
     borderWidth: 1,
     borderColor: COLORS.BORDER,
@@ -758,18 +738,18 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   inputIconLeft: {
-    fontSize: 18,
+    fontFamily: FONTS.family,    fontSize: 18,
     marginRight: 8,
     color: COLORS.TEXT_MUTED,
   },
   dollarPrefix: {
-    fontSize: 15,
+    fontFamily: FONTS.family,    fontSize: 15,
     fontWeight: '600',
     color: COLORS.TEXT_SECONDARY,
     marginRight: 4,
   },
   inputInner: {
-    flex: 1,
+    fontFamily: FONTS.family,    flex: 1,
     height: 48,
     fontSize: 15,
     color: COLORS.TEXT,
@@ -799,10 +779,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.ACCENT_SOFT,
   },
   toggleIcon: {
-    fontSize: 16,
+    fontFamily: FONTS.family,    fontSize: 16,
   },
   toggleText: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     fontWeight: '500',
     color: COLORS.TEXT_SECONDARY,
   },
@@ -861,7 +841,7 @@ const styles = StyleSheet.create({
     }),
   },
   createBtnText: {
-    color: '#fff',
+    fontFamily: FONTS.family,    color: '#fff',
     fontSize: 16,
     fontWeight: '700',
   },
@@ -892,12 +872,12 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.BORDER,
   },
   locationItemIcon: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     marginRight: 8,
     color: COLORS.TEXT_MUTED,
   },
   locationItemText: {
-    flex: 1,
+    fontFamily: FONTS.family,    flex: 1,
     fontSize: 13,
     color: COLORS.TEXT,
     lineHeight: 18,

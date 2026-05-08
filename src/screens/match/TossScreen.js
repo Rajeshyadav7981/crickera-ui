@@ -3,8 +3,9 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, TextInput,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { matchesAPI } from '../../services/api';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import StepIndicator from '../../components/StepIndicator';
 
 const TOSS_COLORS = {
@@ -81,10 +82,13 @@ const TossScreen = ({ navigation, route }) => {
         currentStep={1}
       />
 
-      <ScrollView
+      <KeyboardAwareScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        enableOnAndroid
+        extraScrollHeight={40}
       >
         {/* Teams Card */}
         <View style={styles.teamsCard}>
@@ -235,7 +239,7 @@ const TossScreen = ({ navigation, route }) => {
 
         {/* Spacer to push button down */}
         <View style={{ flex: 1, minHeight: 32 }} />
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {/* Start Match Button */}
       <View style={[styles.bottomButtonContainer, { paddingBottom: insets.bottom + 16 }]}>
@@ -282,13 +286,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   backArrow: {
-    fontSize: 24,
+    fontFamily: FONTS.family,    fontSize: 24,
     color: TOSS_COLORS.textPrimary,
     marginTop: -2,
     fontWeight: '600',
   },
   headerTitle: {
-    fontSize: 18,
+    fontFamily: FONTS.family,    fontSize: 18,
     fontWeight: '700',
     color: TOSS_COLORS.textPrimary,
   },
@@ -329,7 +333,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   teamDisplayName: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     fontWeight: '600',
     color: TOSS_COLORS.textPrimary,
     textAlign: 'center',
@@ -338,21 +342,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   vsText: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     fontWeight: '600',
     color: TOSS_COLORS.textSecondary,
   },
 
   /* Section Label */
   sectionLabel: {
-    fontSize: 15,
+    fontFamily: FONTS.family,    fontSize: 15,
     fontWeight: '700',
     color: TOSS_COLORS.textPrimary,
     marginTop: 28,
     marginBottom: 14,
   },
   helperText: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     color: TOSS_COLORS.textSecondary,
     marginTop: -8,
     marginBottom: 12,
@@ -382,7 +386,7 @@ const styles = StyleSheet.create({
     borderColor: TOSS_COLORS.primary,
   },
   oversChipText: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     fontWeight: '700',
     color: TOSS_COLORS.textSecondary,
   },
@@ -402,19 +406,19 @@ const styles = StyleSheet.create({
     borderColor: TOSS_COLORS.cardBorder,
   },
   oversInput: {
-    flex: 1,
+    fontFamily: FONTS.family,    flex: 1,
     fontSize: 16,
     fontWeight: '700',
     color: TOSS_COLORS.textPrimary,
     padding: 0,
   },
   oversInputSuffix: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '600',
     color: TOSS_COLORS.textSecondary,
   },
   oversWarning: {
-    marginTop: 8,
+    fontFamily: FONTS.family,    marginTop: 8,
     fontSize: 12,
     fontWeight: '600',
     color: COLORS.RED,
@@ -446,7 +450,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
   },
   teamSelectName: {
-    fontSize: 15,
+    fontFamily: FONTS.family,    fontSize: 15,
     fontWeight: '600',
     color: TOSS_COLORS.textPrimary,
     textAlign: 'center',
@@ -466,7 +470,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkMarkText: {
-    color: TOSS_COLORS.white,
+    fontFamily: FONTS.family,    color: TOSS_COLORS.white,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -493,10 +497,10 @@ const styles = StyleSheet.create({
     backgroundColor: TOSS_COLORS.primary,
   },
   decisionIcon: {
-    fontSize: 20,
+    fontFamily: FONTS.family,    fontSize: 20,
   },
   decisionLabel: {
-    fontSize: 16,
+    fontFamily: FONTS.family,    fontSize: 16,
     fontWeight: '700',
     color: TOSS_COLORS.textPrimary,
   },
@@ -521,7 +525,7 @@ const styles = StyleSheet.create({
     opacity: TOSS_COLORS.disabledOpacity,
   },
   startMatchButtonText: {
-    color: TOSS_COLORS.white,
+    fontFamily: FONTS.family,    color: TOSS_COLORS.white,
     fontSize: 17,
     fontWeight: '700',
   },

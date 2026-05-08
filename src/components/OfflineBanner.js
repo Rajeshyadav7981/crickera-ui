@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 import offlineQueue from '../services/offlineQueue';
 import Icon from './Icon';
 
@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
   },
   bannerOffline: { backgroundColor: 'rgba(255,152,0,0.15)' },
   bannerSyncing: { backgroundColor: 'rgba(30,136,229,0.1)' },
-  text: { fontSize: 12, fontWeight: '600' },
+  text: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '600' },
   textOffline: { color: COLORS.WARNING },
   textSyncing: { color: COLORS.ACCENT_LIGHT },
 });

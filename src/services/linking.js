@@ -4,13 +4,14 @@ const prefix = Linking.createURL('/');
 
 /**
  * Base URL for shareable web links.
- * These hit the backend /share/* routes which attempt to open the app
- * via Android App Links / intent URI, or show a download page as fallback.
+ * Hits backend /share/* which attempts to open the app via Android App Links /
+ * intent URI, or falls back to a download page.
  *
- * In production, set EXPO_PUBLIC_SHARE_BASE_URL to your public domain
- * (e.g. https://creckstars.com). For local dev, it points to the backend server.
+ * Set EXPO_PUBLIC_SHARE_BASE_URL in EAS build env to override. The default
+ * points at production so a release build never ships a LAN IP in share links.
  */
-const SHARE_BASE = process.env.EXPO_PUBLIC_SHARE_BASE_URL || 'http://192.168.1.79:7981';
+const PRODUCTION_SHARE_BASE = 'https://creckstars.duckdns.org';
+const SHARE_BASE = process.env.EXPO_PUBLIC_SHARE_BASE_URL || PRODUCTION_SHARE_BASE;
 
 export const linkingConfig = {
   prefixes: [

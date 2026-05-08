@@ -8,6 +8,9 @@ export const COMMUNITY_KEYS = {
   polls: ['community', 'polls'],
 };
 
+// Stale times per sort — top/hot change slowly, new needs freshness
+const SORT_STALE_TIMES = { hot: 30_000, new: 10_000, top: 60_000 };
+
 export const usePosts = (sort = 'hot', limit = 10) => {
   return useInfiniteQuery({
     queryKey: COMMUNITY_KEYS.posts(sort),
@@ -28,7 +31,7 @@ export const usePosts = (sort = 'hot', limit = 10) => {
       return undefined;
     },
     initialPageParam: { cursor: null, offset: 0 },
-    staleTime: 10_000,
+    staleTime: SORT_STALE_TIMES[sort] || 10_000,
     gcTime: 5 * 60_000,
   });
 };

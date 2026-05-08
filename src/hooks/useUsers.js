@@ -3,9 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usersAPI } from '../services/api';
 
-// ═══════════════════════════════════════
 // Query Key Factory
-// ═══════════════════════════════════════
 
 export const USER_KEYS = {
   all: ['users'],
@@ -16,9 +14,7 @@ export const USER_KEYS = {
   following: (userId) => ['users', 'following', userId],
 };
 
-// ═══════════════════════════════════════
 // Search Hooks
-// ═══════════════════════════════════════
 
 export const useUserSearch = (query, options = {}) => {
   const trimmed = query?.trim() || '';
@@ -50,9 +46,7 @@ export const useMentionSearch = (query, options = {}) => {
   });
 };
 
-// ═══════════════════════════════════════
 // Profile Hook
-// ═══════════════════════════════════════
 
 export const useUserProfile = (username, options = {}) => {
   return useQuery({
@@ -68,9 +62,7 @@ export const useUserProfile = (username, options = {}) => {
   });
 };
 
-// ═══════════════════════════════════════
 // Follow Mutations
-// ═══════════════════════════════════════
 
 export const useFollowUser = () => {
   const queryClient = useQueryClient();
@@ -96,9 +88,7 @@ export const useUnfollowUser = () => {
   });
 };
 
-// ═══════════════════════════════════════
 // Recent Searches (AsyncStorage)
-// ═══════════════════════════════════════
 
 const RECENT_KEY = 'recent_user_searches';
 const MAX_RECENT = 10;

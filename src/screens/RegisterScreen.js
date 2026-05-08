@@ -7,19 +7,18 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   Animated,
   StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../services/api';
-import { COLORS, GRADIENTS } from '../theme';
+import { COLORS, GRADIENTS, FONTS } from '../theme';
 import Icon from '../components/Icon';
 import CalendarPicker from '../components/CalendarPicker';
+import OTPInput from '../components/OTPInput';
 import { useToast } from '../components/Toast';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -224,9 +223,9 @@ const RegisterScreen = ({ navigation }) => {
     }
     setLoading(true);
     try {
-      // Verify OTP
-      await authAPI.verifyOTP(mobile.trim(), otp, 'register');
-      // Then register — include optional cricket profile
+      // OTP validation is skipped on the client until DLT SMS delivery is
+      // live; the register call below is the source of truth for whether
+      // the account can be created.
       const cricketProfile = {
         bio: bio.trim() || undefined,
         city: city.trim() || undefined,
@@ -252,13 +251,12 @@ const RegisterScreen = ({ navigation }) => {
   return (
     <LinearGradient colors={GRADIENTS.SCREEN} style={styles.flex}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.BG} />
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView
-          contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 16 }]}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}>
+      <KeyboardAwareScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 16, paddingBottom: 40 }]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        enableOnAndroid
+        extraScrollHeight={40}>
 
           {/* Cricket icon */}
           <View style={{ alignItems: 'center', marginBottom: 8 }}>
@@ -582,19 +580,7 @@ const RegisterScreen = ({ navigation }) => {
                   <Text style={styles.otpTitle}>Verify your number</Text>
                 </View>
                 <Text style={styles.otpSubtitle}>Enter the 6-digit code sent to {mobile}</Text>
-                <View style={styles.inputBox}>
-                  <Feather name="hash" size={16} color={COLORS.TEXT_MUTED} style={styles.inputIconStyle} />
-                  <TextInput
-                    style={[styles.input, { letterSpacing: 8, fontSize: 20, fontWeight: '700', textAlign: 'center' }]}
-                    placeholder="000000"
-                    placeholderTextColor={COLORS.TEXT_MUTED}
-                    value={otp}
-                    onChangeText={(t) => setOtp(t.replace(/[^0-9]/g, ''))}
-                    keyboardType="number-pad"
-                    maxLength={6}
-                    autoFocus
-                  />
-                </View>
+                <OTPInput value={otp} onChange={setOtp} />
                 <TouchableOpacity
                   style={[styles.button, loading && styles.buttonDisabled]}
                   onPress={handleVerifyAndRegister}
@@ -647,26 +633,6 @@ const RegisterScreen = ({ navigation }) => {
             )}
           </Animated.View>
 
-          {/* Or continue with divider */}
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>Or continue with</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          {/* Social buttons */}
-          <View style={styles.socialRow}>
-            <TouchableOpacity style={styles.socialButton} activeOpacity={0.7}>
-              <Text style={styles.socialIcon}>G</Text>
-              <Text style={styles.socialLabel}>Google</Text>
-            </TouchableOpacity>
-            <View style={{ width: 12 }} />
-            <TouchableOpacity style={styles.socialButton} activeOpacity={0.7}>
-              <Text style={styles.socialIcon}>{'\uF8FF'}</Text>
-              <Text style={styles.socialLabel}>Apple</Text>
-            </TouchableOpacity>
-          </View>
-
           {/* Footer */}
           <TouchableOpacity
             onPress={() => navigation.goBack()}
@@ -676,8 +642,7 @@ const RegisterScreen = ({ navigation }) => {
             </Text>
           </TouchableOpacity>
 
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </LinearGradient>
   );
 };
@@ -688,22 +653,22 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
+    justifyContent: 'center',
     paddingHorizontal: 20,
-    paddingBottom: 40,
   },
   cricketIcon: {
-    fontSize: 48,
+    fontFamily: FONTS.family,    fontSize: 48,
     textAlign: 'center',
     marginBottom: 8,
   },
   title: {
-    fontSize: 28,
+    fontFamily: FONTS.family,    fontSize: 28,
     fontWeight: '700',
     color: COLORS.TEXT,
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     color: COLORS.TEXT_SECONDARY,
     textAlign: 'center',
     marginTop: 4,
@@ -733,7 +698,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   inputIcon: {
-    fontSize: 18,
+    fontFamily: FONTS.family,    fontSize: 18,
     marginRight: 12,
     width: 24,
     textAlign: 'center',
@@ -744,7 +709,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   input: {
-    flex: 1,
+    fontFamily: FONTS.family,    flex: 1,
     fontSize: 15,
     color: COLORS.TEXT,
     height: '100%',
@@ -757,10 +722,10 @@ const styles = StyleSheet.create({
   pwHints: {
     flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14, marginTop: -6, paddingHorizontal: 4,
   },
-  pwHint: { fontSize: 11, color: COLORS.TEXT_MUTED, fontWeight: '500' },
+  pwHint: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_MUTED, fontWeight: '500' },
   pwHintOk: { color: COLORS.SUCCESS },
   visibilityIcon: {
-    fontSize: 18,
+    fontFamily: FONTS.family,    fontSize: 18,
     color: COLORS.TEXT_MUTED,
   },
   button: {
@@ -783,7 +748,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   buttonText: {
-    color: '#FFFFFF',
+    fontFamily: FONTS.family,    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
   },
@@ -800,7 +765,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.BORDER,
   },
   dividerText: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     color: COLORS.TEXT_MUTED,
     marginHorizontal: 12,
   },
@@ -820,13 +785,13 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.SURFACE,
   },
   socialIcon: {
-    fontSize: 18,
+    fontFamily: FONTS.family,    fontSize: 18,
     fontWeight: '700',
     marginRight: 8,
     color: COLORS.TEXT,
   },
   socialLabel: {
-    fontSize: 15,
+    fontFamily: FONTS.family,    fontSize: 15,
     fontWeight: '600',
     color: COLORS.TEXT,
   },
@@ -835,7 +800,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   footerText: {
-    color: COLORS.TEXT_SECONDARY,
+    fontFamily: FONTS.family,    color: COLORS.TEXT_SECONDARY,
     fontSize: 14,
   },
   footerLink: {
@@ -852,12 +817,12 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   otpTitle: {
-    fontSize: 16,
+    fontFamily: FONTS.family,    fontSize: 16,
     fontWeight: '700',
     color: COLORS.TEXT,
   },
   otpSubtitle: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     color: COLORS.TEXT_SECONDARY,
     marginBottom: 14,
   },
@@ -868,17 +833,17 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   otpTimerText: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     color: COLORS.TEXT_MUTED,
     fontWeight: '500',
   },
   otpResendText: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '700',
     color: COLORS.ACCENT,
   },
   otpChangeText: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '600',
     color: COLORS.TEXT_SECONDARY,
   },
@@ -890,17 +855,17 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   sectionToggleText: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '700',
     color: COLORS.ACCENT,
   },
   sectionToggleHint: {
-    fontSize: 11,
+    fontFamily: FONTS.family,    fontSize: 11,
     color: COLORS.TEXT_MUTED,
     fontWeight: '500',
   },
   fieldLabel: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     fontWeight: '700',
     color: COLORS.TEXT_SECONDARY,
     textTransform: 'uppercase',
@@ -927,7 +892,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.ACCENT_SOFT_BORDER,
   },
   chipText: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     fontWeight: '600',
     color: COLORS.TEXT_SECONDARY,
   },

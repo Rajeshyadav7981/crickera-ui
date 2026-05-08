@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { matchesAPI, teamsAPI } from '../../services/api';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import BackButton from '../../components/BackButton';
 import StepIndicator from '../../components/StepIndicator';
@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   backArrow: {
-    fontSize: 20,
+    fontFamily: FONTS.family,    fontSize: 20,
     color: TEXT_PRIMARY,
     fontWeight: '600',
   },
@@ -265,12 +265,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 18,
+    fontFamily: FONTS.family,    fontSize: 18,
     fontWeight: '700',
     color: TEXT_PRIMARY,
   },
   headerSubtitle: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '600',
     color: PRIMARY,
     marginTop: 2,
@@ -295,7 +295,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   infoText: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '500',
     color: TEXT_SECONDARY,
     flex: 1,
@@ -308,7 +308,7 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   countBadgeText: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     fontWeight: '700',
     color: WHITE,
   },
@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
     borderColor: PRIMARY,
   },
   checkIcon: {
-    color: WHITE,
+    fontFamily: FONTS.family,    color: WHITE,
     fontSize: 14,
     fontWeight: '700',
     marginTop: -1,
@@ -374,7 +374,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.ACCENT_SOFT,
   },
   avatarText: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     fontWeight: '700',
     color: COLORS.TEXT_SECONDARY,
   },
@@ -388,12 +388,12 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   playerName: {
-    fontSize: 15,
+    fontFamily: FONTS.family,    fontSize: 15,
     fontWeight: '600',
     color: TEXT_PRIMARY,
   },
   playerRole: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     color: TEXT_SECONDARY,
     marginTop: 2,
     textTransform: 'capitalize',
@@ -407,7 +407,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   jerseyText: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '600',
     color: TEXT_SECONDARY,
   },
@@ -425,7 +425,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   selectedCount: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     fontWeight: '600',
     color: TEXT_SECONDARY,
     textAlign: 'center',
@@ -441,7 +441,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   confirmBtnText: {
-    color: WHITE,
+    fontFamily: FONTS.family,    color: WHITE,
     fontSize: 16,
     fontWeight: '700',
   },

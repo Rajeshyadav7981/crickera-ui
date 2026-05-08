@@ -46,11 +46,6 @@
               "scheme": "https",
               "host": "*.creckstars.com",
               "pathPrefix": "/share"
-            },
-            {
-              "scheme": "http",
-              "host": "*.creckstars.com",
-              "pathPrefix": "/share"
             }
           ],
           "category": [
@@ -64,12 +59,14 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-secure-store"
     ],
     "extra": {
       "eas": {
         "projectId": "796afed5-242f-4031-b704-442f1a8932af"
       }
-    }
+    },
+    "owner": "rajeshyadav"
   }
 }

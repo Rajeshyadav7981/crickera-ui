@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, Modal, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -244,32 +244,32 @@ const s = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   navBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.SURFACE, alignItems: 'center', justifyContent: 'center' },
   headerCenter: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  monthText: { fontSize: 16, fontWeight: '700', color: COLORS.TEXT },
-  yearText: { fontSize: 16, fontWeight: '700', color: COLORS.ACCENT },
+  monthText: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: COLORS.TEXT },
+  yearText: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: COLORS.ACCENT },
   row: { flexDirection: 'row' },
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   cell: { width: '14.28%', height: 40, alignItems: 'center', justifyContent: 'center' },
   cellSelected: { backgroundColor: COLORS.ACCENT, borderRadius: 20 },
   cellToday: { borderWidth: 1.5, borderColor: COLORS.ACCENT, borderRadius: 20 },
-  dayHeader: { fontSize: 11, fontWeight: '700', color: COLORS.TEXT_MUTED, textTransform: 'uppercase' },
-  dayText: { fontSize: 14, fontWeight: '500', color: COLORS.TEXT },
+  dayHeader: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.TEXT_MUTED, textTransform: 'uppercase' },
+  dayText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '500', color: COLORS.TEXT },
   dayTextSelected: { color: '#fff', fontWeight: '700' },
   dayTextToday: { color: COLORS.ACCENT, fontWeight: '700' },
   footer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12, paddingHorizontal: 4 },
-  todayText: { fontSize: 14, fontWeight: '600', color: COLORS.ACCENT, paddingVertical: 8 },
-  cancelText: { fontSize: 14, fontWeight: '600', color: COLORS.ACCENT_LIGHT, paddingVertical: 8 },
+  todayText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.ACCENT, paddingVertical: 8 },
+  cancelText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.ACCENT_LIGHT, paddingVertical: 8 },
 
   pickerScroll: { maxHeight: 320, marginBottom: 8 },
   yearGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   yearCell: { width: '25%', paddingVertical: 12, alignItems: 'center', borderRadius: 8 },
   yearCellActive: { backgroundColor: COLORS.ACCENT },
-  yearCellText: { fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
+  yearCellText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
   yearCellTextActive: { color: '#fff', fontWeight: '800' },
 
   monthGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
   monthCell: { width: '25%', paddingVertical: 14, alignItems: 'center', borderRadius: 8 },
   monthCellActive: { backgroundColor: COLORS.ACCENT },
-  monthCellText: { fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
+  monthCellText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
   monthCellTextActive: { color: '#fff', fontWeight: '800' },
 });
 

@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 
 const TeamCard = ({ team, onPress, style }) => {
   const { name, short_name, color, player_count } = team;
@@ -56,10 +56,10 @@ const styles = StyleSheet.create({
   },
   shieldBg: { position: 'absolute' },
   avatarLetter: { fontSize: 20, fontWeight: '900', color: '#fff', textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
-  name: { fontSize: 13, fontWeight: '700', color: COLORS.TEXT, textAlign: 'center' },
-  short: { fontSize: 11, fontWeight: '600', color: COLORS.TEXT_MUTED, marginTop: 2 },
+  name: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.TEXT, textAlign: 'center' },
+  short: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '600', color: COLORS.TEXT_MUTED, marginTop: 2 },
   memberRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 6 },
-  memberText: { fontSize: 10, color: COLORS.TEXT_HINT, fontWeight: '500' },
+  memberText: { fontFamily: FONTS.family, fontSize: 10, color: COLORS.TEXT_HINT, fontWeight: '500' },
 });
 
 export default React.memo(TeamCard);

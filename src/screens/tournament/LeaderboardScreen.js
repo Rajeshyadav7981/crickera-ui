@@ -6,7 +6,7 @@ import {
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tournamentsAPI } from '../../services/api';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import Skeleton from '../../components/Skeleton';
 
 /* ─── design tokens ─── */
@@ -427,7 +427,7 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 24 },
   emptyTab: { alignItems: 'center', paddingVertical: 60 },
-  emptyTabText: { fontSize: 14, color: COLORS.TEXT_MUTED },
+  emptyTabText: { fontFamily: FONTS.family, fontSize: 14, color: COLORS.TEXT_MUTED },
 
   /* header */
   header: {
@@ -446,9 +446,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backArrow: { fontSize: 28, color: COLORS.TEXT, fontWeight: '300', marginTop: -2 },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
-  shareIcon: { fontSize: 20, color: COLORS.TEXT },
+  backArrow: { fontFamily: FONTS.family, fontSize: 28, color: COLORS.TEXT, fontWeight: '300', marginTop: -2 },
+  headerTitle: { fontFamily: FONTS.family, fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
+  shareIcon: { fontFamily: FONTS.family, fontSize: 20, color: COLORS.TEXT },
 
   /* tabs */
   tabBar: {
@@ -469,7 +469,7 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.ACCENT,
   },
   tabText: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     fontWeight: '600',
     color: COLORS.TEXT_MUTED,
   },
@@ -479,7 +479,7 @@ const styles = StyleSheet.create({
 
   /* section label */
   sectionLabel: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '600',
     color: COLORS.TEXT_MUTED,
     textTransform: 'uppercase',
@@ -495,7 +495,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   mvpInner: {
-    backgroundColor: COLORS.CARD,
+    backgroundColor: COLORS.BG,
     borderRadius: 14,
     alignItems: 'center',
     paddingVertical: 20,
@@ -516,7 +516,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   mvpAvatarText: {
-    fontSize: 28,
+    fontFamily: FONTS.family,    fontSize: 28,
     fontWeight: '700',
     color: COLORS.ACCENT,
   },
@@ -533,9 +533,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: COLORS.CARD,
   },
-  mvpStarText: { fontSize: 12, color: COLORS.CARD },
-  mvpName: { fontSize: 18, fontWeight: '700', color: COLORS.TEXT },
-  mvpTeam: { fontSize: 13, color: COLORS.TEXT_MUTED, marginTop: 2 },
+  mvpStarText: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.CARD },
+  mvpName: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '700', color: COLORS.TEXT },
+  mvpTeam: { fontFamily: FONTS.family, fontSize: 13, color: COLORS.TEXT_MUTED, marginTop: 2 },
   topSeedBadge: {
     backgroundColor: COLORS.ACCENT,
     borderRadius: 20,
@@ -544,7 +544,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   topSeedText: {
-    fontSize: 11,
+    fontFamily: FONTS.family,    fontSize: 11,
     fontWeight: '800',
     color: COLORS.WHITE,
     letterSpacing: 1,
@@ -557,8 +557,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   mvpStatItem: { alignItems: 'center', paddingHorizontal: 24 },
-  mvpStatValue: { fontSize: 22, fontWeight: '800', color: COLORS.TEXT },
-  mvpStatLabel: { fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 2 },
+  mvpStatValue: { fontFamily: FONTS.family, fontSize: 22, fontWeight: '800', color: COLORS.TEXT },
+  mvpStatLabel: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 2 },
   mvpStatDivider: {
     width: 1,
     height: 32,
@@ -579,21 +579,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 8,
   },
-  medalText: { fontSize: 14 },
+  medalText: { fontFamily: FONTS.family, fontSize: 14 },
   sectionTitleText: {
-    fontSize: 15,
+    fontFamily: FONTS.family,    fontSize: 15,
     fontWeight: '700',
     color: COLORS.TEXT,
   },
 
   /* rank card */
   rankCard: {
-    backgroundColor: COLORS.CARD,
+    backgroundColor: COLORS.BG,
     borderRadius: 12,
     overflow: 'hidden',
     marginBottom: 24,
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
   },
   rankRow: {
     flexDirection: 'row',
@@ -604,7 +602,7 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.BORDER,
   },
   rankNum: {
-    width: 24,
+    fontFamily: FONTS.family,    width: 24,
     fontSize: 14,
     fontWeight: '600',
     color: COLORS.TEXT_MUTED,
@@ -621,36 +619,32 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginLeft: 8,
   },
-  rankAvatarText: { fontSize: 14, fontWeight: '600', color: COLORS.TEXT_MUTED },
+  rankAvatarText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.TEXT_MUTED },
   rankInfo: { flex: 1, marginLeft: 10 },
-  rankName: { fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
-  rankTeam: { fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 1 },
+  rankName: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
+  rankTeam: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 1 },
   rankStatWrap: { alignItems: 'flex-end' },
-  rankStatValue: { fontSize: 16, fontWeight: '800', color: COLORS.TEXT },
-  rankStatLabel: { fontSize: 10, fontWeight: '600', color: COLORS.TEXT_MUTED, letterSpacing: 0.5 },
+  rankStatValue: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '800', color: COLORS.TEXT },
+  rankStatLabel: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '600', color: COLORS.TEXT_MUTED, letterSpacing: 0.5 },
 
   /* highest score */
   highScoreSection: {
-    backgroundColor: COLORS.CARD_ELEVATED,
+    backgroundColor: COLORS.BG,
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
   },
   highScoreTitle: {
-    fontSize: 15,
+    fontFamily: FONTS.family,    fontSize: 15,
     fontWeight: '700',
     color: COLORS.TEXT,
     marginBottom: 12,
   },
   highScoreCard: {
     flexDirection: 'row',
-    backgroundColor: COLORS.CARD,
+    backgroundColor: COLORS.BG,
     borderRadius: 10,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
   },
   highScoreLeft: {
     backgroundColor: COLORS.ACCENT,
@@ -661,7 +655,7 @@ const styles = StyleSheet.create({
   },
   highScoreBox: {},
   highScoreValue: {
-    fontSize: 28,
+    fontFamily: FONTS.family,    fontSize: 28,
     fontWeight: '900',
     color: COLORS.WHITE,
   },
@@ -670,9 +664,9 @@ const styles = StyleSheet.create({
     padding: 14,
     justifyContent: 'center',
   },
-  highScoreName: { fontSize: 15, fontWeight: '700', color: COLORS.TEXT },
-  highScoreMatch: { fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 3 },
-  highScoreDetail: { fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 2 },
+  highScoreName: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '700', color: COLORS.TEXT },
+  highScoreMatch: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 3 },
+  highScoreDetail: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 2 },
 
   /* loading */
   loadingWrap: {
@@ -681,7 +675,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   loadingText: {
-    marginTop: 12,
+    fontFamily: FONTS.family,    marginTop: 12,
     fontSize: 14,
     color: COLORS.TEXT_MUTED,
   },

@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { useAuthGate } from '../../hooks/useRequireAuth';
 import { teamsAPI } from '../../services/api';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import Skeleton, { ListSkeleton } from '../../components/Skeleton';
 import SearchBar from '../../components/SearchBar';
@@ -163,9 +163,9 @@ const s = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 12,
-    backgroundColor: COLORS.CARD, borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
+    backgroundColor: COLORS.BG,
   },
-  title: { fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
+  title: { fontFamily: FONTS.family, fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
   searchBar: {
     flexDirection: 'row', alignItems: 'center',
     marginHorizontal: 16, marginVertical: 10,
@@ -173,7 +173,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 12, height: 40,
     borderWidth: 1, borderColor: COLORS.BORDER,
   },
-  searchInput: { flex: 1, fontSize: 14, color: COLORS.TEXT },
+  searchInput: { fontFamily: FONTS.family, flex: 1, fontSize: 14, color: COLORS.TEXT },
   card: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: COLORS.CARD, borderRadius: 14, padding: 14, marginBottom: 10,
@@ -183,23 +183,23 @@ const s = StyleSheet.create({
     width: 48, height: 48, borderRadius: 24,
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: { fontSize: 20, fontWeight: '900' },
+  avatarText: { fontFamily: FONTS.family, fontSize: 20, fontWeight: '900' },
   info: { flex: 1 },
-  teamName: { fontSize: 15, fontWeight: '700', color: COLORS.TEXT },
-  shortName: { fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 2 },
+  teamName: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '700', color: COLORS.TEXT },
+  shortName: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 2 },
   code: {
-    fontSize: 10, fontWeight: '700', color: COLORS.ACCENT_LIGHT,
+    fontFamily: FONTS.family,    fontSize: 10, fontWeight: '700', color: COLORS.ACCENT_LIGHT,
     backgroundColor: COLORS.ACCENT_SOFT, paddingHorizontal: 8, paddingVertical: 3,
     borderRadius: 6, overflow: 'hidden', marginRight: 4,
   },
   empty: { alignItems: 'center', paddingVertical: 60 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: COLORS.TEXT },
-  emptySub: { fontSize: 13, color: COLORS.TEXT_MUTED, marginTop: 4 },
+  emptyTitle: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: COLORS.TEXT },
+  emptySub: { fontFamily: FONTS.family, fontSize: 13, color: COLORS.TEXT_MUTED, marginTop: 4 },
   createBtn: {
     marginTop: 16, backgroundColor: COLORS.ACCENT, borderRadius: 10,
     paddingVertical: 10, paddingHorizontal: 24,
   },
-  createBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  createBtnText: { fontFamily: FONTS.family, color: '#fff', fontSize: 14, fontWeight: '700' },
 });
 
 export default MyTeamsScreen;

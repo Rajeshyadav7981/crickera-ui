@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, A
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tournamentsAPI } from '../../services/api';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Skeleton from '../../components/Skeleton';
 
@@ -331,12 +331,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerIcon: {
-    fontSize: 20,
+    fontFamily: FONTS.family,    fontSize: 20,
     color: COLORS.TEXT,
     fontWeight: '600',
   },
   headerTitle: {
-    flex: 1,
+    fontFamily: FONTS.family,    flex: 1,
     fontSize: 17,
     fontWeight: '700',
     color: COLORS.TEXT,
@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.ACCENT,
   },
   tabText: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     color: COLORS.TEXT_MUTED,
     fontWeight: '500',
   },
@@ -381,18 +381,18 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   pointsTitle: {
-    fontSize: 20,
+    fontFamily: FONTS.family,    fontSize: 20,
     fontWeight: '700',
     color: COLORS.TEXT,
   },
   seasonBadge: {
-    backgroundColor: COLORS.SURFACE,
+    backgroundColor: COLORS.BG,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
   },
   seasonText: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     fontWeight: '600',
     color: COLORS.TEXT_SECONDARY,
   },
@@ -423,7 +423,7 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.BORDER,
   },
   colLabel: {
-    fontSize: 10,
+    fontFamily: FONTS.family,    fontSize: 10,
     fontWeight: '700',
     color: COLORS.TEXT_MUTED,
     textTransform: 'uppercase',
@@ -480,7 +480,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.SURFACE,
   },
   rankText: {
-    fontSize: 11,
+    fontFamily: FONTS.family,    fontSize: 11,
     fontWeight: '700',
   },
   rankTextAccent: {
@@ -497,19 +497,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   teamName: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '600',
     color: COLORS.TEXT,
   },
   checkIcon: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     color: COLORS.ACCENT,
     fontWeight: '700',
   },
 
   /* ── stat values ── */
   colValue: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '500',
     color: COLORS.TEXT_SECONDARY,
     textAlign: 'center',
@@ -551,7 +551,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   legendText: {
-    fontSize: 11,
+    fontFamily: FONTS.family,    fontSize: 11,
     color: COLORS.TEXT_MUTED,
     fontWeight: '500',
   },
@@ -560,12 +560,10 @@ const styles = StyleSheet.create({
   promoCard: {
     marginHorizontal: 16,
     marginTop: 20,
-    backgroundColor: COLORS.CARD_ELEVATED,
+    backgroundColor: COLORS.BG,
     borderRadius: 16,
     padding: 20,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
   },
   promoTopRow: {
     flexDirection: 'row',
@@ -588,20 +586,20 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   liveBadgeText: {
-    fontSize: 11,
+    fontFamily: FONTS.family,    fontSize: 11,
     fontWeight: '700',
     color: COLORS.LIVE,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   promoTitle: {
-    fontSize: 16,
+    fontFamily: FONTS.family,    fontSize: 16,
     fontWeight: '700',
     color: COLORS.TEXT,
     marginBottom: 4,
   },
   promoSubtitle: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '500',
     color: COLORS.TEXT_SECONDARY,
     marginBottom: 16,
@@ -613,7 +611,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   reminderBtnText: {
-    color: '#fff',
+    fontFamily: FONTS.family,    color: '#fff',
     fontSize: 14,
     fontWeight: '700',
   },
@@ -625,7 +623,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   emptyText: {
-    color: COLORS.TEXT_MUTED,
+    fontFamily: FONTS.family,    color: COLORS.TEXT_MUTED,
     fontSize: 14,
     fontWeight: '500',
     textAlign: 'center',

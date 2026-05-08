@@ -9,8 +9,9 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tournamentsAPI, matchesAPI, teamsAPI } from '../../services/api';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
-import { COLORS, getStatusInfo as themeGetStatusInfo } from '../../theme';
+import { COLORS, getStatusInfo as themeGetStatusInfo, FONTS } from '../../theme';
 import Icon from '../../components/Icon';
+import MatchCard from '../../components/MatchCard';
 import Skeleton, { MatchCardSkeleton, ListSkeleton } from '../../components/Skeleton';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -85,7 +86,7 @@ const TournamentsTab = () => {
     inputRange: [0, 1],
     outputRange: [0, -SCREEN_WIDTH],
   });
-  const [tabSwitching, setTabSwitching] = useState(false);
+  // tabSwitching removed — both tabs render simultaneously, animation handles visual switch
 
   // Tournaments pagination
   const [tournaments, setTournaments] = useState([]);
@@ -121,6 +122,10 @@ const TournamentsTab = () => {
   const getTeamName = useCallback((id) => teams[id]?.short_name || teams[id]?.name || `Team ${id}`, [teams]);
   const getTeamColor = useCallback((id) => teams[id]?.color || PRIMARY, [teams]);
 
+  // Stable keyExtractor shared by both FlashLists — prevents unnecessary
+  // re-mounts when the list config object identity changes.
+  const keyExtractor = useCallback((item) => String(item.id), []);
+
   // Tournament lookup for match tournament badges
   const tournMapRef = useRef({});
 
@@ -147,6 +152,9 @@ const TournamentsTab = () => {
   };
 
   /* ── Fetch Tournaments (paginated) ── */
+  // Skeleton rule: show it ONLY when the list is empty — i.e. the very first
+  // fetch. Filter changes / pull-to-refresh keep the existing cards on-screen
+  // and replace them in place when the network returns. No flash, no spinner.
   const fetchTournaments = useCallback(async (reset = false) => {
     if (!reset && !tournHasMoreRef.current) return;
 
@@ -167,7 +175,6 @@ const TournamentsTab = () => {
 
       if (reset) {
         setTournaments(data);
-        // Build tournament map
         const map = {};
         data.forEach(t => { map[t.id] = t; });
         tournMapRef.current = map;
@@ -237,17 +244,21 @@ const TournamentsTab = () => {
     const isStale = !dataLoadedRef.current || now - lastFetchRef.current > 60000;
     if (!isStale) return;
 
+    // Kick off the network calls IMMEDIATELY (don't wait for animations to
+    // finish) so the API round-trip overlaps with the tab-switch frame.
+    // The heavier follow-ups (teams map, live strip) can wait for idle.
+    tournOffsetRef.current = 0;
+    tournHasMoreRef.current = true;
+    matchOffsetRef.current = 0;
+    matchHasMoreRef.current = true;
+    fetchTournaments(true);
+    fetchMatches(true);
+    lastFetchRef.current = now;
+    dataLoadedRef.current = true;
+
     const task = InteractionManager.runAfterInteractions(() => {
       loadTeams();
       loadLiveData();
-      tournOffsetRef.current = 0;
-      tournHasMoreRef.current = true;
-      matchOffsetRef.current = 0;
-      matchHasMoreRef.current = true;
-      fetchTournaments(true);
-      fetchMatches(true);
-      lastFetchRef.current = now;
-      dataLoadedRef.current = true;
     });
     return () => task.cancel();
   }, []));
@@ -266,14 +277,20 @@ const TournamentsTab = () => {
   }, [matchFilter]);
 
   /* ── Debounced search ── */
+  // Use refs to always call the latest fetch function (avoids stale closure in setTimeout)
+  const fetchTournamentsRef = useRef(fetchTournaments);
+  fetchTournamentsRef.current = fetchTournaments;
+  const fetchMatchesRef = useRef(fetchMatches);
+  fetchMatchesRef.current = fetchMatches;
+
   const handleTournSearchChange = (text) => {
     setTournSearch(text);
     if (tournSearchTimer.current) clearTimeout(tournSearchTimer.current);
     tournSearchTimer.current = setTimeout(() => {
       tournOffsetRef.current = 0;
       tournHasMoreRef.current = true;
-      fetchTournaments(true);
-    }, 500);
+      fetchTournamentsRef.current(true);
+    }, 400);
   };
 
   const handleMatchSearchChange = (text) => {
@@ -282,8 +299,8 @@ const TournamentsTab = () => {
     matchSearchTimer.current = setTimeout(() => {
       matchOffsetRef.current = 0;
       matchHasMoreRef.current = true;
-      fetchMatches(true);
-    }, 500);
+      fetchMatchesRef.current(true);
+    }, 400);
   };
 
   const clearTournSearch = () => {
@@ -398,79 +415,27 @@ const TournamentsTab = () => {
   /* ═══════════════════════════════════ */
   /* MATCH ITEM RENDERER                */
   /* ═══════════════════════════════════ */
-  const renderMatchItem = useCallback(({ item: m }) => {
-    const statusInfo = getStatusInfo(m.status);
-    const tourn = tournMapRef.current[m.tournament_id];
-    const isLive = m.status === 'live';
-    return (
-      <TouchableOpacity
-        style={styles.matchCard}
-        activeOpacity={0.8}
-        onPress={() => navigation.navigate('MatchDetail', { matchId: m.id })}
-      >
-        {/* Top row: status + meta */}
-        <View style={styles.matchCardTop}>
-          <View style={[styles.matchStatusBadge, { backgroundColor: statusInfo.badgeBg }]}>
-            {isLive && <PulsingDot />}
-            <Text style={[styles.matchStatusText, { color: statusInfo.badgeText }]}>{statusInfo.label}</Text>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            {m.match_code && <Text style={styles.matchCode}>{m.match_code}</Text>}
-            <Text style={styles.matchOvers}>T{m.overs}</Text>
-          </View>
-        </View>
-
-        {/* Tournament badge */}
-        {tourn && (
-          <View style={styles.matchTournBadge}>
-            <Icon name="trophy" size={10} style={{ marginRight: 4 }} />
-            <Text style={styles.matchTournText} numberOfLines={1}>{tourn.name}</Text>
-            {tourn.tournament_code && <Text style={styles.matchTournCode}>{tourn.tournament_code}</Text>}
-          </View>
-        )}
-
-        {/* Teams */}
-        <View style={styles.matchTeamsRow}>
-          <View style={styles.matchTeamSide}>
-            <View style={[styles.teamDot, { backgroundColor: getTeamColor(m.team_a_id) }]}>
-              <Text style={styles.teamDotText}>{getTeamName(m.team_a_id)[0]}</Text>
-            </View>
-            <Text style={styles.matchTeamName} numberOfLines={1}>{m.team_a_name || getTeamName(m.team_a_id)}</Text>
-          </View>
-          <View style={styles.matchVsCircle}><Text style={styles.matchVsText}>VS</Text></View>
-          <View style={[styles.matchTeamSide, { alignItems: 'flex-end' }]}>
-            <Text style={[styles.matchTeamName, { textAlign: 'right' }]} numberOfLines={1}>{m.team_b_name || getTeamName(m.team_b_id)}</Text>
-            <View style={[styles.teamDot, { backgroundColor: getTeamColor(m.team_b_id) }]}>
-              <Text style={styles.teamDotText}>{getTeamName(m.team_b_id)[0]}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Result / Date */}
-        {m.result_summary ? (
-          <Text style={styles.matchResult} numberOfLines={1}>{m.result_summary}</Text>
-        ) : m.match_date ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Icon name="calendar" size={11} />
-            <Text style={styles.matchDate}>{formatDateShort(m.match_date)}</Text>
-          </View>
-        ) : null}
-
-        {/* Winner marker */}
-        {m.winner_id && (
-          <View style={styles.matchWinnerTag}>
-            <Icon name="trophy" size={10} style={{ marginRight: 3 }} />
-            <Text style={styles.matchWinnerText}>{getTeamName(m.winner_id)} won</Text>
-          </View>
-        )}
-      </TouchableOpacity>
-    );
-  }, [navigation, getTeamName, getTeamColor]);
+  const renderMatchItem = useCallback(({ item: m }) => (
+    <MatchCard
+      match={m}
+      width="100%"
+      style={{ marginBottom: 10 }}
+      onPress={() => {
+        if (m.status === 'live' || m.status === 'in_progress') {
+          navigation.navigate('LiveScoring', { matchId: m.id });
+        } else {
+          navigation.navigate('MatchDetail', { matchId: m.id });
+        }
+      }}
+    />
+  ), [navigation]);
 
   /* ═══════════════════════════════════ */
   /* TOURNAMENTS LIST HEADER            */
   /* ═══════════════════════════════════ */
-  const TournamentsListHeader = () => (
+  // Memoized so FlashList doesn't re-render the header + its horizontal
+  // Live strip every time the user types into the search box.
+  const TournamentsListHeader = useCallback(() => (
     <>
       {/* Live Tournaments Horizontal Strip */}
       {liveTournaments.length > 0 && tournFilter === 'All' && !tournSearch.trim() && (
@@ -506,12 +471,12 @@ const TournamentsTab = () => {
         </View>
       )}
     </>
-  );
+  ), [liveTournaments, tournFilter, tournSearch, navigation]);
 
   /* ═══════════════════════════════════ */
   /* MATCHES LIST HEADER                */
   /* ═══════════════════════════════════ */
-  const MatchesListHeader = () => (
+  const MatchesListHeader = useCallback(() => (
     <>
       {/* Live Matches Horizontal Strip */}
       {liveMatches.length > 0 && matchFilter === 'All' && !matchSearch.trim() && (
@@ -521,43 +486,18 @@ const TournamentsTab = () => {
             <Text style={styles.sectionTitle}>Live Matches</Text>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
-            {liveMatches.map(m => {
-              const tourn = tournMapRef.current[m.tournament_id];
-              return (
-                <TouchableOpacity
-                  key={m.id}
-                  style={styles.liveMatchCard}
-                  activeOpacity={0.85}
-                  onPress={() => navigation.navigate('MatchDetail', { matchId: m.id })}
-                >
-                  <View style={styles.liveMatchHeader}>
-                    <View style={styles.liveChipSmall}><PulsingDot /><Text style={{ fontSize: 9, fontWeight: '800', color: '#fff' }}>LIVE</Text></View>
-                    {tourn && <Text style={styles.liveMatchTourn} numberOfLines={1}>{tourn.name}</Text>}
-                  </View>
-                  <View style={styles.liveMatchTeams}>
-                    <View style={styles.liveMatchTeamRow}>
-                      <View style={[styles.teamDot, { backgroundColor: getTeamColor(m.team_a_id) }]}>
-                        <Text style={styles.teamDotText}>{getTeamName(m.team_a_id)[0]}</Text>
-                      </View>
-                      <Text style={styles.liveMatchTeamName} numberOfLines={1}>{m.team_a_name || getTeamName(m.team_a_id)}</Text>
-                    </View>
-                    <Text style={styles.liveMatchVs}>vs</Text>
-                    <View style={styles.liveMatchTeamRow}>
-                      <View style={[styles.teamDot, { backgroundColor: getTeamColor(m.team_b_id) }]}>
-                        <Text style={styles.teamDotText}>{getTeamName(m.team_b_id)[0]}</Text>
-                      </View>
-                      <Text style={styles.liveMatchTeamName} numberOfLines={1}>{m.team_b_name || getTeamName(m.team_b_id)}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.liveMatchOvers}>T{m.overs}</Text>
-                </TouchableOpacity>
-              );
-            })}
+            {liveMatches.map(m => (
+              <MatchCard
+                key={m.id}
+                match={m}
+                onPress={() => navigation.navigate('LiveScoring', { matchId: m.id })}
+              />
+            ))}
           </ScrollView>
         </View>
       )}
     </>
-  );
+  ), [liveMatches, matchFilter, matchSearch, navigation]);
 
   /* ═══════════════════════════════════ */
   /* EMPTY COMPONENTS                   */
@@ -617,13 +557,15 @@ const TournamentsTab = () => {
         })}
       </ScrollView>
 
-      {tournLoading && !tournRefreshing ? (
+      {tournaments.length === 0 && (tournLoading || tournRefreshing) ? (
+        // Skeleton only when we have nothing to show yet. Once data arrives
+        // the list stays mounted even during subsequent refetches.
         <ListSkeleton count={3} Card={MatchCardSkeleton} />
       ) : (
         <FlashList
           style={{ flex: 1 }}
           data={tournaments}
-          keyExtractor={(item) => String(item.id)}
+          keyExtractor={keyExtractor}
           renderItem={renderTournamentItem}
           estimatedItemSize={200}
           ListHeaderComponent={TournamentsListHeader}
@@ -632,7 +574,9 @@ const TournamentsTab = () => {
           onEndReached={loadMoreTournaments}
           onEndReachedThreshold={0.3}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={tournRefreshing} onRefresh={refreshTournaments} tintColor={PRIMARY} />}
+          refreshControl={
+            <RefreshControl refreshing={tournRefreshing} onRefresh={refreshTournaments} tintColor={PRIMARY} />
+          }
           contentContainerStyle={tournaments.length === 0 ? { flexGrow: 1 } : undefined}
         />
       )}
@@ -675,13 +619,13 @@ const TournamentsTab = () => {
         })}
       </ScrollView>
 
-      {matchLoading && !matchRefreshing ? (
+      {matches.length === 0 && (matchLoading || matchRefreshing) ? (
         <ListSkeleton count={3} Card={MatchCardSkeleton} />
       ) : (
         <FlashList
           style={{ flex: 1 }}
           data={matches}
-          keyExtractor={(item) => String(item.id)}
+          keyExtractor={keyExtractor}
           renderItem={renderMatchItem}
           estimatedItemSize={150}
           ListHeaderComponent={MatchesListHeader}
@@ -690,7 +634,9 @@ const TournamentsTab = () => {
           onEndReached={loadMoreMatches}
           onEndReachedThreshold={0.3}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={matchRefreshing} onRefresh={refreshMatches} tintColor={PRIMARY} />}
+          refreshControl={
+            <RefreshControl refreshing={matchRefreshing} onRefresh={refreshMatches} tintColor={PRIMARY} />
+          }
           contentContainerStyle={matches.length === 0 ? { flexGrow: 1 } : { paddingHorizontal: 16 }}
         />
       )}
@@ -721,11 +667,9 @@ const TournamentsTab = () => {
           style={styles.tabBtn}
           onPress={() => {
             if (activeTab === 'tournaments') return;
-            setTabSwitching(true);
-            Animated.spring(tabSlideAnim, { toValue: 0, useNativeDriver: true, tension: 68, friction: 10 }).start(() => {
-              setActiveTab('tournaments');
-              setTabSwitching(false);
-            });
+            setActiveTab('tournaments');
+            // Timing is noticeably snappier than spring for a 2-tab switch.
+            Animated.timing(tabSlideAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
           }}
           activeOpacity={0.7}
         >
@@ -736,11 +680,8 @@ const TournamentsTab = () => {
           style={styles.tabBtn}
           onPress={() => {
             if (activeTab === 'matches') return;
-            setTabSwitching(true);
-            Animated.spring(tabSlideAnim, { toValue: 1, useNativeDriver: true, tension: 68, friction: 10 }).start(() => {
-              setActiveTab('matches');
-              setTabSwitching(false);
-            });
+            setActiveTab('matches');
+            Animated.timing(tabSlideAnim, { toValue: 1, duration: 200, useNativeDriver: true }).start();
           }}
           activeOpacity={0.7}
         >
@@ -753,18 +694,10 @@ const TournamentsTab = () => {
       <View style={{ flex: 1, overflow: 'hidden' }}>
         <Animated.View style={{ flexDirection: 'row', width: SCREEN_WIDTH * 2, flex: 1, transform: [{ translateX: contentTranslateX }] }}>
           <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-            {tabSwitching ? (
-              <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
-                <ListSkeleton count={3} Card={MatchCardSkeleton} />
-              </View>
-            ) : renderTournamentsView()}
+            {renderTournamentsView()}
           </View>
           <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-            {tabSwitching ? (
-              <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
-                <ListSkeleton count={3} Card={MatchCardSkeleton} />
-              </View>
-            ) : renderMatchesView()}
+            {renderMatchesView()}
           </View>
         </Animated.View>
       </View>
@@ -780,9 +713,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8,
   },
-  title: { fontSize: 28, fontWeight: '800', color: DARK },
+  title: { fontFamily: FONTS.family, fontSize: 28, fontWeight: '800', color: DARK },
   createBtn: { backgroundColor: PRIMARY, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8 },
-  createBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  createBtnText: { fontFamily: FONTS.family, color: '#fff', fontSize: 13, fontWeight: '700' },
 
   /* Tabs */
   tabRow: {
@@ -797,7 +730,7 @@ const styles = StyleSheet.create({
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingVertical: 10, borderRadius: 10, zIndex: 1,
   },
-  tabText: { fontSize: 14, fontWeight: '700', color: MID },
+  tabText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: MID },
   tabTextActive: { color: '#fff' },
 
   /* Search */
@@ -806,9 +739,9 @@ const styles = StyleSheet.create({
     marginHorizontal: 20, borderRadius: 12, borderWidth: 1, borderColor: BORDER,
     height: 44, paddingHorizontal: 14, marginBottom: 10,
   },
-  searchIcon: { fontSize: 14, marginRight: 10, color: MUTED },
-  searchInput: { flex: 1, fontSize: 14, color: DARK, height: 44, padding: 0 },
-  clearSearch: { fontSize: 14, color: MUTED, padding: 4 },
+  searchIcon: { fontFamily: FONTS.family, fontSize: 14, marginRight: 10, color: MUTED },
+  searchInput: { fontFamily: FONTS.family, flex: 1, fontSize: 14, color: DARK, height: 44, padding: 0 },
+  clearSearch: { fontFamily: FONTS.family, fontSize: 14, color: MUTED, padding: 4 },
 
   /* Filters */
   filterRow: { flexGrow: 0, marginBottom: 4, zIndex: 1 },
@@ -819,13 +752,13 @@ const styles = StyleSheet.create({
     backgroundColor: CARD, borderWidth: 1, borderColor: BORDER, gap: 4,
   },
   filterPillActive: { backgroundColor: PRIMARY, borderColor: PRIMARY },
-  filterIcon: { fontSize: 10 },
-  filterText: { fontSize: 12, color: MID, fontWeight: '600' },
+  filterIcon: { fontFamily: FONTS.family, fontSize: 10 },
+  filterText: { fontFamily: FONTS.family, fontSize: 12, color: MID, fontWeight: '600' },
   filterTextActive: { color: '#fff' },
 
   /* Section Header */
   sectionHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginBottom: 10, gap: 8 },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: DARK },
+  sectionTitle: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: DARK },
   liveIndicator: {
     width: 20, height: 20, borderRadius: 10, backgroundColor: COLORS.LIVE_BG,
     alignItems: 'center', justifyContent: 'center',
@@ -841,9 +774,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
     backgroundColor: PRIMARY, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, gap: 4,
   },
-  liveChipText: { fontSize: 9, fontWeight: '800', color: '#fff' },
-  liveCardName: { fontSize: 15, fontWeight: '800', color: '#fff', marginTop: 'auto' },
-  liveCardMeta: { fontSize: 10, fontWeight: '600', color: 'rgba(255,255,255,0.8)' },
+  liveChipText: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '800', color: '#fff' },
+  liveCardName: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '800', color: '#fff', marginTop: 'auto' },
+  liveCardMeta: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '600', color: 'rgba(255,255,255,0.8)' },
 
   /* Live Match Card (horizontal) */
   liveMatchCard: {
@@ -856,13 +789,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', backgroundColor: PRIMARY,
     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, gap: 3,
   },
-  liveMatchTourn: { flex: 1, fontSize: 10, fontWeight: '600', color: MUTED },
+  liveMatchTourn: { fontFamily: FONTS.family, flex: 1, fontSize: 10, fontWeight: '600', color: MUTED },
   liveMatchTeams: { gap: 4 },
   liveMatchTeamRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  liveMatchTeamName: { fontSize: 13, fontWeight: '700', color: DARK },
-  liveMatchVs: { fontSize: 10, color: MUTED, fontWeight: '600', textAlign: 'center' },
+  liveMatchTeamName: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: DARK },
+  liveMatchVs: { fontFamily: FONTS.family, fontSize: 10, color: MUTED, fontWeight: '600', textAlign: 'center' },
   liveMatchOvers: {
-    fontSize: 10, fontWeight: '700', color: MID, marginTop: 8,
+    fontFamily: FONTS.family,    fontSize: 10, fontWeight: '700', color: MID, marginTop: 8,
     alignSelf: 'flex-end', backgroundColor: SURFACE, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
   },
 
@@ -874,18 +807,18 @@ const styles = StyleSheet.create({
   tournamentOverlay: { flex: 1, borderRadius: 16, padding: 14, justifyContent: 'space-between', backgroundColor: 'rgba(0,0,0,0.6)' },
   tournamentTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   statusChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, gap: 5 },
-  statusChipText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  statusChipText: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
   oversChip: { backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  oversChipText: { fontSize: 10, fontWeight: '700', color: '#fff' },
-  tournamentName: { fontSize: 20, fontWeight: '800', color: '#fff', marginBottom: 6 },
+  oversChipText: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700', color: '#fff' },
+  tournamentName: { fontFamily: FONTS.family, fontSize: 20, fontWeight: '800', color: '#fff', marginBottom: 6 },
   tournamentMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   metaItem: { flexDirection: 'row', alignItems: 'center' },
-  metaIcon: { fontSize: 11, marginRight: 3 },
-  metaText: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.9)' },
+  metaIcon: { fontFamily: FONTS.family, fontSize: 11, marginRight: 3 },
+  metaText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.9)' },
   statsRow: { flexDirection: 'row', gap: 16, marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.15)' },
   statItem: { alignItems: 'center' },
-  statValue: { fontSize: 13, fontWeight: '700', color: '#fff', textTransform: 'capitalize' },
-  statLabel: { fontSize: 9, fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginTop: 1, textTransform: 'uppercase', letterSpacing: 0.3 },
+  statValue: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: '#fff', textTransform: 'capitalize' },
+  statLabel: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginTop: 1, textTransform: 'uppercase', letterSpacing: 0.3 },
   pulsingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: PRIMARY },
 
   /* Match Card */
@@ -896,40 +829,40 @@ const styles = StyleSheet.create({
   },
   matchCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   matchStatusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, gap: 4 },
-  matchStatusText: { fontSize: 9, fontWeight: '700', letterSpacing: 0.3 },
-  matchCode: { fontSize: 9, fontWeight: '600', color: MUTED, backgroundColor: SURFACE, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 3, overflow: 'hidden' },
-  matchOvers: { fontSize: 10, fontWeight: '700', color: MID, backgroundColor: SURFACE, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, overflow: 'hidden' },
+  matchStatusText: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '700', letterSpacing: 0.3 },
+  matchCode: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '600', color: MUTED, backgroundColor: SURFACE, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 3, overflow: 'hidden' },
+  matchOvers: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700', color: MID, backgroundColor: SURFACE, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, overflow: 'hidden' },
   matchTournBadge: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(180,83,9,0.15)',
     borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, marginBottom: 10,
   },
-  matchTournText: { flex: 1, fontSize: 11, fontWeight: '600', color: '#D97706' },
-  matchTournCode: { fontSize: 9, fontWeight: '700', color: COLORS.WARNING_LIGHT, backgroundColor: 'rgba(217,119,6,0.2)', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 3, marginLeft: 6, overflow: 'hidden' },
+  matchTournText: { fontFamily: FONTS.family, flex: 1, fontSize: 11, fontWeight: '600', color: '#D97706' },
+  matchTournCode: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '700', color: COLORS.WARNING_LIGHT, backgroundColor: 'rgba(217,119,6,0.2)', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 3, marginLeft: 6, overflow: 'hidden' },
   matchTeamsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
   matchTeamSide: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
   teamDot: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  teamDotText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  matchTeamName: { flex: 1, fontSize: 13, fontWeight: '700', color: DARK },
+  teamDotText: { fontFamily: FONTS.family, color: '#fff', fontSize: 11, fontWeight: '700' },
+  matchTeamName: { fontFamily: FONTS.family, flex: 1, fontSize: 13, fontWeight: '700', color: DARK },
   matchVsCircle: {
     width: 28, height: 28, borderRadius: 14, backgroundColor: SURFACE,
     alignItems: 'center', justifyContent: 'center', marginHorizontal: 6,
   },
-  matchVsText: { fontSize: 9, fontWeight: '800', color: MID },
-  matchResult: { fontSize: 11, fontWeight: '600', color: COLORS.SUCCESS, textAlign: 'center', marginTop: 4, paddingTop: 8, borderTopWidth: 1, borderTopColor: BORDER },
-  matchDate: { fontSize: 11, color: MUTED, textAlign: 'center', marginTop: 4 },
+  matchVsText: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '800', color: MID },
+  matchResult: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '600', color: COLORS.SUCCESS, textAlign: 'center', marginTop: 4, paddingTop: 8, borderTopWidth: 1, borderTopColor: BORDER },
+  matchDate: { fontFamily: FONTS.family, fontSize: 11, color: MUTED, textAlign: 'center', marginTop: 4 },
   matchWinnerTag: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: BORDER,
   },
-  matchWinnerText: { fontSize: 10, fontWeight: '700', color: COLORS.SUCCESS },
+  matchWinnerText: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700', color: COLORS.SUCCESS },
 
   /* Empty */
   emptyBox: { alignItems: 'center', marginTop: 60, paddingHorizontal: 40 },
   emptyIconCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: COLORS.ACCENT_SOFT, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: DARK, marginBottom: 6 },
-  emptySub: { fontSize: 13, color: MUTED, textAlign: 'center', lineHeight: 18 },
+  emptyTitle: { fontFamily: FONTS.family, fontSize: 17, fontWeight: '700', color: DARK, marginBottom: 6 },
+  emptySub: { fontFamily: FONTS.family, fontSize: 13, color: MUTED, textAlign: 'center', lineHeight: 18 },
   emptyCreateBtn: { backgroundColor: PRIMARY, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12, marginTop: 20 },
-  emptyCreateBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  emptyCreateBtnText: { fontFamily: FONTS.family, color: '#fff', fontWeight: '700', fontSize: 14 },
 });
 
 export default TournamentsTab;

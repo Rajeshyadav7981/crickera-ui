@@ -4,8 +4,9 @@ import {
   ActivityIndicator, TextInput, InteractionManager,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { tournamentsAPI, teamsAPI } from '../../services/api';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { useLocation } from '../../hooks/useLocation';
 import {
@@ -465,9 +466,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
     }
   };
 
-  // =================================================================
   // RENDER — Add Next Stage flow (single screen)
-  // =================================================================
   const renderAddNextStage = () => {
     const teamCount = tournamentTeams.length;
     const round = chosenRoundName ? roundByName(chosenRoundName) : nextRoundFor(teamCount);
@@ -485,7 +484,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
     });
 
     return (
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}>
+      <KeyboardAwareScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }} enableOnAndroid extraScrollHeight={40} keyboardShouldPersistTaps="handled">
         <Text style={styles.subHeading}>Pick the Round</Text>
         <Text style={styles.helperText}>
           {roundOptions.length > 0
@@ -706,15 +705,13 @@ const TournamentSetupScreen = ({ navigation, route }) => {
         {/* Add more teams (rare, but allowed) */}
         <Text style={[styles.subHeading, { marginTop: 20 }]}>Add Team</Text>
         {renderTeamPicker()}
-      </ScrollView>
+      </KeyboardAwareScrollView>
     );
   };
 
-  // =================================================================
   // RENDER — Initial flow: Teams step
-  // =================================================================
   const renderTeamsStep = () => (
-    <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}>
+    <KeyboardAwareScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }} enableOnAndroid extraScrollHeight={40} keyboardShouldPersistTaps="handled">
       <Text style={styles.subHeading}>Tournament Teams ({tournamentTeams.length})</Text>
       {tournamentTeams.length === 0 ? (
         <View style={styles.emptyCard}>
@@ -740,7 +737,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
       )}
       <Text style={[styles.subHeading, { marginTop: 20 }]}>Add Teams</Text>
       {renderTeamPicker()}
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 
   const renderTeamPicker = () => (
@@ -802,14 +799,10 @@ const TournamentSetupScreen = ({ navigation, route }) => {
     </>
   );
 
-  // =================================================================
   // RENDER — Initial flow: League Round step
-  // =================================================================
-  // =================================================================
   // RENDER — Initial flow: Format step
-  // =================================================================
   const renderFormatStep = () => (
-    <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}>
+    <KeyboardAwareScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }} enableOnAndroid extraScrollHeight={40} keyboardShouldPersistTaps="handled">
       <Text style={styles.subHeading}>Tournament Format</Text>
       <Text style={styles.helperText}>
         Pick how the tournament is structured. More formats will land here over
@@ -841,7 +834,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
           </TouchableOpacity>
         );
       })}
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 
   // Compact stepper that walks an explicit `options` array. Pressing − or +
@@ -1039,13 +1032,11 @@ const TournamentSetupScreen = ({ navigation, route }) => {
     );
   };
 
-  // =================================================================
   // RENDER — Initial flow: League Round step (multi-group capable)
-  // =================================================================
   const renderLeagueRoundStep = () => {
     const fmt = formatByKey(formatKey);
     return (
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}>
+      <KeyboardAwareScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }} enableOnAndroid extraScrollHeight={40} keyboardShouldPersistTaps="handled">
         {/* Format header — reflects the picker choice */}
         <View style={styles.formatHeader}>
           <View style={styles.formatHeaderIcon}>
@@ -1084,13 +1075,11 @@ const TournamentSetupScreen = ({ navigation, route }) => {
             teams advance.
           </Text>
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     );
   };
 
-  // =================================================================
   // Bottom action bar
-  // =================================================================
   const renderBottomBar = () => {
     if (isAddNextStage) {
       const round = nextRoundFor(tournamentTeams.length);
@@ -1161,9 +1150,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
     );
   };
 
-  // =================================================================
   // Header + step indicator
-  // =================================================================
   const renderHeader = () => {
     const title = isAddNextStage ? 'Add Next Round' : (tournamentName || 'Tournament Setup');
     const stepLabels = ['Add Teams', 'Pick Format', 'Create League Round'];
@@ -1209,11 +1196,11 @@ const styles = StyleSheet.create({
     width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.SURFACE,
     alignItems: 'center', justifyContent: 'center', marginRight: 12,
   },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: DARK },
-  headerSubtitle: { fontSize: 12, color: MUTED, marginTop: 1 },
+  headerTitle: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: DARK },
+  headerSubtitle: { fontFamily: FONTS.family, fontSize: 12, color: MUTED, marginTop: 1 },
 
-  subHeading: { fontSize: 16, fontWeight: '700', color: DARK, marginBottom: 8, marginTop: 12 },
-  helperText: { fontSize: 13, color: MUTED, marginBottom: 12, lineHeight: 18 },
+  subHeading: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: DARK, marginBottom: 8, marginTop: 12 },
+  helperText: { fontFamily: FONTS.family, fontSize: 13, color: MUTED, marginBottom: 12, lineHeight: 18 },
 
   /* Team chips */
   teamChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
@@ -1223,8 +1210,8 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: BORDER, gap: 6,
   },
   teamChipDot: { width: 10, height: 10, borderRadius: 5 },
-  teamChipName: { fontSize: 13, fontWeight: '600', color: DARK },
-  teamChipRemove: { fontSize: 14, color: MUTED, fontWeight: '700', marginLeft: 2 },
+  teamChipName: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: DARK },
+  teamChipRemove: { fontFamily: FONTS.family, fontSize: 14, color: MUTED, fontWeight: '700', marginLeft: 2 },
 
   /* Search */
   searchFilterRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
@@ -1234,14 +1221,14 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.SURFACE, borderWidth: 1, borderColor: BORDER,
   },
   searchFilterBtnActive: { backgroundColor: PRIMARY, borderColor: PRIMARY },
-  searchFilterText: { fontSize: 12, fontWeight: '600', color: MUTED },
+  searchFilterText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '600', color: MUTED },
   searchFilterTextActive: { color: '#fff' },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.SURFACE,
     borderRadius: 10, borderWidth: 1, borderColor: BORDER, height: 44,
     paddingHorizontal: 12, marginBottom: 12,
   },
-  searchInput: { flex: 1, fontSize: 14, color: DARK },
+  searchInput: { fontFamily: FONTS.family, flex: 1, fontSize: 14, color: DARK },
 
   createNewRow: {
     flexDirection: 'row', alignItems: 'center', paddingVertical: 12,
@@ -1251,28 +1238,28 @@ const styles = StyleSheet.create({
     width: 32, height: 32, borderRadius: 16, backgroundColor: PRIMARY,
     alignItems: 'center', justifyContent: 'center',
   },
-  createNewText: { fontSize: 14, fontWeight: '600', color: PRIMARY },
+  createNewText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: PRIMARY },
 
   teamRow: {
     flexDirection: 'row', alignItems: 'center', paddingVertical: 12,
     borderBottomWidth: 1, borderBottomColor: BORDER, gap: 12,
   },
   teamRowDot: { width: 32, height: 32, borderRadius: 16 },
-  teamRowName: { fontSize: 14, fontWeight: '600', color: DARK },
-  teamRowShort: { fontSize: 11, color: MUTED, marginTop: 1 },
+  teamRowName: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: DARK },
+  teamRowShort: { fontFamily: FONTS.family, fontSize: 11, color: MUTED, marginTop: 1 },
   addBtnSmall: {
     backgroundColor: COLORS.ACCENT_SOFT, borderRadius: 6,
     paddingHorizontal: 10, paddingVertical: 5,
   },
-  addBtnSmallText: { fontSize: 12, fontWeight: '600', color: PRIMARY },
+  addBtnSmallText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '600', color: PRIMARY },
 
   /* Empty */
   emptyCard: {
     backgroundColor: COLORS.CARD, borderRadius: 12, borderWidth: 1, borderColor: BORDER,
     alignItems: 'center', paddingVertical: 28, marginBottom: 8,
   },
-  emptyText: { fontSize: 14, fontWeight: '600', color: DARK },
-  emptySubtext: { fontSize: 12, color: MUTED, marginTop: 4 },
+  emptyText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: DARK },
+  emptySubtext: { fontFamily: FONTS.family, fontSize: 12, color: MUTED, marginTop: 4 },
 
   /* Preset card (format picker step) */
   presetCard: {
@@ -1288,8 +1275,8 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.SURFACE,
     alignItems: 'center', justifyContent: 'center',
   },
-  presetTitle: { fontSize: 15, fontWeight: '700', color: DARK },
-  presetDesc: { fontSize: 12, color: MUTED, marginTop: 3, lineHeight: 16 },
+  presetTitle: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '700', color: DARK },
+  presetDesc: { fontFamily: FONTS.family, fontSize: 12, color: MUTED, marginTop: 3, lineHeight: 16 },
   radioOuter: {
     width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: BORDER,
     alignItems: 'center', justifyContent: 'center',
@@ -1309,8 +1296,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 10,
     borderBottomWidth: 1, borderBottomColor: BORDER,
   },
-  groupCardTitle: { fontSize: 14, fontWeight: '700', color: DARK },
-  groupCardCount: { fontSize: 12, color: MUTED },
+  groupCardTitle: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: DARK },
+  groupCardCount: { fontFamily: FONTS.family, fontSize: 12, color: MUTED },
 
   /* Format header */
   formatHeader: {
@@ -1324,8 +1311,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.CARD,
     alignItems: 'center', justifyContent: 'center',
   },
-  formatHeaderTitle: { fontSize: 16, fontWeight: '800', color: DARK },
-  formatHeaderDesc: { fontSize: 12, color: COLORS.TEXT_SECONDARY, marginTop: 4, lineHeight: 16 },
+  formatHeaderTitle: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '800', color: DARK },
+  formatHeaderDesc: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_SECONDARY, marginTop: 4, lineHeight: 16 },
 
   /* Stepper picker — fixed footprint regardless of option count */
   stepper: {
@@ -1341,8 +1328,8 @@ const styles = StyleSheet.create({
   },
   stepperBtnDisabled: { opacity: 0.35 },
   stepperValueWrap: { flex: 1, alignItems: 'center' },
-  stepperValue: { fontSize: 18, fontWeight: '800', color: DARK },
-  stepperHint: { fontSize: 11, color: MUTED, marginTop: 2 },
+  stepperValue: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '800', color: DARK },
+  stepperHint: { fontFamily: FONTS.family, fontSize: 11, color: MUTED, marginTop: 2 },
 
   /* Round name input */
   inputBox: {
@@ -1350,7 +1337,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.SURFACE, borderWidth: 1, borderColor: BORDER,
     borderRadius: 12, paddingHorizontal: 14, height: 48, gap: 10,
   },
-  inputText: { flex: 1, fontSize: 15, fontWeight: '600', color: DARK },
+  inputText: { fontFamily: FONTS.family, flex: 1, fontSize: 15, fontWeight: '600', color: DARK },
 
   /* Pool list (initial league round) */
   poolList: {
@@ -1363,9 +1350,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: BORDER,
   },
   poolSeed: {
-    width: 22, textAlign: 'center', fontSize: 12, fontWeight: '700', color: MUTED,
+    fontFamily: FONTS.family,    width: 22, textAlign: 'center', fontSize: 12, fontWeight: '700', color: MUTED,
   },
-  poolName: { flex: 1, fontSize: 14, fontWeight: '600', color: DARK },
+  poolName: { fontFamily: FONTS.family, flex: 1, fontSize: 14, fontWeight: '600', color: DARK },
   moveButtons: { flexDirection: 'row', gap: 4 },
   moveBtn: {
     width: 28, height: 28, borderRadius: 14, backgroundColor: COLORS.SURFACE,
@@ -1387,19 +1374,19 @@ const styles = StyleSheet.create({
     width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.SURFACE,
     alignItems: 'center', justifyContent: 'center',
   },
-  roundPickerTitle: { fontSize: 14, fontWeight: '700', color: DARK },
-  roundPickerMeta: { fontSize: 11, color: MUTED, marginTop: 2 },
+  roundPickerTitle: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: DARK },
+  roundPickerMeta: { fontFamily: FONTS.family, fontSize: 11, color: MUTED, marginTop: 2 },
   autoBadge: {
     backgroundColor: COLORS.ACCENT, borderRadius: 4,
     paddingHorizontal: 5, paddingVertical: 1,
   },
-  autoBadgeText: { fontSize: 9, fontWeight: '800', color: COLORS.TEXT, letterSpacing: 0.5 },
+  autoBadgeText: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '800', color: COLORS.TEXT, letterSpacing: 0.5 },
   dropBadge: {
     backgroundColor: COLORS.WARNING_BG, borderRadius: 4,
     paddingHorizontal: 5, paddingVertical: 1,
     borderWidth: 1, borderColor: 'rgba(255,152,0,0.3)',
   },
-  dropBadgeText: { fontSize: 9, fontWeight: '700', color: COLORS.WARNING },
+  dropBadgeText: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '700', color: COLORS.WARNING },
 
   /* Add-next-stage round card */
   roundCard: {
@@ -1407,13 +1394,13 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.ACCENT_SOFT_BORDER,
     padding: 14, marginTop: 4,
   },
-  roundCardTitle: { fontSize: 16, fontWeight: '700', color: DARK },
+  roundCardTitle: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: DARK },
   warnCard: {
     backgroundColor: COLORS.WARNING_BG, borderRadius: 12,
     borderWidth: 1, borderColor: 'rgba(255,152,0,0.3)',
     padding: 14, marginTop: 4,
   },
-  warnText: { fontSize: 13, color: COLORS.WARNING, fontWeight: '600' },
+  warnText: { fontFamily: FONTS.family, fontSize: 13, color: COLORS.WARNING, fontWeight: '600' },
 
   /* Pair rows (knockout matchups) */
   pairRow: {
@@ -1423,7 +1410,7 @@ const styles = StyleSheet.create({
     padding: 10, marginBottom: 8,
   },
   pairLabel: {
-    width: 38, fontSize: 11, fontWeight: '700', color: MUTED, textAlign: 'center',
+    fontFamily: FONTS.family,    width: 38, fontSize: 11, fontWeight: '700', color: MUTED, textAlign: 'center',
   },
   pairTeam: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -1433,25 +1420,25 @@ const styles = StyleSheet.create({
   pairTeamSelected: {
     backgroundColor: COLORS.ACCENT, borderColor: COLORS.ACCENT,
   },
-  pairTeamName: { flex: 1, fontSize: 13, fontWeight: '600', color: DARK },
-  pairVs: { fontSize: 11, fontWeight: '700', color: MUTED, paddingHorizontal: 4 },
+  pairTeamName: { fontFamily: FONTS.family, flex: 1, fontSize: 13, fontWeight: '600', color: DARK },
+  pairVs: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: MUTED, paddingHorizontal: 4 },
 
   /* Swap-with picker */
   swapPicker: {
     backgroundColor: COLORS.CARD, borderRadius: 12,
     borderWidth: 1, borderColor: PRIMARY, padding: 12, marginTop: 4, marginBottom: 8,
   },
-  swapPickerTitle: { fontSize: 13, fontWeight: '700', color: DARK, marginBottom: 8 },
+  swapPickerTitle: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: DARK, marginBottom: 8 },
   swapPickerOption: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10,
     backgroundColor: COLORS.SURFACE, borderWidth: 1, borderColor: BORDER,
     marginBottom: 6,
   },
-  swapPickerOptionText: { fontSize: 13, fontWeight: '600', color: DARK },
-  swapPickerOptionMeta: { fontSize: 11, color: MUTED, marginTop: 2 },
+  swapPickerOptionText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: DARK },
+  swapPickerOptionMeta: { fontFamily: FONTS.family, fontSize: 11, color: MUTED, marginTop: 2 },
   swapPickerCancel: { paddingVertical: 10, alignItems: 'center' },
-  swapPickerCancelText: { fontSize: 13, fontWeight: '600', color: COLORS.ACCENT_LIGHT },
+  swapPickerCancelText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.ACCENT_LIGHT },
 
   /* Info card */
   infoCard: {
@@ -1461,7 +1448,7 @@ const styles = StyleSheet.create({
     padding: 12, marginTop: 16,
   },
   infoText: {
-    flex: 1, fontSize: 12, color: COLORS.TEXT_SECONDARY, lineHeight: 16,
+    fontFamily: FONTS.family,    flex: 1, fontSize: 12, color: COLORS.TEXT_SECONDARY, lineHeight: 16,
   },
 
   /* Bottom bar */
@@ -1474,12 +1461,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.SURFACE, borderRadius: 12,
     paddingVertical: 14, paddingHorizontal: 20,
   },
-  backNavBtnText: { fontSize: 14, fontWeight: '600', color: DARK },
+  backNavBtnText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: DARK },
   nextBtn: {
     flex: 1, backgroundColor: PRIMARY, borderRadius: 12,
     paddingVertical: 14, alignItems: 'center',
   },
-  nextBtnText: { color: COLORS.TEXT, fontSize: 15, fontWeight: '700' },
+  nextBtnText: { fontFamily: FONTS.family, color: COLORS.TEXT, fontSize: 15, fontWeight: '700' },
 });
 
 export default TournamentSetupScreen;

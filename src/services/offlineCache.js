@@ -1,18 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-/**
- * Simple offline cache for API responses.
- * Stores data in AsyncStorage with timestamp.
- * Returns cached data instantly, then refreshes in background.
- *
- * Usage:
- *   const data = await offlineCache.get('home_matches');
- *   // Returns cached data or null
- *
- *   await offlineCache.set('home_matches', freshData);
- *   // Stores with timestamp
- */
-
 const CACHE_PREFIX = 'cache:';
 const MAX_AGE = 5 * 60 * 1000; // 5 minutes default
 
@@ -22,7 +9,7 @@ const offlineCache = {
       const raw = await AsyncStorage.getItem(`${CACHE_PREFIX}${key}`);
       if (!raw) return null;
       const { data, timestamp } = JSON.parse(raw);
-      if (Date.now() - timestamp > maxAge) return null; // Stale
+      if (Date.now() - timestamp > maxAge) return null;
       return data;
     } catch {
       return null;

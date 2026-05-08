@@ -12,7 +12,7 @@ import offlineCache from '../../services/offlineCache';
 import { useLocation } from '../../hooks/useLocation';
 import { useUserSearch, useRecentSearches } from '../../hooks/useUsers';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
-import { COLORS, GRADIENTS, STATUS_CONFIG } from '../../theme';
+import { COLORS, GRADIENTS, STATUS_CONFIG, FONTS } from '../../theme';
 import Icon from '../../components/Icon';
 import Avatar from '../../components/Avatar';
 import Skeleton, { MatchCardSkeleton, HorizontalSkeleton } from '../../components/Skeleton';
@@ -52,13 +52,21 @@ const HomeTab = () => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
-  // Memoized navigation callbacks to avoid inline functions in render
   const navigateToProfile = useCallback(() => navigation.navigate('Profile'), [navigation]);
   const navigateToMyMatches = useCallback(() => navigation.navigate('MyMatches'), [navigation]);
   const navigateToMyTournaments = useCallback(() => navigation.navigate('MyTournaments'), [navigation]);
+  const navigateToMyTeams = useCallback(() => navigation.navigate('MyTeams'), [navigation]);
   const navigateToMatchDetail = useCallback((matchId) => navigation.navigate('MatchDetail', { matchId }), [navigation]);
   const navigateToTeamDetail = useCallback((teamId) => navigation.navigate('TeamDetail', { teamId }), [navigation]);
   const navigateToTournamentDetail = useCallback((tournamentId) => navigation.navigate('TournamentDetail', { tournamentId }), [navigation]);
+  const openUserProfile = useCallback((u) => {
+    if (!u) return;
+    if (u.player_id) {
+      navigation.navigate('PlayerProfile', { playerId: u.player_id });
+    } else {
+      navigation.navigate('UserPublicProfile', { username: u.username || u.full_name });
+    }
+  }, [navigation]);
   const navigateToQuickAction = useCallback((nav, params, label) => {
     if (!requireAuth(label || 'continue')) return;
     navigation.navigate(nav, params);
@@ -67,15 +75,54 @@ const HomeTab = () => {
   const fetchNearby = async (coords) => {
     if (!coords) return;
     try {
+      // All three are real geo queries now (tournaments.nearby joins through
+      // the venue's lat/lng using the earthdistance GIST index — same path
+      // matches.nearby uses).
       const [mRes, vRes, tRes] = await Promise.all([
         matchesAPI.nearby(coords.latitude, coords.longitude, 50).catch(() => ({ data: [] })),
         venuesAPI.nearby(coords.latitude, coords.longitude, 50).catch(() => ({ data: [] })),
-        tournamentsAPI.list({ limit: 10 }).catch(() => ({ data: [] })),
+        tournamentsAPI.nearby(coords.latitude, coords.longitude, 50, 20).catch(() => ({ data: [] })),
       ]);
-      setNearbyMatches(mRes.data || []);
+
+      // Live first, then upcoming, then completed (most-recent completed when
+      // no live exist). Top 10 is sliced AFTER the priority sort so a live
+      // match at the far end of the radius still beats a close completed one.
+      const matchBucket = (m) => {
+        const s = (m.status || '').toLowerCase();
+        if (s === 'live' || s === 'in_progress') return 0;
+        if (s === 'toss' || s === 'upcoming') return 1;
+        return 2;
+      };
+      const sortedMatches = (mRes.data || [])
+        .slice()
+        .sort((a, b) => {
+          const pa = matchBucket(a), pb = matchBucket(b);
+          if (pa !== pb) return pa - pb;
+          if (pa === 2) return new Date(b.match_date || 0) - new Date(a.match_date || 0);
+          return (a.distance_km || 0) - (b.distance_km || 0);
+        })
+        .slice(0, 10);
+
+      const tourBucket = (t) => {
+        const s = (t.status || '').toLowerCase();
+        if (s === 'live' || s === 'ongoing' || s === 'in_progress') return 0;
+        if (s === 'upcoming' || s === 'draft') return 1;
+        return 2;
+      };
+      const sortedTournaments = (tRes.data || [])
+        .slice()
+        .sort((a, b) => {
+          const pa = tourBucket(a), pb = tourBucket(b);
+          if (pa !== pb) return pa - pb;
+          // Within a bucket: closest first; for completed prefer most recent.
+          if (pa === 2) return new Date(b.start_date || 0) - new Date(a.start_date || 0);
+          return (a.distance_km || 0) - (b.distance_km || 0);
+        })
+        .slice(0, 10);
+
+      setNearbyMatches(sortedMatches);
       setNearbyVenues(vRes.data || []);
-      // Show tournaments that have a location set (proxy for "nearby")
-      setNearbyTournaments((tRes.data || []).filter(t => t.location));
+      setNearbyTournaments(sortedTournaments);
     } catch {}
   };
 
@@ -345,7 +392,7 @@ const HomeTab = () => {
                     key={u.id}
                     style={s.searchRow}
                     activeOpacity={0.7}
-                    onPress={() => { addRecent(u); clearSearch(); navigation.navigate('UserPublicProfile', { username: u.username || u.full_name }); }}
+                    onPress={() => { addRecent(u); clearSearch(); openUserProfile(u); }}
                   >
                     <Avatar uri={u.profile} name={u.full_name} size={40} color={COLORS.ACCENT} />
                     <View style={{ flex: 1 }}>
@@ -370,7 +417,7 @@ const HomeTab = () => {
                   key={u.id}
                   style={s.searchRow}
                   activeOpacity={0.7}
-                  onPress={() => { clearSearch(); navigation.navigate('UserPublicProfile', { username: u.username || u.full_name }); }}
+                  onPress={() => { clearSearch(); openUserProfile(u); }}
                 >
                   <Avatar uri={u.profile} name={u.full_name} size={40} color={COLORS.ACCENT} />
                   <View style={{ flex: 1 }}>
@@ -506,7 +553,7 @@ const HomeTab = () => {
 
           {/* ── My Teams ── */}
           {myTeams.length > 0 && renderSection(
-            'My Teams', null,
+            'My Teams', navigateToMyTeams,
             myTeams.map(t => (
               <TouchableOpacity key={t.id} style={s.teamCard} activeOpacity={0.7}
                 onPress={() => navigateToTeamDetail(t.id)}>
@@ -589,8 +636,8 @@ const s = StyleSheet.create({
   },
   heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   heroLeft: { flex: 1 },
-  heroGreeting: { fontSize: 13, fontWeight: '500', color: COLORS.TEXT_MUTED, lineHeight: 18 },
-  heroName: { fontSize: 24, fontWeight: '900', color: COLORS.TEXT, letterSpacing: -0.5, marginTop: 2 },
+  heroGreeting: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '500', color: COLORS.TEXT_MUTED, lineHeight: 18 },
+  heroName: { fontFamily: FONTS.family, fontSize: 24, fontWeight: '900', color: COLORS.TEXT, letterSpacing: -0.5, marginTop: 2 },
 
   // Search Bar — inside scroll, below quick actions
   searchBar: {
@@ -611,30 +658,30 @@ const s = StyleSheet.create({
     borderColor: COLORS.ACCENT,
     backgroundColor: COLORS.CARD,
   },
-  searchBarInput: { flex: 1, fontSize: 15, color: COLORS.TEXT, padding: 0 },
+  searchBarInput: { fontFamily: FONTS.family, flex: 1, fontSize: 15, color: COLORS.TEXT, padding: 0 },
   searchResultsWrap: {
-    marginHorizontal: 16, marginTop: 12, backgroundColor: COLORS.CARD,
+    marginHorizontal: 16, marginTop: 12, backgroundColor: COLORS.BG,
     borderRadius: 14, borderWidth: 1, borderColor: COLORS.BORDER, overflow: 'hidden',
   },
   searchRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 14,
     borderBottomWidth: 0.5, borderBottomColor: COLORS.BORDER,
   },
-  searchName: { fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
-  searchHandle: { fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 1 },
-  searchEmpty: { fontSize: 13, color: COLORS.TEXT_MUTED, textAlign: 'center', padding: 20 },
+  searchName: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
+  searchHandle: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 1 },
+  searchEmpty: { fontFamily: FONTS.family, fontSize: 13, color: COLORS.TEXT_MUTED, textAlign: 'center', padding: 20 },
   recentHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: COLORS.BORDER,
   },
-  recentTitle: { fontSize: 13, fontWeight: '700', color: COLORS.TEXT },
-  recentClear: { fontSize: 12, fontWeight: '600', color: COLORS.ACCENT },
+  recentTitle: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.TEXT },
+  recentClear: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '600', color: COLORS.ACCENT },
 
   // Loader
   loaderWrap: { alignItems: 'center', justifyContent: 'center' },
   loaderLogo: { width: 120, height: 120, resizeMode: 'contain' },
-  loaderTitle: { fontSize: 30, fontWeight: '900', color: '#FFFFFF', marginTop: 20, letterSpacing: 1 },
-  loaderSub: { fontSize: 14, color: 'rgba(255,255,255,0.5)', marginTop: 8, fontWeight: '500' },
+  loaderTitle: { fontFamily: FONTS.family, fontSize: 30, fontWeight: '900', color: '#FFFFFF', marginTop: 20, letterSpacing: 1 },
+  loaderSub: { fontFamily: FONTS.family, fontSize: 14, color: 'rgba(255,255,255,0.5)', marginTop: 8, fontWeight: '500' },
   loaderDots: { flexDirection: 'row', gap: 8, marginTop: 30 },
   loaderDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.ACCENT },
 
@@ -647,7 +694,7 @@ const s = StyleSheet.create({
     width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: COLORS.BORDER_LIGHT,
   },
-  quickLabel: { fontSize: 10, fontWeight: '600', color: COLORS.TEXT_SECONDARY, textAlign: 'center', lineHeight: 14 },
+  quickLabel: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '600', color: COLORS.TEXT_SECONDARY, textAlign: 'center', lineHeight: 14 },
 
   // Location banner
   locBanner: {
@@ -656,15 +703,15 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.ACCENT_SOFT_BORDER,
   },
   // locIcon style removed — replaced with Icon component
-  locTitle: { fontSize: 14, fontWeight: '700', color: COLORS.ACCENT },
-  locText: { fontSize: 11, color: COLORS.ACCENT, marginTop: 2 },
-  locArrow: { fontSize: 24, color: COLORS.ACCENT, fontWeight: '300' },
+  locTitle: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.ACCENT },
+  locText: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.ACCENT, marginTop: 2 },
+  locArrow: { fontFamily: FONTS.family, fontSize: 24, color: COLORS.ACCENT, fontWeight: '300' },
 
   // Section
   section: { marginTop: 8 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 14, paddingBottom: 10 },
-  sectionTitle: { fontSize: 17, fontWeight: '800', color: COLORS.TEXT },
-  seeAll: { fontSize: 13, fontWeight: '600', color: COLORS.ACCENT },
+  sectionTitle: { fontFamily: FONTS.family, fontSize: 17, fontWeight: '800', color: COLORS.TEXT },
+  seeAll: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.ACCENT },
   hScroll: { paddingHorizontal: 16, paddingBottom: 8, gap: 12 },
 
   // Match Card
@@ -672,21 +719,21 @@ const s = StyleSheet.create({
   matchCardInner: { padding: 16, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', flex: 1 },
   matchTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  statusText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  statusText: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
   matchTeams: { gap: 2, marginBottom: 10 },
   matchScoreRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  teamName: { fontSize: 15, fontWeight: '800', color: COLORS.TEXT, flex: 1 },
-  scoreText: { fontSize: 15, fontWeight: '900', color: COLORS.TEXT, marginLeft: 8 },
-  vsText: { fontSize: 10, fontWeight: '700', color: COLORS.TEXT_MUTED, marginVertical: 2 },
+  teamName: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '800', color: COLORS.TEXT, flex: 1 },
+  scoreText: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '900', color: COLORS.TEXT, marginLeft: 8 },
+  vsText: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700', color: COLORS.TEXT_MUTED, marginVertical: 2 },
   matchBottom: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  matchMeta: { fontSize: 11, color: COLORS.TEXT_SECONDARY, fontWeight: '500' },
-  resultText: { fontSize: 11, fontWeight: '700', color: COLORS.SUCCESS, marginTop: 6 },
+  matchMeta: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_SECONDARY, fontWeight: '500' },
+  resultText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.SUCCESS, marginTop: 6 },
   distBadge: {
-    fontSize: 10, fontWeight: '700', color: COLORS.ACCENT,
+    fontFamily: FONTS.family,    fontSize: 10, fontWeight: '700', color: COLORS.ACCENT,
     backgroundColor: COLORS.ACCENT_SOFT, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, overflow: 'hidden',
   },
   codeBadge: {
-    fontSize: 9, fontWeight: '700', color: COLORS.ACCENT,
+    fontFamily: FONTS.family,    fontSize: 9, fontWeight: '700', color: COLORS.ACCENT,
     backgroundColor: COLORS.ACCENT_SOFT, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, overflow: 'hidden',
   },
 
@@ -694,18 +741,17 @@ const s = StyleSheet.create({
   // venueIcon style removed — replaced with Icon component
   // Team Card
   teamCard: {
-    width: 120, backgroundColor: COLORS.CARD, borderRadius: 16, padding: 16, alignItems: 'center',
-    borderWidth: 1, borderColor: COLORS.BORDER,
+    width: 120, backgroundColor: COLORS.BG, borderRadius: 16, padding: 16, alignItems: 'center',
   },
   teamAvatarCircle: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  teamAvatarLetter: { fontSize: 20, fontWeight: '900' },
-  teamCardName: { fontSize: 13, fontWeight: '700', color: COLORS.TEXT, textAlign: 'center' },
-  teamCardShort: { fontSize: 11, fontWeight: '600', color: COLORS.TEXT_MUTED, marginTop: 2 },
+  teamAvatarLetter: { fontFamily: FONTS.family, fontSize: 20, fontWeight: '900' },
+  teamCardName: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.TEXT, textAlign: 'center' },
+  teamCardShort: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '600', color: COLORS.TEXT_MUTED, marginTop: 2 },
 
   // Tournament Card
   tournCard: { width: CARD_W > 260 ? 260 : CARD_W, borderRadius: 16, overflow: 'hidden' },
   tournCardInner: { padding: 16, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
-  tournName: { fontSize: 15, fontWeight: '800', color: COLORS.TEXT, marginBottom: 8 },
+  tournName: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '800', color: COLORS.TEXT, marginBottom: 8 },
 
   // ─── Match Card v2 ────────────────────────────────────────────────────
 
@@ -726,8 +772,8 @@ const s = StyleSheet.create({
   // Empty
   emptyWrap: { alignItems: 'center', paddingVertical: 60, paddingHorizontal: 40 },
   // emptyEmoji style removed — replaced with Icon component
-  emptyTitle: { fontSize: 20, fontWeight: '800', color: COLORS.TEXT, marginTop: 16 },
-  emptyText: { fontSize: 14, color: COLORS.TEXT_SECONDARY, marginTop: 8, textAlign: 'center', lineHeight: 20 },
+  emptyTitle: { fontFamily: FONTS.family, fontSize: 20, fontWeight: '800', color: COLORS.TEXT, marginTop: 16 },
+  emptyText: { fontFamily: FONTS.family, fontSize: 14, color: COLORS.TEXT_SECONDARY, marginTop: 8, textAlign: 'center', lineHeight: 20 },
 });
 
 export default HomeTab;

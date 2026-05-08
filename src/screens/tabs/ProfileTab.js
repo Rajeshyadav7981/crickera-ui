@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../context/AuthContext';
 import { usersAPI } from '../../services/api';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import Icon from '../../components/Icon';
 import Avatar from '../../components/Avatar';
 import Skeleton, { ProfileSkeleton } from '../../components/Skeleton';
@@ -18,15 +18,15 @@ import StatCard from '../../components/StatCard';
 const { width: SW } = Dimensions.get('window');
 
 const MENU_ITEMS = [
-  { label: 'Edit Profile', icon: 'edit', color: '#2196F3', screen: 'EditProfile' },
-  { label: 'My Stats', icon: 'stats', color: '#E91E63', screen: 'MyStats' },
-  { label: 'Settings', icon: 'settings', color: COLORS.PURPLE, screen: 'Settings' },
-  { label: 'Help & Support', icon: 'help', color: '#00BCD4', screen: 'Help' },
+  { label: 'Edit Profile', icon: 'edit', screen: 'EditProfile' },
+  { label: 'My Stats', icon: 'stats', screen: 'MyStats' },
+  { label: 'Settings', icon: 'settings', screen: 'Settings' },
+  { label: 'Help & Support', icon: 'help', screen: 'Help' },
 ];
 
 const ProfileTab = () => {
   const insets = useSafeAreaInsets();
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const navigation = useNavigation();
   const [stats, setStats] = useState({ created: {}, played: {} });
   const [statsLoading, setStatsLoading] = useState(true);
@@ -56,6 +56,9 @@ const ProfileTab = () => {
     if (statsLoadedRef.current && user) return;
     const task = InteractionManager.runAfterInteractions(() => {
       loadStats();
+      // Pull fresh user too so counts / profile photo reflect any changes
+      // that happened while the user was elsewhere in the app.
+      refreshUser?.().catch(() => {});
       statsLoadedRef.current = true;
     });
     return () => task.cancel();
@@ -145,13 +148,25 @@ const ProfileTab = () => {
       style={[s.container, { paddingTop: insets.top }]}
       showsVerticalScrollIndicator={false}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadStats(); }} tintColor={COLORS.ACCENT} />
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => {
+            setRefreshing(true);
+            // Pull-to-refresh should grab the latest user (counts, profile
+            // photo, bio, etc.) *and* the stats. Both run in parallel.
+            Promise.all([
+              refreshUser?.().catch(() => {}),
+              loadStats(),
+            ]).finally(() => setRefreshing(false));
+          }}
+          tintColor={COLORS.ACCENT}
+        />
       }
     >
       <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
 
         {/* ── Hero Profile Header ── */}
-        <LinearGradient colors={['#0F172A', '#1E293B', '#0F172A']} style={s.hero}>
+        <View style={s.hero}>
           {/* Avatar */}
           <View style={s.avatarWrap}>
             <Avatar
@@ -175,16 +190,22 @@ const ProfileTab = () => {
             <Text style={s.username}>@{user.username}</Text>
           )}
 
-          {/* Followers / Following */}
+          {/* Followers / Following — tap to open paginated list */}
           <View style={s.followRow}>
             <TouchableOpacity style={s.followItem} activeOpacity={0.7}
-              onPress={() => user?.username && (user?.followers_count || 0) > 0 && navigation.navigate('UserPublicProfile', { username: user.username, initialTab: 'followers' })}>
+              onPress={() => user?.id && navigation.navigate('FollowersList', {
+                userId: user.id, username: user.username, mode: 'followers',
+                count: user.followers_count || 0,
+              })}>
               <Text style={s.followNum}>{user?.followers_count || 0}</Text>
               <Text style={s.followLabel}>Followers</Text>
             </TouchableOpacity>
             <View style={s.followDivider} />
             <TouchableOpacity style={s.followItem} activeOpacity={0.7}
-              onPress={() => user?.username && (user?.following_count || 0) > 0 && navigation.navigate('UserPublicProfile', { username: user.username, initialTab: 'following' })}>
+              onPress={() => user?.id && navigation.navigate('FollowersList', {
+                userId: user.id, username: user.username, mode: 'following',
+                count: user.following_count || 0,
+              })}>
               <Text style={s.followNum}>{user?.following_count || 0}</Text>
               <Text style={s.followLabel}>Following</Text>
             </TouchableOpacity>
@@ -222,24 +243,23 @@ const ProfileTab = () => {
               ))
             ) : (
               [
-                { value: stats.total?.matches || 0, label: 'Matches', icon: 'cricket', color: COLORS.INDIGO, bg: 'rgba(99,102,241,0.15)' },
-                { value: stats.total?.completed || 0, label: 'Completed', icon: 'check-circle', color: COLORS.SUCCESS_LIGHT, bg: 'rgba(34,197,94,0.15)' },
-                { value: stats.total?.teams || 0, label: 'Teams', icon: 'account-group', color: COLORS.WARNING_LIGHT, bg: 'rgba(245,158,11,0.15)' },
-                { value: stats.total?.tournaments || 0, label: 'Tournaments', icon: 'trophy', color: COLORS.PURPLE, bg: 'rgba(236,72,153,0.15)' },
+                { value: stats.total?.matches || 0, label: 'Matches', icon: 'cricket' },
+                { value: stats.total?.completed || 0, label: 'Done', icon: 'check-circle' },
+                { value: stats.total?.teams || 0, label: 'Teams', icon: 'account-group' },
+                { value: stats.total?.tournaments || 0, label: 'Tourneys', icon: 'trophy' },
               ].map((st, i) => (
                 <StatCard
                   key={i}
                   value={st.value}
                   label={st.label}
                   icon={st.icon}
-                  color={st.color}
-                  bg={st.bg}
+                  color={COLORS.ACCENT}
                   size="md"
                 />
               ))
             )}
           </View>
-        </LinearGradient>
+        </View>
 
         {/* ── Menu Items ── */}
         <View style={s.menuCard}>
@@ -247,8 +267,8 @@ const ProfileTab = () => {
             <React.Fragment key={item.label}>
               {index > 0 && <View style={s.menuDivider} />}
               <TouchableOpacity style={s.menuItem} activeOpacity={0.6} onPress={() => navigation.navigate(item.screen)}>
-                <View style={[s.menuIconBg, { backgroundColor: item.color + '18' }]}>
-                  <Icon name={item.icon} size={18} color={item.color} />
+                <View style={s.menuIconBg}>
+                  <Icon name={item.icon} size={18} color={COLORS.ACCENT} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={s.menuText}>{item.label}</Text>
@@ -271,7 +291,7 @@ const ProfileTab = () => {
 
         {/* ── Sign Out ── */}
         <TouchableOpacity style={s.logoutBtn} onPress={logout} activeOpacity={0.8}>
-          <Icon name="logout" size={16} color={COLORS.DANGER} />
+          <Icon name="logout" size={16} color={COLORS.TEXT_SECONDARY} />
           <Text style={s.logoutText}>Sign Out</Text>
         </TouchableOpacity>
 
@@ -284,30 +304,33 @@ const ProfileTab = () => {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.BG },
 
-  // Hero
-  hero: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 24, alignItems: 'center' },
+  // Hero — solid app bg (no blue gradient)
+  hero: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 24, alignItems: 'center', backgroundColor: COLORS.BG },
   avatarWrap: { alignItems: 'center', marginBottom: 14 },
   liveBadge: {
     position: 'absolute', bottom: -4, flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: COLORS.LIVE, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
   },
   liveDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#fff' },
-  liveText: { fontSize: 8, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
+  liveText: { fontFamily: FONTS.family, fontSize: 8, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
 
-  name: { fontSize: 24, fontWeight: '900', color: COLORS.TEXT, textAlign: 'center' },
-  username: { fontSize: 14, fontWeight: '600', color: COLORS.ACCENT, textAlign: 'center', marginTop: 2 },
+  name: { fontFamily: FONTS.family, fontSize: 24, fontWeight: '900', color: COLORS.TEXT, textAlign: 'center' },
+  username: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.ACCENT, textAlign: 'center', marginTop: 2 },
   followRow: {
-    flexDirection: 'row', alignItems: 'center', marginTop: 12,
-    backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 24,
+    flexDirection: 'row', alignItems: 'center', marginTop: 14,
+    backgroundColor: COLORS.CARD, borderRadius: 14,
+    borderWidth: 1, borderColor: COLORS.BORDER,
+    paddingVertical: 12, paddingHorizontal: 18,
+    alignSelf: 'stretch',
   },
-  followItem: { flex: 1, alignItems: 'center' },
-  followNum: { fontSize: 18, fontWeight: '800', color: COLORS.TEXT },
-  followLabel: { fontSize: 10, fontWeight: '600', color: COLORS.TEXT_MUTED, marginTop: 2 },
-  followDivider: { width: 1, height: 24, backgroundColor: COLORS.BORDER },
+  followItem: { flex: 1, alignItems: 'center', paddingVertical: 2 },
+  followNum: { fontFamily: FONTS.family, fontSize: 20, fontWeight: '900', color: COLORS.TEXT, letterSpacing: -0.3 },
+  followLabel: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.TEXT_MUTED, marginTop: 3, letterSpacing: 0.4, textTransform: 'uppercase' },
+  followDivider: { width: 1, height: 28, backgroundColor: COLORS.BORDER },
   infoRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 8 },
   infoPill: { backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 },
-  infoPillText: { fontSize: 11, color: COLORS.TEXT_SECONDARY, fontWeight: '500' },
-  memberSince: { fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 6, fontWeight: '500' },
+  infoPillText: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_SECONDARY, fontWeight: '500' },
+  memberSince: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 6, fontWeight: '500' },
 
   // Stats Grid
   statsGrid: { flexDirection: 'row', gap: 10, marginTop: 20, width: '100%' },
@@ -319,33 +342,30 @@ const s = StyleSheet.create({
 
   // Menu
   menuCard: {
-    backgroundColor: COLORS.CARD, marginHorizontal: 20, marginTop: 16, borderRadius: 18, overflow: 'hidden',
-    borderWidth: 1, borderColor: COLORS.BORDER,
+    backgroundColor: COLORS.BG, marginHorizontal: 20, marginTop: 16, borderRadius: 18, overflow: 'hidden',
   },
   menuItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, paddingHorizontal: 16, gap: 14 },
-  menuIconBg: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  menuIconBg: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.ACCENT_SOFT },
   // menuEmoji style removed — replaced with Icon component
-  menuText: { fontSize: 15, color: COLORS.TEXT, fontWeight: '600' },
-  menuArrow: { fontSize: 22, color: COLORS.TEXT_MUTED },
+  menuText: { fontFamily: FONTS.family, fontSize: 15, color: COLORS.TEXT, fontWeight: '600' },
+  menuArrow: { fontFamily: FONTS.family, fontSize: 22, color: COLORS.TEXT_MUTED },
   menuDivider: { height: 1, backgroundColor: COLORS.BORDER, marginLeft: 68 },
 
   // App Info
   appInfoCard: {
     alignItems: 'center', marginHorizontal: 20, marginTop: 24, paddingVertical: 20,
-    backgroundColor: COLORS.CARD, borderRadius: 16, borderWidth: 1, borderColor: COLORS.BORDER,
+    backgroundColor: COLORS.BG, borderRadius: 16, borderWidth: 1, borderColor: COLORS.BORDER,
   },
-  appName: { fontSize: 18, fontWeight: '800', color: COLORS.TEXT },
-  appVersion: { fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 4 },
-  appTagline: { fontSize: 12, color: COLORS.TEXT_SECONDARY, fontWeight: '500', marginTop: 2, fontStyle: 'italic' },
+  appName: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '800', color: COLORS.TEXT },
+  appVersion: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 4 },
+  appTagline: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_SECONDARY, fontWeight: '500', marginTop: 2, fontStyle: 'italic' },
 
   // Logout
   logoutBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: COLORS.CARD, marginHorizontal: 20, marginTop: 16, borderRadius: 14, paddingVertical: 14,
-    borderWidth: 1, borderColor: COLORS.DANGER + '50',
+    backgroundColor: COLORS.BG, marginHorizontal: 20, marginTop: 16, borderRadius: 14, paddingVertical: 14,
   },
-  // logoutIcon style removed — replaced with Icon component
-  logoutText: { color: COLORS.DANGER, fontSize: 15, fontWeight: '700' },
+  logoutText: { fontFamily: FONTS.family, color: COLORS.TEXT_SECONDARY, fontSize: 15, fontWeight: '600' },
 
   // Guest mode
   guestHero: {
@@ -357,13 +377,13 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(30,136,229,0.14)', marginBottom: 16,
     borderWidth: 2, borderColor: 'rgba(30,136,229,0.35)',
   },
-  guestTitle: { fontSize: 22, fontWeight: '900', color: COLORS.TEXT, textAlign: 'center' },
+  guestTitle: { fontFamily: FONTS.family, fontSize: 22, fontWeight: '900', color: COLORS.TEXT, textAlign: 'center' },
   guestSub: {
-    fontSize: 13, color: COLORS.TEXT_SECONDARY, textAlign: 'center',
+    fontFamily: FONTS.family,    fontSize: 13, color: COLORS.TEXT_SECONDARY, textAlign: 'center',
     marginTop: 8, marginBottom: 24, lineHeight: 20, paddingHorizontal: 8,
   },
   guestFeatureList: {
-    width: '100%', marginTop: 24, backgroundColor: COLORS.CARD, borderRadius: 16,
+    width: '100%', marginTop: 24, backgroundColor: COLORS.BG, borderRadius: 16,
     padding: 16, borderWidth: 1, borderColor: COLORS.BORDER,
   },
   guestFeatureRow: {
@@ -373,7 +393,7 @@ const s = StyleSheet.create({
     width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(30,136,229,0.12)',
   },
-  guestFeatureText: { flex: 1, fontSize: 13, color: COLORS.TEXT_SECONDARY, fontWeight: '500' },
+  guestFeatureText: { fontFamily: FONTS.family, flex: 1, fontSize: 13, color: COLORS.TEXT_SECONDARY, fontWeight: '500' },
 });
 
 export default ProfileTab;

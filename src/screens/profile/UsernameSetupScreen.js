@@ -1,14 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator,
-  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { usersAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
-import { COLORS, GRADIENTS } from '../../theme';
+import { COLORS, GRADIENTS, FONTS } from '../../theme';
 
 const UsernameSetupScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
@@ -70,9 +70,11 @@ const UsernameSetupScreen = ({ navigation }) => {
   const statusColor = available === true ? COLORS.SUCCESS_LIGHT : COLORS.RED;
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={[styles.screen, { paddingTop: insets.top + 20 }]}
+    <KeyboardAwareScrollView
+      contentContainerStyle={[styles.screen, { paddingTop: insets.top + 20 }]}
+      enableOnAndroid
+      extraScrollHeight={40}
+      keyboardShouldPersistTaps="handled"
     >
       <View style={styles.content}>
         {/* Icon */}
@@ -130,7 +132,7 @@ const UsernameSetupScreen = ({ navigation }) => {
           <Text style={styles.skipText}>Skip for now</Text>
         </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
+    </KeyboardAwareScrollView>
   );
 };
 
@@ -141,27 +143,27 @@ const styles = StyleSheet.create({
     width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.ACCENT_SOFT,
     alignItems: 'center', justifyContent: 'center', marginBottom: 20,
   },
-  title: { fontSize: 24, fontWeight: '800', color: COLORS.TEXT, marginBottom: 8 },
-  subtitle: { fontSize: 14, color: COLORS.TEXT_SECONDARY, textAlign: 'center', lineHeight: 20, marginBottom: 32 },
+  title: { fontFamily: FONTS.family, fontSize: 24, fontWeight: '800', color: COLORS.TEXT, marginBottom: 8 },
+  subtitle: { fontFamily: FONTS.family, fontSize: 14, color: COLORS.TEXT_SECONDARY, textAlign: 'center', lineHeight: 20, marginBottom: 32 },
 
   inputRow: {
     flexDirection: 'row', alignItems: 'center', width: '100%',
     backgroundColor: COLORS.SURFACE, borderRadius: 14, borderWidth: 1.5, borderColor: COLORS.BORDER,
     paddingHorizontal: 16, height: 52, gap: 4,
   },
-  atSign: { fontSize: 18, fontWeight: '700', color: COLORS.ACCENT },
-  input: { flex: 1, fontSize: 16, color: COLORS.TEXT, height: 52 },
+  atSign: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '700', color: COLORS.ACCENT },
+  input: { fontFamily: FONTS.family, flex: 1, fontSize: 16, color: COLORS.TEXT, height: 52 },
 
-  errorText: { color: COLORS.RED, fontSize: 12, fontWeight: '600', marginTop: 8, alignSelf: 'flex-start' },
-  successText: { color: COLORS.SUCCESS_LIGHT, fontSize: 12, fontWeight: '600', marginTop: 8, alignSelf: 'flex-start' },
-  hintText: { color: COLORS.TEXT_MUTED, fontSize: 12, marginTop: 8, alignSelf: 'flex-start' },
+  errorText: { fontFamily: FONTS.family, color: COLORS.RED, fontSize: 12, fontWeight: '600', marginTop: 8, alignSelf: 'flex-start' },
+  successText: { fontFamily: FONTS.family, color: COLORS.SUCCESS_LIGHT, fontSize: 12, fontWeight: '600', marginTop: 8, alignSelf: 'flex-start' },
+  hintText: { fontFamily: FONTS.family, color: COLORS.TEXT_MUTED, fontSize: 12, marginTop: 8, alignSelf: 'flex-start' },
 
   saveBtn: { width: '100%', borderRadius: 14, overflow: 'hidden', marginTop: 28 },
   saveBtnGrad: { height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  saveBtnText: { fontFamily: FONTS.family, color: '#fff', fontSize: 16, fontWeight: '700' },
 
   skipBtn: { marginTop: 16 },
-  skipText: { color: COLORS.TEXT_MUTED, fontSize: 14, fontWeight: '600' },
+  skipText: { fontFamily: FONTS.family, color: COLORS.TEXT_MUTED, fontSize: 14, fontWeight: '600' },
 });
 
 export default UsernameSetupScreen;

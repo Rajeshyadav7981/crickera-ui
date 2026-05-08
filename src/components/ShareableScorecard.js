@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { View, Text, StyleSheet, Share, Platform } from 'react-native';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 
 let ViewShot;
 try { ViewShot = require('react-native-view-shot').default; } catch {}
@@ -119,19 +119,19 @@ const styles = StyleSheet.create({
     width: 340,
   },
   header: { marginBottom: 16, alignItems: 'center' },
-  appName: { fontSize: 18, fontWeight: '900', color: COLORS.ACCENT, letterSpacing: 1 },
-  result: { fontSize: 13, fontWeight: '700', color: COLORS.SUCCESS, marginTop: 8, textAlign: 'center' },
+  appName: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '900', color: COLORS.ACCENT, letterSpacing: 1 },
+  result: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.SUCCESS, marginTop: 8, textAlign: 'center' },
   inningsRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingVertical: 12, borderBottomWidth: 0.5, borderBottomColor: COLORS.BORDER,
   },
-  teamName: { fontSize: 15, fontWeight: '700', color: COLORS.TEXT, flex: 1 },
+  teamName: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '700', color: COLORS.TEXT, flex: 1 },
   scoreRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
-  score: { fontSize: 22, fontWeight: '900', color: COLORS.TEXT },
-  overs: { fontSize: 12, color: COLORS.TEXT_MUTED },
+  score: { fontFamily: FONTS.family, fontSize: 22, fontWeight: '900', color: COLORS.TEXT },
+  overs: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED },
   performers: { marginTop: 14 },
   performerRow: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
-  performerLabel: { fontSize: 10, fontWeight: '700', color: COLORS.TEXT_MUTED, width: 60 },
-  performerName: { fontSize: 12, fontWeight: '600', color: COLORS.TEXT_SECONDARY, flex: 1 },
-  watermark: { fontSize: 9, color: COLORS.TEXT_HINT, textAlign: 'center', marginTop: 14 },
+  performerLabel: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700', color: COLORS.TEXT_MUTED, width: 60 },
+  performerName: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '600', color: COLORS.TEXT_SECONDARY, flex: 1 },
+  watermark: { fontFamily: FONTS.family, fontSize: 9, color: COLORS.TEXT_HINT, textAlign: 'center', marginTop: 14 },
 });

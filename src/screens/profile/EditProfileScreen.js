@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, Image,
-  KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator,
+  Alert, ActivityIndicator, ScrollView, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../context/AuthContext';
 import { useAuthGate } from '../../hooks/useRequireAuth';
 import { authAPI } from '../../services/api';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import BackButton from '../../components/BackButton';
 import CalendarPicker from '../../components/CalendarPicker';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -163,15 +164,13 @@ const EditProfileScreen = ({ navigation }) => {
         <View style={{ width: 36 }} />
       </View>
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        enableOnAndroid
+        extraScrollHeight={40}
       >
-        <ScrollView
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
           {/* Avatar with edit option */}
           <View style={styles.avatarWrap}>
             <TouchableOpacity onPress={showImageOptions} activeOpacity={0.7} disabled={uploading}>
@@ -386,8 +385,7 @@ const EditProfileScreen = ({ navigation }) => {
               <Text style={styles.saveBtnText}>Save Changes</Text>
             )}
           </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </View>
   );
 };
@@ -396,12 +394,11 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.BG },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingBottom: 12, backgroundColor: COLORS.CARD,
-    borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
+    paddingHorizontal: 16, paddingBottom: 12, backgroundColor: COLORS.BG,
   },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  backArrow: { fontSize: 22, color: COLORS.TEXT, fontWeight: '600' },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
+  backArrow: { fontFamily: FONTS.family, fontSize: 22, color: COLORS.TEXT, fontWeight: '600' },
+  headerTitle: { fontFamily: FONTS.family, fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
   content: { padding: 20, paddingBottom: 40 },
 
   avatarWrap: { alignItems: 'center', marginBottom: 24 },
@@ -413,7 +410,7 @@ const styles = StyleSheet.create({
   avatarImage: {
     width: 100, height: 100, borderRadius: 50, borderWidth: 3, borderColor: COLORS.ACCENT,
   },
-  avatarText: { color: '#fff', fontSize: 32, fontWeight: '700' },
+  avatarText: { fontFamily: FONTS.family, color: '#fff', fontSize: 32, fontWeight: '700' },
   avatarOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     borderRadius: 50, backgroundColor: 'rgba(0,0,0,0.4)',
@@ -427,24 +424,24 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 }, elevation: 3,
   },
-  cameraBadgeText: { fontSize: 14 },
-  changePhotoText: { fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 8 },
+  cameraBadgeText: { fontFamily: FONTS.family, fontSize: 14 },
+  changePhotoText: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 8 },
 
-  label: { fontSize: 13, fontWeight: '600', color: COLORS.TEXT_SECONDARY, marginBottom: 6, marginTop: 16 },
+  label: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.TEXT_SECONDARY, marginBottom: 6, marginTop: 16 },
   inputWrap: {
     backgroundColor: COLORS.SURFACE, borderRadius: 12, borderWidth: 1, borderColor: COLORS.BORDER,
     paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 14 : 10,
   },
   inputDisabled: { backgroundColor: COLORS.CARD },
-  disabledText: { fontSize: 15, color: COLORS.TEXT_MUTED },
-  input: { fontSize: 15, color: COLORS.TEXT },
+  disabledText: { fontFamily: FONTS.family, fontSize: 15, color: COLORS.TEXT_MUTED },
+  input: { fontFamily: FONTS.family, fontSize: 15, color: COLORS.TEXT },
 
   saveBtn: {
     backgroundColor: COLORS.ACCENT, borderRadius: 14, paddingVertical: 16,
     alignItems: 'center', marginTop: 32,
   },
   saveBtnDisabled: { opacity: 0.6 },
-  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  saveBtnText: { fontFamily: FONTS.family, color: '#fff', fontSize: 16, fontWeight: '700' },
 
   sectionDivider: {
     marginTop: 28, marginBottom: 4,
@@ -452,7 +449,7 @@ const styles = StyleSheet.create({
     paddingTop: 20,
   },
   sectionHead: {
-    fontSize: 15, fontWeight: '800', color: COLORS.TEXT, letterSpacing: -0.2,
+    fontFamily: FONTS.family,    fontSize: 15, fontWeight: '800', color: COLORS.TEXT, letterSpacing: -0.2,
   },
   chipRow: {
     flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4,
@@ -466,7 +463,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.ACCENT_SOFT, borderColor: COLORS.ACCENT_SOFT_BORDER,
   },
   chipText: {
-    fontSize: 13, fontWeight: '600', color: COLORS.TEXT_SECONDARY,
+    fontFamily: FONTS.family,    fontSize: 13, fontWeight: '600', color: COLORS.TEXT_SECONDARY,
   },
   chipTextActive: {
     color: COLORS.ACCENT,

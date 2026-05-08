@@ -19,16 +19,46 @@ class OfflineScoringQueue {
     this._syncing = false;
     this._listeners = [];
     this._unsubscribe = null;
+    // Count of entries we had to drop because the queue hit MAX_QUEUE_SIZE.
+    // Surfaced via _notifyListeners so a banner/toast can react.
+    this._droppedSinceReset = 0;
   }
 
-  // Initialize: load persisted queue and start listening for network changes
+  get droppedSinceReset() {
+    return this._droppedSinceReset;
+  }
+
+  acknowledgeDrops() {
+    this._droppedSinceReset = 0;
+    this._notifyListeners();
+  }
+
+  _evictOldest() {
+    const dropped = this._queue.shift();
+    this._droppedSinceReset += 1;
+    // Local notification so the scorer definitely sees this — queue overflow
+    // means a delivery was silently lost without this.
+    if (Notifications) {
+      Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Offline Queue Full',
+          body: 'A queued scoring action was dropped (500+ pending). Reconnect to sync soon.',
+          sound: false,
+        },
+        trigger: null,
+      }).catch(() => {});
+    }
+    if (__DEV__) {
+      console.warn('[offlineQueue] dropped oldest entry at cap', dropped?.id);
+    }
+  }
+
   async init() {
     try {
       const stored = await AsyncStorage.getItem(QUEUE_KEY);
       if (stored) this._queue = JSON.parse(stored);
     } catch {}
 
-    // Listen for connectivity changes
     this._unsubscribe = NetInfo.addEventListener((state) => {
       const wasOffline = !this._isOnline;
       this._isOnline = state.isConnected && state.isInternetReachable !== false;
@@ -41,7 +71,6 @@ class OfflineScoringQueue {
       this._notifyListeners();
     });
 
-    // Check initial state
     const state = await NetInfo.fetch();
     this._isOnline = state.isConnected && state.isInternetReachable !== false;
   }
@@ -65,7 +94,6 @@ class OfflineScoringQueue {
     return this._syncing;
   }
 
-  // Add a scoring action to the queue
   async enqueue(matchId, data) {
     const entry = {
       id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -76,7 +104,6 @@ class OfflineScoringQueue {
     };
 
     if (this._isOnline) {
-      // Try to send immediately
       try {
         const result = await scoringAPI.score(matchId, data);
         return { success: true, result: result.data };
@@ -84,7 +111,7 @@ class OfflineScoringQueue {
         // If network error, queue it; otherwise throw
         if (!error.response) {
           if (this._queue.length >= MAX_QUEUE_SIZE) {
-            this._queue.shift();
+            this._evictOldest();
           }
           this._queue.push(entry);
           await this._persist();
@@ -96,13 +123,12 @@ class OfflineScoringQueue {
     } else {
       // Offline - queue the action (with oldest-first eviction if cap reached)
       if (this._queue.length >= MAX_QUEUE_SIZE) {
-        this._queue.shift(); // Drop oldest entry
+        this._evictOldest();
       }
       this._queue.push(entry);
       await this._persist();
       this._notifyListeners();
 
-      // Show local notification so scorer knows it's queued
       if (Notifications && this._queue.length === 1) {
         Notifications.scheduleNotificationAsync({
           content: {
@@ -110,7 +136,7 @@ class OfflineScoringQueue {
             body: 'Scoring actions are being queued. They will sync when you\'re back online.',
             sound: false,
           },
-          trigger: null, // immediately
+          trigger: null,
         }).catch(() => {});
       }
 
@@ -118,7 +144,6 @@ class OfflineScoringQueue {
     }
   }
 
-  // Sync queued actions
   async sync() {
     if (this._syncing || !this._isOnline || this._queue.length === 0) return;
 
@@ -132,7 +157,7 @@ class OfflineScoringQueue {
 
       try {
         await scoringAPI.score(entry.matchId, entry.data);
-        this._queue.shift(); // Remove on success
+        this._queue.shift();
         await this._persist();
       } catch (error) {
         if (!error.response) {
@@ -142,10 +167,10 @@ class OfflineScoringQueue {
         // Server error - skip this entry after max retries
         entry.retries += 1;
         if (entry.retries >= 3) {
-          this._queue.shift(); // Drop after 3 retries
+          this._queue.shift();
           failed.push(entry);
         } else {
-          break; // Stop and retry later
+          break;
         }
         await this._persist();
       }
@@ -154,7 +179,6 @@ class OfflineScoringQueue {
     this._syncing = false;
     this._notifyListeners();
 
-    // Local notification when sync completes
     if (Notifications && (this._queue.length === 0)) {
       Notifications.scheduleNotificationAsync({
         content: {
@@ -171,7 +195,6 @@ class OfflineScoringQueue {
     return { synced: true, failed };
   }
 
-  // Clear queue (e.g., when match ends)
   async clear(matchId) {
     if (matchId) {
       this._queue = this._queue.filter(e => e.matchId !== matchId);
@@ -182,7 +205,6 @@ class OfflineScoringQueue {
     this._notifyListeners();
   }
 
-  // Subscribe to queue changes
   addListener(callback) {
     this._listeners.push(callback);
     return () => {
@@ -195,6 +217,7 @@ class OfflineScoringQueue {
       isOnline: this._isOnline,
       queueLength: this._queue.length,
       isSyncing: this._syncing,
+      droppedSinceReset: this._droppedSinceReset,
     };
     this._listeners.forEach(l => l(state));
   }

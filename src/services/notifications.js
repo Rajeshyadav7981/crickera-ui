@@ -12,7 +12,6 @@ function _initNotifications() {
   _initialized = true;
   try {
     Notifications = require('expo-notifications');
-    // Android notification channel
     if (Platform.OS === 'android') {
       Notifications.setNotificationChannelAsync('match-updates', {
         name: 'Match Updates',
@@ -21,7 +20,6 @@ function _initNotifications() {
         vibrationPattern: [0, 250, 250, 250],
       });
     }
-    // Handle foreground notifications
     Notifications.setNotificationHandler({
       handleNotification: async (notification) => {
         const data = notification.request.content.data;

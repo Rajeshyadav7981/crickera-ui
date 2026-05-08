@@ -5,7 +5,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { teamsAPI, tournamentsAPI } from '../../services/api';
 import { useAuthGate } from '../../hooks/useRequireAuth';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import BackButton from '../../components/BackButton';
 import CurrentLocationButton from '../../components/CurrentLocationButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -183,12 +183,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   backArrow: {
-    fontSize: 18,
+    fontFamily: FONTS.family,    fontSize: 18,
     color: COLORS.TEXT,
     marginTop: -1,
   },
   headerTitle: {
-    fontSize: 18,
+    fontFamily: FONTS.family,    fontSize: 18,
     fontWeight: '700',
     color: COLORS.TEXT,
   },
@@ -211,7 +211,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   label: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '600',
     color: COLORS.TEXT_SECONDARY,
     marginBottom: 8,
@@ -227,12 +227,12 @@ const styles = StyleSheet.create({
     height: 48,
   },
   inputIcon: {
-    fontSize: 16,
+    fontFamily: FONTS.family,    fontSize: 16,
     marginLeft: 14,
     marginRight: 2,
   },
   inputField: {
-    flex: 1,
+    fontFamily: FONTS.family,    flex: 1,
     height: 48,
     fontSize: 15,
     color: COLORS.TEXT,
@@ -260,7 +260,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkMark: {
-    color: COLORS.WHITE,
+    fontFamily: FONTS.family,    color: COLORS.WHITE,
     fontSize: 18,
     fontWeight: '700',
   },
@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   createBtnText: {
-    color: COLORS.WHITE,
+    fontFamily: FONTS.family,    color: COLORS.WHITE,
     fontSize: 16,
     fontWeight: '700',
   },

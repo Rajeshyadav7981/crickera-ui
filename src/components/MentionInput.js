@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 import { useMentionSearch } from '../hooks/useUsers';
 import Avatar from './Avatar';
 
@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   input: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     color: COLORS.TEXT,
     maxHeight: 80,
   },
@@ -160,12 +160,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   suggestionName: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '600',
     color: COLORS.TEXT,
   },
   suggestionUsername: {
-    fontSize: 11,
+    fontFamily: FONTS.family,    fontSize: 11,
     color: COLORS.ACCENT,
     fontWeight: '500',
     marginTop: 1,
@@ -178,7 +178,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   loadingText: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     color: COLORS.TEXT_MUTED,
   },
 });

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 import Icon from './Icon';
 
 export class ErrorBoundary extends React.Component {
@@ -43,7 +43,6 @@ export class ErrorBoundary extends React.Component {
   }
 }
 
-// Functional wrapper for screen-level error boundaries
 export const ScreenErrorBoundary = ({ children }) => (
   <ErrorBoundary>{children}</ErrorBoundary>
 );
@@ -66,13 +65,13 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   title: {
-    fontSize: 20,
+    fontFamily: FONTS.family,    fontSize: 20,
     fontWeight: '800',
     color: COLORS.TEXT,
     marginBottom: 8,
   },
   message: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     color: COLORS.TEXT_SECONDARY,
     textAlign: 'center',
     lineHeight: 20,
@@ -85,7 +84,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   retryText: {
-    fontSize: 15,
+    fontFamily: FONTS.family,    fontSize: 15,
     fontWeight: '700',
     color: COLORS.TEXT,
   },

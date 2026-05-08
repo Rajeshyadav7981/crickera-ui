@@ -4,10 +4,9 @@ import {
   InteractionManager,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { playersAPI, usersAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import BackButton from '../../components/BackButton';
 import Icon from '../../components/Icon';
 import Avatar from '../../components/Avatar';
@@ -35,14 +34,14 @@ const PlayerProfileSkeleton = ({ insets, onBack }) => (
       <View style={{ width: 36 }} />
     </View>
     <View style={{ flex: 1 }}>
-      {/* Hero skeleton */}
-      <LinearGradient colors={['#0F172A', '#1E293B', '#0F172A']} style={s.hero}>
+      {/* Hero skeleton — flat, matches the page background */}
+      <View style={s.hero}>
         <Skeleton width={88} height={88} borderRadius={44} />
         <Skeleton width={180} height={22} style={{ marginTop: 14 }} />
         <Skeleton width={120} height={14} style={{ marginTop: 8 }} />
         <Skeleton width={100} height={28} borderRadius={14} style={{ marginTop: 14 }} />
         <Skeleton width={140} height={36} borderRadius={18} style={{ marginTop: 16 }} />
-      </LinearGradient>
+      </View>
 
       {/* Info card skeleton */}
       <View style={s.infoCard}>
@@ -302,8 +301,8 @@ const PlayerProfileScreen = ({ navigation, route }) => {
         style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}
         contentContainerStyle={{ paddingBottom: 40 }}
       >
-        {/* -- Hero Card -- */}
-        <LinearGradient colors={['#0F172A', '#1E293B', '#0F172A']} style={s.hero}>
+        {/* -- Hero — flat, no slate-blue gradient. Merges with page BG. -- */}
+        <View style={s.hero}>
           <Avatar
             uri={player.profile_image}
             name={player.full_name || `${player.first_name || ''} ${player.last_name || ''}`}
@@ -365,7 +364,7 @@ const PlayerProfileScreen = ({ navigation, route }) => {
               ))}
             </ScrollView>
           )}
-        </LinearGradient>
+        </View>
 
         {/* -- Player Info -- */}
         {(player.bio || player.city || player.country || player.date_of_birth ||
@@ -551,7 +550,7 @@ const PlayerProfileScreen = ({ navigation, route }) => {
                       activeOpacity={0.7}
                       onPress={() => inn.match_id && navigation.navigate('MatchDetail', { matchId: inn.match_id })}
                     >
-                      <LinearGradient colors={['#1E293B', '#0F172A']} style={s.formCardInner}>
+                      <View style={s.formCardInner}>
                         {(inn.format || inn.match_format) && (
                           <View style={s.formFormatBadge}>
                             <Text style={s.formFormatText}>{inn.format || inn.match_format}</Text>
@@ -563,12 +562,12 @@ const PlayerProfileScreen = ({ navigation, route }) => {
                         <Text style={s.formScore}>
                           {inn.runs ?? 0}{inn.is_out ? '' : '*'}
                         </Text>
-                        <Text style={s.formBalls}>({inn.balls_faced ?? 0}b)</Text>
+                        <Text style={s.formBalls}>({inn.balls_faced ?? 0})</Text>
                         {(inn.opponent || inn.opponent_team) && (
                           <Text style={s.formOpp} numberOfLines={1}>vs {inn.opponent || inn.opponent_team}</Text>
                         )}
                         <Text style={s.formDate}>{dateStr || (inn.match_code ? `#${inn.match_code}` : `#${inn.match_id}`)}</Text>
-                      </LinearGradient>
+                      </View>
                     </TouchableOpacity>
                   );
                 })}
@@ -597,7 +596,7 @@ const PlayerProfileScreen = ({ navigation, route }) => {
                       activeOpacity={0.7}
                       onPress={() => spell.match_id && navigation.navigate('MatchDetail', { matchId: spell.match_id })}
                     >
-                      <LinearGradient colors={['#1E293B', '#0F172A']} style={s.formCardInner}>
+                      <View style={s.formCardInner}>
                         {spell.match_format && (
                           <View style={s.formFormatBadge}>
                             <Text style={s.formFormatText}>{spell.match_format}</Text>
@@ -617,7 +616,7 @@ const PlayerProfileScreen = ({ navigation, route }) => {
                           <Text style={s.formOpp} numberOfLines={1}>vs {spell.opponent_team}</Text>
                         )}
                         <Text style={s.formDate}>{dateStr || (spell.match_code ? `#${spell.match_code}` : `#${spell.match_id}`)}</Text>
-                      </LinearGradient>
+                      </View>
                     </TouchableOpacity>
                   );
                 })}
@@ -682,25 +681,25 @@ const PlayerProfileScreen = ({ navigation, route }) => {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.BG },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.BG, gap: 12 },
-  loadText: { color: COLORS.TEXT_MUTED, fontSize: 13, marginTop: 8 },
-  notFoundText: { fontSize: 16, fontWeight: '700', color: COLORS.TEXT },
-  goBackBtn: { marginTop: 8, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: COLORS.CARD, borderRadius: 10 },
-  goBackText: { color: COLORS.ACCENT, fontWeight: '600', fontSize: 14 },
+  loadText: { fontFamily: FONTS.family, color: COLORS.TEXT_MUTED, fontSize: 13, marginTop: 8 },
+  notFoundText: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: COLORS.TEXT },
+  goBackBtn: { marginTop: 8, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: COLORS.BG, borderRadius: 10 },
+  goBackText: { fontFamily: FONTS.family, color: COLORS.ACCENT, fontWeight: '600', fontSize: 14 },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 10,
-    backgroundColor: COLORS.CARD, borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
+    backgroundColor: COLORS.BG,
   },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
+  headerTitle: { fontFamily: FONTS.family, fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
 
   // Hero
   hero: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 20, alignItems: 'center' },
-  playerName: { fontSize: 24, fontWeight: '900', color: COLORS.TEXT, textAlign: 'center', marginTop: 12 },
-  playerUsername: { fontSize: 14, fontWeight: '600', color: COLORS.ACCENT_LIGHT, marginTop: 4 },
+  playerName: { fontFamily: FONTS.family, fontSize: 24, fontWeight: '900', color: COLORS.TEXT, textAlign: 'center', marginTop: 12 },
+  playerUsername: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.ACCENT_LIGHT, marginTop: 4 },
   badgeRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
   roleBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20 },
-  roleBadgeText: { fontSize: 12, fontWeight: '700' },
+  roleBadgeText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700' },
 
   // Follow button
   followBtn: {
@@ -713,7 +712,7 @@ const s = StyleSheet.create({
     backgroundColor: 'transparent',
     borderWidth: 1.5, borderColor: COLORS.BORDER_LIGHT,
   },
-  followBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  followBtnText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: '#fff' },
   followBtnTextActive: { color: COLORS.TEXT },
   // Social stats row (followers/following)
   socialRow: {
@@ -722,18 +721,17 @@ const s = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
   },
   socialItem: { flex: 1, alignItems: 'center' },
-  socialNum: { fontSize: 18, fontWeight: '900', color: COLORS.TEXT },
-  socialLabel: { fontSize: 10, fontWeight: '700', color: COLORS.TEXT_MUTED, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 },
+  socialNum: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '900', color: COLORS.TEXT },
+  socialLabel: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700', color: COLORS.TEXT_MUTED, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 },
   socialDivider: { width: 1, height: 24, backgroundColor: COLORS.BORDER },
 
 
   // Info
   infoCard: {
-    marginHorizontal: 16, marginTop: 14, backgroundColor: COLORS.CARD, borderRadius: 14,
-    borderWidth: 1, borderColor: COLORS.BORDER, paddingVertical: 12, paddingHorizontal: 16, gap: 10,
+    marginHorizontal: 16, marginTop: 14, backgroundColor: COLORS.BG, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, gap: 10,
   },
   infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  infoText: { flex: 1, fontSize: 13, color: COLORS.TEXT_SECONDARY, lineHeight: 18 },
+  infoText: { fontFamily: FONTS.family, flex: 1, fontSize: 13, color: COLORS.TEXT_SECONDARY, lineHeight: 18 },
 
   // Format Tabs
   formatRow: { paddingHorizontal: 4, gap: 8, marginTop: 14 },
@@ -742,26 +740,25 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
   },
   formatTabActive: { backgroundColor: COLORS.ACCENT, borderColor: COLORS.ACCENT_LIGHT },
-  formatTabText: { fontSize: 12, fontWeight: '700', color: COLORS.TEXT_MUTED },
+  formatTabText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: COLORS.TEXT_MUTED },
   formatTabTextActive: { color: '#fff' },
 
   // Sections
   section: { marginHorizontal: 16, marginTop: 20 },
   sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  sectionTitle: { fontSize: 17, fontWeight: '800', color: COLORS.TEXT },
+  sectionTitle: { fontFamily: FONTS.family, fontSize: 17, fontWeight: '800', color: COLORS.TEXT },
 
   // NEW: Stats toggle (Batting / Bowling)
   statsToggleRow: {
     flexDirection: 'row', gap: 0, marginBottom: 14,
-    backgroundColor: COLORS.CARD, borderRadius: 14, padding: 4,
-    borderWidth: 1, borderColor: COLORS.BORDER,
+    backgroundColor: COLORS.BG, borderRadius: 14, padding: 4,
   },
   statsToggleBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     paddingVertical: 11, borderRadius: 10,
   },
   statsToggleBtnActive: { backgroundColor: COLORS.ACCENT },
-  statsToggleText: { fontSize: 14, fontWeight: '700', color: COLORS.TEXT_MUTED },
+  statsToggleText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT_MUTED },
   statsToggleTextActive: { color: '#fff' },
 
   // Primary stats (theme card style)
@@ -769,20 +766,19 @@ const s = StyleSheet.create({
   primaryCard: {
     flex: 1, borderRadius: 16, padding: 14, alignItems: 'flex-start',
     minHeight: 110, justifyContent: 'space-between',
-    backgroundColor: COLORS.CARD, borderWidth: 1, borderColor: COLORS.BORDER,
+    backgroundColor: COLORS.BG, borderWidth: 1, borderColor: COLORS.BORDER,
   },
   primaryIconWrap: {
     width: 32, height: 32, borderRadius: 10,
     backgroundColor: COLORS.ACCENT_SOFT,
     alignItems: 'center', justifyContent: 'center', marginBottom: 8,
   },
-  primaryValue: { fontSize: 26, fontWeight: '900', color: COLORS.TEXT, letterSpacing: -0.5 },
-  primaryLabel: { fontSize: 11, fontWeight: '700', color: COLORS.TEXT_MUTED, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 },
+  primaryValue: { fontFamily: FONTS.family, fontSize: 26, fontWeight: '900', color: COLORS.TEXT, letterSpacing: -0.5 },
+  primaryLabel: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.TEXT_MUTED, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 },
 
   // NEW: Secondary detailed stats (list rows)
   detailsCard: {
-    backgroundColor: COLORS.CARD, borderRadius: 16,
-    borderWidth: 1, borderColor: COLORS.BORDER, overflow: 'hidden',
+    backgroundColor: COLORS.BG, borderRadius: 16, overflow: 'hidden',
   },
   detailRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -795,17 +791,17 @@ const s = StyleSheet.create({
     backgroundColor: COLORS.SURFACE,
     alignItems: 'center', justifyContent: 'center',
   },
-  detailKey: { fontSize: 14, fontWeight: '700', color: COLORS.TEXT },
-  detailHint: { fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 1 },
-  detailValue: { fontSize: 20, fontWeight: '900', letterSpacing: -0.3 },
+  detailKey: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT },
+  detailHint: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 1 },
+  detailValue: { fontFamily: FONTS.family, fontSize: 20, fontWeight: '900', letterSpacing: -0.3 },
 
   // Empty
   emptySection: {
     alignItems: 'center', justifyContent: 'center', paddingVertical: 28,
-    backgroundColor: COLORS.CARD, borderRadius: 16, borderWidth: 1, borderColor: COLORS.BORDER,
+    backgroundColor: COLORS.BG, borderRadius: 16, borderWidth: 1, borderColor: COLORS.BORDER,
     gap: 8,
   },
-  emptySectionText: { fontSize: 13, fontWeight: '600', color: COLORS.TEXT_MUTED },
+  emptySectionText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.TEXT_MUTED },
 
   // Format chip next to Recent Form title
   formatChip: {
@@ -815,38 +811,41 @@ const s = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 3,
     borderWidth: 1, borderColor: COLORS.ACCENT_SOFT_BORDER,
   },
-  formatChipText: { fontSize: 10, fontWeight: '700', color: COLORS.ACCENT, textTransform: 'uppercase', letterSpacing: 0.5 },
+  formatChipText: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700', color: COLORS.ACCENT, textTransform: 'uppercase', letterSpacing: 0.5 },
 
   // Recent Form Cards
   formCard: { width: 110, borderRadius: 14, overflow: 'hidden' },
-  formCardInner: { padding: 12, alignItems: 'center', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  formCardInner: {
+    padding: 12, alignItems: 'center', borderRadius: 14,
+    backgroundColor: COLORS.BG,
+    borderWidth: 1, borderColor: COLORS.BORDER,
+  },
   formFormatBadge: {
     backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 6,
     paddingHorizontal: 6, paddingVertical: 2, marginBottom: 6,
   },
-  formFormatText: { fontSize: 9, fontWeight: '700', color: COLORS.TEXT_SECONDARY, textTransform: 'uppercase', letterSpacing: 0.3 },
+  formFormatText: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '700', color: COLORS.TEXT_SECONDARY, textTransform: 'uppercase', letterSpacing: 0.3 },
   formResult: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  formResultText: { color: '#fff', fontSize: 12, fontWeight: '800' },
-  formScore: { fontSize: 18, fontWeight: '900', color: COLORS.TEXT },
-  formBalls: { fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 1 },
-  formOpp: { fontSize: 10, color: COLORS.TEXT_MUTED, marginTop: 4, textAlign: 'center' },
-  formDate: { fontSize: 9, color: COLORS.TEXT_HINT, marginTop: 2 },
+  formResultText: { fontFamily: FONTS.family, color: '#fff', fontSize: 12, fontWeight: '800' },
+  formScore: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '900', color: COLORS.TEXT },
+  formBalls: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 1 },
+  formOpp: { fontFamily: FONTS.family, fontSize: 10, color: COLORS.TEXT_MUTED, marginTop: 4, textAlign: 'center' },
+  formDate: { fontFamily: FONTS.family, fontSize: 9, color: COLORS.TEXT_HINT, marginTop: 2 },
 
   // Teams
   teamCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: COLORS.CARD, borderRadius: 14, padding: 14,
-    borderWidth: 1, borderColor: COLORS.BORDER, overflow: 'hidden',
+    backgroundColor: COLORS.BG, borderRadius: 14, padding: 14, overflow: 'hidden',
   },
   teamStripe: {
     position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, borderTopLeftRadius: 14, borderBottomLeftRadius: 14,
   },
   teamAvatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', marginLeft: 4 },
-  teamAvatarText: { fontSize: 18, fontWeight: '800' },
-  teamCardName: { fontSize: 14, fontWeight: '700', color: COLORS.TEXT },
-  teamCardShort: { fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 1 },
+  teamAvatarText: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '800' },
+  teamCardName: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT },
+  teamCardShort: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 1 },
   teamMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 1 },
-  teamPlayerCount: { fontSize: 11, color: COLORS.TEXT_HINT },
+  teamPlayerCount: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_HINT },
 });
 
 export default PlayerProfileScreen;

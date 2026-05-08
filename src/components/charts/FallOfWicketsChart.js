@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 
 const FallOfWicketsChart = ({ wickets = [], style }) => {
   // wickets: Array of { wicketNumber, score, overs, batsmanName }
@@ -34,7 +34,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.CARD, borderRadius: 16, padding: 16,
     borderWidth: 1, borderColor: COLORS.BORDER,
   },
-  title: { fontSize: 14, fontWeight: '700', color: COLORS.TEXT, marginBottom: 12 },
+  title: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT, marginBottom: 12 },
   scroll: { flexDirection: 'row', gap: 4, alignItems: 'flex-start', paddingRight: 16 },
   wicketItem: { alignItems: 'center', width: 60, position: 'relative' },
   wicketCircle: {
@@ -42,10 +42,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.DANGER_SOFT, alignItems: 'center', justifyContent: 'center',
     marginBottom: 6,
   },
-  wicketNum: { fontSize: 12, fontWeight: '800', color: COLORS.DANGER },
-  wicketScore: { fontSize: 13, fontWeight: '800', color: COLORS.TEXT },
-  wicketOvers: { fontSize: 9, color: COLORS.TEXT_MUTED, marginTop: 1 },
-  wicketName: { fontSize: 8, color: COLORS.TEXT_SECONDARY, marginTop: 2, textAlign: 'center' },
+  wicketNum: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '800', color: COLORS.DANGER },
+  wicketScore: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '800', color: COLORS.TEXT },
+  wicketOvers: { fontFamily: FONTS.family, fontSize: 9, color: COLORS.TEXT_MUTED, marginTop: 1 },
+  wicketName: { fontFamily: FONTS.family, fontSize: 8, color: COLORS.TEXT_SECONDARY, marginTop: 2, textAlign: 'center' },
   connector: {
     position: 'absolute', top: 13, right: -4,
     width: 8, height: 1.5, backgroundColor: COLORS.BORDER,

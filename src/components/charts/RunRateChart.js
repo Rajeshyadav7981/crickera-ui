@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import Svg, { Polyline, Line, Circle, Text as SvgText, G, Rect } from 'react-native-svg';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -11,12 +11,17 @@ const RunRateChart = ({
   height = 160,
   lineColor = COLORS.ACCENT,
   requiredColor = COLORS.DANGER,
+  minPointSpacing = 26, // minimum horizontal room per over; chart grows wider than `width` when overs exceed fit
   style,
+  showTitle = true,
+  showLegend = true,
 }) => {
   if (!data.length) return null;
 
   const chartPadding = { top: 16, right: 12, bottom: 28, left: 34 };
-  const chartW = width - chartPadding.left - chartPadding.right;
+  const neededInner = data.length * minPointSpacing;
+  const effectiveWidth = Math.max(width, neededInner + chartPadding.left + chartPadding.right);
+  const chartW = effectiveWidth - chartPadding.left - chartPadding.right;
   const chartH = height - chartPadding.top - chartPadding.bottom;
 
   const maxRate = Math.max(
@@ -41,15 +46,15 @@ const RunRateChart = ({
 
   return (
     <View style={[styles.container, style]}>
-      <Text style={styles.title}>Run Rate</Text>
-      <Svg width={width} height={height}>
+      {showTitle && <Text style={styles.title}>Run Rate</Text>}
+      <Svg width={effectiveWidth} height={height}>
         {/* Y gridlines */}
         {Array.from({ length: ySteps + 1 }, (_, i) => {
           const val = i * yStep;
           const y = yScale(val);
           return (
             <G key={`y-${i}`}>
-              <Line x1={chartPadding.left} y1={y} x2={width - chartPadding.right} y2={y}
+              <Line x1={chartPadding.left} y1={y} x2={effectiveWidth - chartPadding.right} y2={y}
                 stroke={COLORS.BORDER} strokeWidth={0.5} />
               <SvgText x={chartPadding.left - 6} y={y + 4}
                 fill={COLORS.TEXT_MUTED} fontSize={9} textAnchor="end">
@@ -81,30 +86,35 @@ const RunRateChart = ({
           />
         )}
 
-        {/* X labels */}
-        {data.filter((_, i) => i % Math.max(1, Math.floor(data.length / 8)) === 0 || i === data.length - 1).map((d, i) => (
-          <SvgText
-            key={`x-${i}`}
-            x={xScale(data.indexOf(d))} y={chartPadding.top + chartH + 16}
-            fill={COLORS.TEXT_MUTED} fontSize={8} textAnchor="middle"
-          >
-            {d.over}
-          </SvgText>
-        ))}
+        {/* X labels — every over when the canvas has room, otherwise every Nth */}
+        {(() => {
+          const stride = minPointSpacing >= 24 ? 1 : Math.max(1, Math.floor(data.length / 8));
+          return data.filter((_, i) => i % stride === 0 || i === data.length - 1).map((d, i) => (
+            <SvgText
+              key={`x-${i}`}
+              x={xScale(data.indexOf(d))} y={chartPadding.top + chartH + 16}
+              fill={COLORS.TEXT_MUTED} fontSize={8} textAnchor="middle"
+            >
+              {d.over}
+            </SvgText>
+          ));
+        })()}
       </Svg>
 
-      <View style={styles.legend}>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendLine, { backgroundColor: lineColor }]} />
-          <Text style={styles.legendText}>Current RR</Text>
-        </View>
-        {hasRequired && (
+      {showLegend && (
+        <View style={styles.legend}>
           <View style={styles.legendItem}>
-            <View style={[styles.legendLine, styles.legendDashed, { backgroundColor: requiredColor }]} />
-            <Text style={styles.legendText}>Required RR</Text>
+            <View style={[styles.legendLine, { backgroundColor: lineColor }]} />
+            <Text style={styles.legendText}>Current RR</Text>
           </View>
-        )}
-      </View>
+          {hasRequired && (
+            <View style={styles.legendItem}>
+              <View style={[styles.legendLine, styles.legendDashed, { backgroundColor: requiredColor }]} />
+              <Text style={styles.legendText}>Required RR</Text>
+            </View>
+          )}
+        </View>
+      )}
     </View>
   );
 };
@@ -114,12 +124,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.CARD, borderRadius: 16, padding: 16,
     borderWidth: 1, borderColor: COLORS.BORDER,
   },
-  title: { fontSize: 14, fontWeight: '700', color: COLORS.TEXT, marginBottom: 8 },
+  title: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT, marginBottom: 8 },
   legend: { flexDirection: 'row', gap: 20, marginTop: 8, justifyContent: 'center' },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendLine: { width: 14, height: 3, borderRadius: 1.5 },
   legendDashed: { borderStyle: 'dashed' },
-  legendText: { fontSize: 10, color: COLORS.TEXT_MUTED },
+  legendText: { fontFamily: FONTS.family, fontSize: 10, color: COLORS.TEXT_MUTED },
 });
 
 export default React.memo(RunRateChart);

@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../theme';
+import api from '../services/api';
 
 /**
  * Universal Avatar component with cricket-themed fallbacks:
@@ -22,8 +23,10 @@ const Avatar = ({
 }) => {
   const [imgError, setImgError] = useState(false);
 
+  // Accept absolute URLs verbatim; treat anything else as a backend-relative
+  // path (e.g. `/uploads/profiles/42_abc.jpg`) and prepend the API base URL.
   const imageUri = uri
-    ? uri.startsWith('http') ? uri : null
+    ? (uri.startsWith('http') ? uri : `${api.defaults.baseURL}${uri.startsWith('/') ? '' : '/'}${uri}`)
     : null;
 
   const hasImage = imageUri && !imgError;

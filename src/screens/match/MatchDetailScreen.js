@@ -1,18 +1,28 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
-  Animated, Share, Dimensions,
+  Animated, Share, Dimensions, InteractionManager, ImageBackground,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
+
+// Charts show exactly 10 overs per visible window; user scrolls horizontally for more.
+// pulseCard has marginHorizontal: 12 × 2 = 24, padding: 12 × 2 = 24, border ~2 → ~50px chrome.
+const CHART_WINDOW_OVERS = 10;
+const CHART_SLOT_WIDTH = Math.max(26, Math.floor((SCREEN_WIDTH - 50) / CHART_WINDOW_OVERS));
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
-import { matchesAPI, scoringAPI, teamsAPI } from '../../services/api';
+import api, { matchesAPI, scoringAPI, teamsAPI } from '../../services/api';
 import matchWS from '../../services/websocket';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import BackButton from '../../components/BackButton';
+import CelebrationOverlay from '../../components/CelebrationOverlay';
+import TabContentSkeleton from '../../components/TabContentSkeleton';
 import Icon from '../../components/Icon';
+import RunRateChart from '../../components/charts/RunRateChart';
+import ManhattanChart from '../../components/charts/ManhattanChart';
 import Avatar from '../../components/Avatar';
 import StepIndicator from '../../components/StepIndicator';
 import Skeleton from '../../components/Skeleton';
@@ -32,6 +42,21 @@ const MatchDetailScreen = ({ navigation, route }) => {
   const [loading, setLoading] = useState(true);
   // Track which tabs have been visited (for lazy rendering)
   const [visitedTabs, setVisitedTabs] = useState({ 0: true });
+  // Deferred content-ready flag — set after pager animation + interactions finish,
+  // so the skeleton stays on screen for ~300ms instead of flashing for one frame.
+  const [contentReady, setContentReady] = useState({ 0: true });
+  // Scorecard innings readiness + fade-in for a silky switch between innings.
+  const [inningsReady, setInningsReady] = useState({ 0: true });
+  // Charts are deferred into a second phase so the initial innings paint is cheap.
+  const [chartsReady, setChartsReady] = useState({});
+  const inningsFade = useRef(new Animated.Value(1)).current;
+  // Sliding-indicator animation under the innings segmented pill (matches tournament tabs).
+  const inningsPillX = useRef(new Animated.Value(0)).current;
+  const [inningsPillWidth, setInningsPillWidth] = useState(0);
+  // Pager scroll is temporarily disabled while the user is touching an inner
+  // horizontal ScrollView (charts) — otherwise the outer pager eats the gesture
+  // and the chart can't be swiped sideways.
+  const [pagerScrollEnabled, setPagerScrollEnabled] = useState(true);
   const [activeTab, setActiveTab] = useState(0);
   const [scorecard, setScorecard] = useState(null);
   const [commentary, setCommentary] = useState({});
@@ -43,6 +68,11 @@ const MatchDetailScreen = ({ navigation, route }) => {
   const [teamMap, setTeamMap] = useState({});
   const [squads, setSquads] = useState({});
   const [broadcastMsg, setBroadcastMsg] = useState(null);
+  // Viewer-side celebration + last commentary (mirrors what the scorer sees)
+  const [celebration, setCelebration] = useState(null);
+  const [liveCommentary, setLiveCommentary] = useState(null);
+  const striker_prev_runs_ref = useRef(0);
+  const clearCelebration = useCallback(() => setCelebration(null), []);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   // Pulsing red dot
@@ -85,6 +115,7 @@ const MatchDetailScreen = ({ navigation, route }) => {
       commHasMore.current[inningsNum] = data.length >= COMM_PAGE_SIZE;
     } catch (e) {} finally { setCommLoading(false); }
   }, [matchId, commentary]);
+
 
   const commLoadingMore = useRef(false);
 
@@ -153,12 +184,37 @@ const MatchDetailScreen = ({ navigation, route }) => {
       unsub = matchWS.addListener((msg) => {
         if (msg.type === 'broadcast') {
           setBroadcastMsg(msg.data?.message || null);
-        } else if (['delivery', 'over_end'].includes(msg.type)) {
-          // Ball scored — only refresh live state (lightweight). Scorecard refreshes on tab view.
+        } else if (msg.type === 'delivery') {
+          // Derive celebration from the enriched delivery payload.
+          const d = msg.data || {};
+          if (!d.swap) {
+            if (d.is_wicket) {
+              const wt = d.wicket_type;
+              setCelebration(
+                wt === 'bowled' ? 'wicket_bowled' :
+                wt === 'caught' ? 'wicket_caught' :
+                wt === 'lbw' ? 'wicket_lbw' :
+                wt === 'run_out' ? 'wicket_runout' :
+                'wicket'
+              );
+            } else if (d.is_six || d.batsman_runs === 6) {
+              setCelebration('six');
+            } else if (d.is_boundary || d.batsman_runs === 4) {
+              setCelebration('four');
+            }
+            if (d.commentary) setLiveCommentary(d.commentary);
+          }
+          // Debounced state refresh
           if (_wsDebounceTimer.current) clearTimeout(_wsDebounceTimer.current);
           _wsDebounceTimer.current = setTimeout(() => {
             loadLiveState();
             setCommentary({}); // Clear stale commentary cache
+          }, 500);
+        } else if (msg.type === 'over_end') {
+          if (_wsDebounceTimer.current) clearTimeout(_wsDebounceTimer.current);
+          _wsDebounceTimer.current = setTimeout(() => {
+            loadLiveState();
+            setCommentary({});
           }, 500);
         } else if (['innings_end', 'match_end'].includes(msg.type)) {
           // Major event — refresh everything
@@ -184,14 +240,27 @@ const MatchDetailScreen = ({ navigation, route }) => {
     if (match) loadSquads(match);
   }, [match?.id]);
 
-  // Load scorecard + commentary when data is available
+  // Load scorecard + commentary when data is available.
+  // On first load, default activeInnings to the LATEST innings (current / most recent)
+  // so Commentary opens on what's happening now, not the 1st innings by default.
+  const inningsAutoSet = useRef(false);
   useEffect(() => {
     if (!scorecard) {
       loadScorecard();
       return;
     }
     if (scorecard?.innings?.length > 0) {
-      // Load commentary for active innings (used by Commentary tab)
+      if (!inningsAutoSet.current) {
+        inningsAutoSet.current = true;
+        const latestIdx = scorecard.innings.length - 1;
+        if (latestIdx !== activeInnings) {
+          setActiveInnings(latestIdx);
+          // Defer the commentary load — setState triggers re-render which runs this effect again.
+          return;
+        }
+      }
+      // Load commentary for active innings (used by Commentary tab).
+      // Chart data comes from innings.over_series on the scorecard payload — no extra fetch.
       const innNum = scorecard.innings[activeInnings]?.innings_number;
       if (innNum) loadCommentary(innNum);
       // Also load latest innings commentary (used by Summary tab's recent overs)
@@ -201,6 +270,45 @@ const MatchDetailScreen = ({ navigation, route }) => {
       }
     }
   }, [scorecard?.innings?.length, activeInnings]);
+
+  // Ensure inningsReady flips true for the currently-viewed innings after interactions
+  // settle. Covers the initial auto-set to the latest innings (where onInningsChange
+  // isn't called) so the skeleton doesn't stick.
+  useEffect(() => {
+    if (inningsReady[activeInnings]) return;
+    const handle = InteractionManager.runAfterInteractions(() => {
+      setInningsReady((prev) => (prev[activeInnings] ? prev : { ...prev, [activeInnings]: true }));
+    });
+    return () => handle.cancel && handle.cancel();
+  }, [activeInnings, inningsReady]);
+
+  // Phase 4: mount the charts ~400ms AFTER the innings content lands, so the initial
+  // paint is cheap and the rest of the scorecard is interactive sooner.
+  useEffect(() => {
+    if (!inningsReady[activeInnings]) return;
+    if (chartsReady[activeInnings]) return;
+    const t = setTimeout(() => {
+      setChartsReady((prev) => (prev[activeInnings] ? prev : { ...prev, [activeInnings]: true }));
+    }, 400);
+    return () => clearTimeout(t);
+  }, [activeInnings, inningsReady, chartsReady]);
+
+  // Innings list — memoized early so it's available to the useEffects / useCallbacks below.
+  // (If declared after the effects, Babel's `var` hoisting leaves `innings` undefined when
+  // React first reads the effect's dependency array → "Cannot read property 'length' of undefined".)
+  const innings = useMemo(() => scorecard?.innings || [], [scorecard]);
+
+  // Slide the innings-pill indicator whenever the active innings or measured width changes.
+  useEffect(() => {
+    if (!inningsPillWidth || !innings.length) return;
+    const segW = (inningsPillWidth - 6) / innings.length; // 6 = 2 * padding:3 in segmented pill
+    Animated.spring(inningsPillX, {
+      toValue: activeInnings * segW,
+      useNativeDriver: true,
+      speed: 14,
+      bounciness: 6,
+    }).start();
+  }, [activeInnings, inningsPillWidth, innings.length, inningsPillX]);
 
   // Content fade-in after loading
   const contentFade = React.useRef(new Animated.Value(0)).current;
@@ -223,6 +331,10 @@ const MatchDetailScreen = ({ navigation, route }) => {
     }
   }, []);
 
+  const markContentReady = useCallback((i) => {
+    setContentReady(prev => (prev[i] ? prev : { ...prev, [i]: true }));
+  }, []);
+
   const switchTab = useCallback((i) => {
     if (i < 0 || i >= TABS.length) return;
     setActiveTab(i);
@@ -230,7 +342,9 @@ const MatchDetailScreen = ({ navigation, route }) => {
     scrollTabIntoView(i);
     pagerRef.current?.scrollTo({ x: i * SCREEN_WIDTH, animated: true });
     if (i === 1 && !scorecard) loadScorecard();
-  }, [scorecard, loadScorecard, scrollTabIntoView]);
+    // Let the pager animate + current frame render before mounting heavy content.
+    InteractionManager.runAfterInteractions(() => markContentReady(i));
+  }, [scorecard, loadScorecard, scrollTabIntoView, markContentReady]);
 
   // Sync tab index when user swipes the pager
   const onPagerScroll = Animated.event(
@@ -247,9 +361,11 @@ const MatchDetailScreen = ({ navigation, route }) => {
         scrollTabIntoView(newIdx);
         if (newIdx === 1 && !scorecard) loadScorecard();
       }
+      // Defer heavy content mount until interactions finish.
+      InteractionManager.runAfterInteractions(() => markContentReady(newIdx));
     }
     isUserSwiping.current = false;
-  }, [activeTab, scorecard, loadScorecard, scrollTabIntoView]);
+  }, [activeTab, scorecard, loadScorecard, scrollTabIntoView, markContentReady]);
 
   // Animated tab indicator position (follows swipe smoothly)
   const indicatorTranslateX = scrollX.interpolate({
@@ -259,12 +375,35 @@ const MatchDetailScreen = ({ navigation, route }) => {
   });
 
   const onInningsChange = useCallback((i) => {
-    setActiveInnings(i);
-    // Load commentary for the selected innings
-    if (scorecard?.innings?.[i]) {
-      loadCommentary(scorecard.innings[i].innings_number);
+    if (i === activeInnings) return;
+    // Instant tactile feedback — slide the pill indicator immediately on tap,
+    // even before the content fade starts. Matches tournament tab feel.
+    if (inningsPillWidth && innings.length) {
+      const segW = (inningsPillWidth - 6) / innings.length;
+      Animated.spring(inningsPillX, {
+        toValue: i * segW,
+        useNativeDriver: true,
+        speed: 14,
+        bounciness: 6,
+      }).start();
     }
-  }, [activeTab, scorecard, loadCommentary]);
+    // Phase 1: fade the CURRENT innings out. Only swap after the fade lands at 0
+    // so the user sees a deliberate dim-down instead of an abrupt content jump.
+    Animated.timing(inningsFade, { toValue: 0, duration: 160, useNativeDriver: true }).start(() => {
+      // Phase 2: swap state. Skeleton renders (inningsReady[i] undefined).
+      setActiveInnings(i);
+      const innNum = scorecard?.innings?.[i]?.innings_number;
+      if (innNum) loadCommentary(innNum);
+      // Phase 3: let skeleton breathe for a moment, then mount heavy content
+      // after interactions settle, then fade back in. Charts defer to Phase 4.
+      setTimeout(() => {
+        InteractionManager.runAfterInteractions(() => {
+          setInningsReady((prev) => (prev[i] ? prev : { ...prev, [i]: true }));
+          Animated.timing(inningsFade, { toValue: 1, duration: 220, useNativeDriver: true }).start();
+        });
+      }, 220);
+    });
+  }, [activeInnings, scorecard, loadCommentary, inningsFade, inningsPillWidth, innings.length, inningsPillX]);
 
   // ── Helpers ──
   const getTeamName = (id) => match?.[`team_${id === match?.team_a_id ? 'a' : 'b'}_name`] || teamMap[id]?.name || `Team`;
@@ -334,6 +473,14 @@ const MatchDetailScreen = ({ navigation, route }) => {
   const getBallDescription = (ball) => {
     const bowler = ball.bowler_name || 'Bowler';
     const striker = ball.striker_name || 'Batsman';
+    // Scorer-authored commentary from ShotZonePicker wins, with a prefix for context.
+    if (ball.commentary && !ball.is_wicket && !ball.extra_type) {
+      let prefix = `${bowler} to ${striker}, `;
+      if (ball.is_six) prefix += 'SIX! ';
+      else if (ball.is_boundary) prefix += 'FOUR! ';
+      else if (ball.batsman_runs) prefix += `${ball.batsman_runs} run${ball.batsman_runs === 1 ? '' : 's'}, `;
+      return prefix + ball.commentary;
+    }
     if (ball.is_wicket) {
       const dismissed = ball.dismissed_player_name || striker;
       const fielder = ball.fielder_name;
@@ -357,7 +504,7 @@ const MatchDetailScreen = ({ navigation, route }) => {
   };
 
   // ── Derived data (memoized — must be before early returns) ──
-  const innings = useMemo(() => scorecard?.innings || [], [scorecard]);
+  // `innings` is already declared above the effect hooks that depend on it.
   const currentInn = innings[activeInnings];
   const commData = commentary[currentInn?.innings_number] || [];
 
@@ -371,6 +518,47 @@ const MatchDetailScreen = ({ navigation, route }) => {
     const numbers = Object.keys(groups).map(Number).sort((a, b) => b - a);
     return { overGroups: groups, overNumbers: numbers };
   }, [commData]);
+
+  // Chart series for the Scorecard tab's active innings.
+  // Prefers backend-provided currentInn.over_series (covers every over, one SQL aggregate).
+  // Falls back to deriving from paginated commentary if the server doesn't expose it yet.
+  const scorecardChartData = useMemo(() => {
+    const series = currentInn?.over_series;
+    if (series && series.length) {
+      let cumulativeRuns = 0;
+      const manhattan = [];
+      const runRate = [];
+      series.forEach((row) => {
+        cumulativeRuns += row.runs || 0;
+        manhattan.push({ over: row.over, runs: row.runs || 0, wickets: row.wickets || 0 });
+        runRate.push({ over: row.over, runRate: cumulativeRuns / row.over });
+      });
+      return { manhattan, runRate };
+    }
+    // Fallback: derive from whatever commentary is cached. May be partial before full load.
+    if (!commData?.length) return { manhattan: [], runRate: [] };
+    const byOver = {};
+    commData.forEach((ball) => {
+      const k = ball.over;
+      if (k === undefined || k === null) return;
+      if (!byOver[k]) byOver[k] = [];
+      byOver[k].push(ball);
+    });
+    const overNums = Object.keys(byOver).map(Number).sort((a, b) => a - b);
+    let cumulativeRuns = 0;
+    const manhattan = [];
+    const runRate = [];
+    overNums.forEach((overIdx) => {
+      const balls = byOver[overIdx] || [];
+      const overRuns = balls.reduce((s, b) => s + (b.total_runs || 0), 0);
+      const wickets = balls.filter((b) => b.is_wicket).length;
+      cumulativeRuns += overRuns;
+      const oversBowled = overIdx + 1;
+      manhattan.push({ over: oversBowled, runs: overRuns, wickets });
+      runRate.push({ over: oversBowled, runRate: cumulativeRuns / oversBowled });
+    });
+    return { manhattan, runRate };
+  }, [currentInn?.over_series, commData]);
 
   // Memoize summary overs (must be before early returns to respect Rules of Hooks)
   const summaryInningsIdx = summaryInnings >= 0 ? summaryInnings : (innings.length - 1);
@@ -389,6 +577,25 @@ const MatchDetailScreen = ({ navigation, route }) => {
     const overNums = Object.keys(overs).map(Number).sort((a, b) => a - b);
     return { summaryOvers: overs, summaryOverNums: overNums };
   }, [summaryCommData]);
+
+  // Per-over chart series for the summary (Manhattan + RunRate).
+  // Rolls up commentary into { over, runs, wickets } + cumulative runRate.
+  const overChartData = useMemo(() => {
+    if (!summaryOverNums?.length) return { manhattan: [], runRate: [] };
+    let cumulativeRuns = 0;
+    const manhattan = [];
+    const runRate = [];
+    summaryOverNums.forEach((overIdx) => {
+      const balls = summaryOvers[overIdx] || [];
+      const overRuns = balls.reduce((s, b) => s + (b.total_runs || 0), 0);
+      const wickets = balls.filter((b) => b.is_wicket).length;
+      cumulativeRuns += overRuns;
+      const oversBowled = overIdx + 1;
+      manhattan.push({ over: oversBowled, runs: overRuns, wickets });
+      runRate.push({ over: oversBowled, runRate: cumulativeRuns / oversBowled });
+    });
+    return { manhattan, runRate };
+  }, [summaryOvers, summaryOverNums]);
 
   // Filter commentary (must be before early returns — Rules of Hooks)
   const getFilteredBalls = useCallback((balls) => {
@@ -528,12 +735,25 @@ const MatchDetailScreen = ({ navigation, route }) => {
     );
   };
 
-  // ═══════════════════════════════════════════════════════════════
   // RENDER
-  // ═══════════════════════════════════════════════════════════════
 
   return (
     <Animated.View style={[st.container, { paddingTop: insets.top, opacity: contentFade }]}>
+
+      {/* ── CELEBRATION OVERLAY (viewer-side) ── */}
+      <CelebrationOverlay
+        type={celebration}
+        visible={!!celebration}
+        onFinish={clearCelebration}
+      />
+
+      {/* ── LIVE COMMENTARY TICKER ── */}
+      {liveCommentary ? (
+        <View style={st.liveCommentaryBar}>
+          <Text style={st.liveCommentaryQuote}>"</Text>
+          <Text style={st.liveCommentaryText} numberOfLines={2}>{liveCommentary}</Text>
+        </View>
+      ) : null}
 
       {/* ── HEADER ── */}
       <View style={st.header}>
@@ -585,8 +805,10 @@ const MatchDetailScreen = ({ navigation, route }) => {
         />
       </View>
 
-      {/* ── MATCH SETUP STEPPER (creator only, non-completed) ── */}
-      {isCreator && !isCompleted && activeTab === 0 && (() => {
+      {/* ── MATCH SETUP STEPPER (creator only, pre-live setup phases only) ──
+          Hidden once the match goes live or completes — scoring phase shouldn't
+          clutter the Summary with a setup stepper. */}
+      {isCreator && !isCompleted && !isLive && activeTab === 0 && (() => {
         const MATCH_STEPS = ['Create', 'Toss', 'Squad', 'Openers', 'Scoring'];
         const stepMap = {
           upcoming: 0,  // Match created, needs toss
@@ -629,6 +851,7 @@ const MatchDetailScreen = ({ navigation, route }) => {
         ref={pagerRef}
         horizontal
         pagingEnabled
+        scrollEnabled={pagerScrollEnabled}
         showsHorizontalScrollIndicator={false}
         scrollEventThrottle={16}
         onScroll={onPagerScroll}
@@ -647,8 +870,54 @@ const MatchDetailScreen = ({ navigation, route }) => {
           <View style={st.tabContent}>
             {/* Innings selector removed — scores shown in Score Hero card */}
 
-            {/* Score Hero Card */}
-            <View style={st.scoreHero}>
+            {/* Score Hero Card — for completed matches we back it with a big
+                 hero image (POM profile if available, default cricket ground
+                 otherwise) and dim the top with a dark gradient so the score
+                 remains legible. Live / upcoming keep the flat treatment. */}
+            {(() => {
+              const pom = scorecard?.top_performers?.player_of_match;
+              const heroImageUri = isCompleted && pom?.profile
+                ? (pom.profile.startsWith('http')
+                    ? pom.profile
+                    : `${api.defaults.baseURL}${pom.profile}`)
+                : null;
+              // When no POM photo is available, fall back to a rich two-color
+              // gradient using the winner's team color — much better than a
+              // faint app-icon watermark.
+              const winnerId = match?.winner_id;
+              const winnerColor = winnerId ? (getTeamColor(winnerId) || COLORS.ACCENT) : COLORS.ACCENT;
+              const HeroWrap = isCompleted ? ImageBackground : View;
+              const heroProps = isCompleted
+                ? {
+                    source: heroImageUri
+                      ? { uri: heroImageUri }
+                      : require('../../../assets/icon.png'),
+                    resizeMode: 'cover',
+                    // Hide the default image entirely when there's no real POM
+                    // photo — the gradient below replaces it visually.
+                    imageStyle: { opacity: heroImageUri ? 0.6 : 0, borderRadius: 16 },
+                    style: [st.scoreHero, st.scoreHeroCompleted],
+                  }
+                : { style: st.scoreHero };
+              return (
+            <HeroWrap {...heroProps}>
+              {isCompleted ? (
+                heroImageUri ? (
+                  // Real image: darken for legibility, gradient top→bottom
+                  <LinearGradient
+                    colors={['rgba(0,0,0,0.25)', 'rgba(0,0,0,0.75)']}
+                    style={StyleSheet.absoluteFill}
+                  />
+                ) : (
+                  // No image: team-color gradient background
+                  <LinearGradient
+                    colors={[winnerColor + 'E6', winnerColor + '99', '#0D0D0D']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                )
+              ) : null}
               {isLive && sumInnIdx === innings.length - 1 ? (
                 <>
                   {/* Live: Batting team focus layout */}
@@ -749,7 +1018,74 @@ const MatchDetailScreen = ({ navigation, route }) => {
                   )}
                 </>
               )}
-            </View>
+            </HeroWrap>
+              );
+            })()}
+
+            {/* ====== PLAYER OF THE MATCH — highlighted card, right under the score ====== */}
+            {isCompleted && scorecard?.top_performers?.player_of_match && (() => {
+              const pom = scorecard.top_performers.player_of_match;
+              const hasBat = pom.batting && (pom.batting.runs || 0) > 0;
+              const hasBowl = pom.bowling && (pom.bowling.wickets || 0) > 0;
+              return (
+                <TouchableOpacity
+                  style={st.pomCard}
+                  activeOpacity={0.85}
+                  onPress={() => goToPlayer(pom.player_id)}
+                >
+                  {/* Top ribbon — gold strip so the card reads as a "win" highlight
+                       even without a full border */}
+                  <View style={st.pomRibbon}>
+                    <MaterialCommunityIcons name="trophy" size={12} color="#FFD700" />
+                    <Text style={st.pomRibbonText}>PLAYER OF THE MATCH</Text>
+                  </View>
+                  <View style={st.pomBody}>
+                    <Avatar
+                      uri={pom.profile}
+                      name={pom.player_name}
+                      size={48}
+                      color="#FFD700"
+                      showRing
+                      type="player"
+                    />
+                    <View style={st.pomInfo}>
+                      <Text style={st.pomName} numberOfLines={1}>
+                        {pom.player_name}
+                      </Text>
+                      {pom.team_name ? (
+                        <Text style={st.pomTeam} numberOfLines={1}>
+                          {pom.team_name}
+                        </Text>
+                      ) : null}
+                      <View style={st.pomStatsRow}>
+                        {hasBat && (
+                          <View style={st.pomPill}>
+                            <MaterialCommunityIcons name="cricket" size={10} color={COLORS.ACCENT_LIGHT} />
+                            <Text style={st.pomPillValue}>{pom.batting.runs}</Text>
+                            <Text style={st.pomPillUnit}>({pom.batting.balls_faced})</Text>
+                          </View>
+                        )}
+                        {hasBowl && (
+                          <View style={st.pomPill}>
+                            <MaterialCommunityIcons name="baseball" size={10} color={COLORS.WARNING} />
+                            <Text style={st.pomPillValue}>
+                              {pom.bowling.wickets}/{pom.bowling.runs_conceded}
+                            </Text>
+                            <Text style={st.pomPillUnit}>({pom.bowling.overs_bowled}ov)</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                    <MaterialCommunityIcons
+                      name="chevron-right"
+                      size={18}
+                      color={COLORS.TEXT_MUTED}
+                      style={{ marginLeft: 4 }}
+                    />
+                  </View>
+                </TouchableOpacity>
+              );
+            })()}
 
             {/* ====== BROADCAST BANNER ====== */}
             {broadcastMsg && (
@@ -759,121 +1095,115 @@ const MatchDetailScreen = ({ navigation, route }) => {
               </View>
             )}
 
-            {/* ====== PLAYER OF THE MATCH (completed only) ====== */}
-            {isCompleted && scorecard?.top_performers?.player_of_match && (() => {
-              const pom = scorecard.top_performers.player_of_match;
-              return (
-                <TouchableOpacity style={st.pomCard} activeOpacity={0.7} onPress={() => goToPlayer(pom.player_id)}>
-                  <View style={st.pomBadge}>
-                    <MaterialCommunityIcons name="trophy" size={14} color="#FFD700" />
-                    <Text style={st.pomBadgeText}>PLAYER OF THE MATCH</Text>
-                  </View>
-                  <View style={st.pomContent}>
-                    <View style={st.pomAvatarWrap}>
-                      <Avatar
-                        name={pom.player_name}
-                        size={56}
-                        color="#FFD700"
-                        showRing
-                        type="player"
-                      />
-                      <View style={st.pomStarBadge}>
-                        <MaterialCommunityIcons name="star" size={12} color="#FFD700" />
-                      </View>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={st.pomName}>{pom.player_name}</Text>
-                      {pom.batting && (
-                        <View style={st.pomStatLine}>
-                          <MaterialCommunityIcons name="cricket" size={12} color={COLORS.ACCENT_LIGHT} />
-                          <Text style={st.pomStatVal}>{pom.batting.runs}</Text>
-                          <Text style={st.pomStatLabel}>({pom.batting.balls_faced}b)</Text>
-                          <Text style={st.pomStatDetail}>{pom.batting.fours || 0}x4  {pom.batting.sixes || 0}x6</Text>
-                          <Text style={st.pomStatDetail}>SR {(pom.batting.strike_rate || 0).toFixed(0)}</Text>
-                        </View>
-                      )}
-                      {pom.bowling && pom.bowling.wickets > 0 && (
-                        <View style={st.pomStatLine}>
-                          <MaterialCommunityIcons name="baseball" size={12} color={COLORS.WARNING} />
-                          <Text style={st.pomStatVal}>{pom.bowling.wickets}/{pom.bowling.runs_conceded}</Text>
-                          <Text style={st.pomStatLabel}>({pom.bowling.overs_bowled} ov)</Text>
-                          <Text style={st.pomStatDetail}>Econ {(pom.bowling.economy_rate || 0).toFixed(1)}</Text>
-                        </View>
-                      )}
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })()}
-
-            {/* ====== KEY PERFORMERS - Player cards with avatar + stats (CricHeroes style) ====== */}
-            {isCompleted && scorecard?.top_performers && (() => {
-              const tp = scorecard.top_performers;
-              const batters = tp.best_batters || [];
-              const bowlers = tp.best_bowlers || [];
-              if (!batters.length && !bowlers.length) return null;
-              return (
-                <>
-                  {/* Best Batters */}
-                  {batters.length > 0 && (
-                    <View style={st.perfSection}>
-                      <View style={st.perfSectionHead}>
-                        <MaterialCommunityIcons name="cricket" size={16} color={COLORS.ACCENT_LIGHT} />
-                        <Text style={st.perfSectionTitle}>Best Batters</Text>
-                      </View>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.perfCardScroll}>
-                        {batters.map((b, i) => {
-                          return (
-                            <TouchableOpacity key={i} style={st.perfPlayerCard} onPress={() => goToPlayer(b.player_id)} activeOpacity={0.7}>
-                              {i === 0 && <View style={st.perfBestBadge}><MaterialCommunityIcons name="star" size={10} color="#FFD700" /></View>}
-                              <Avatar name={b.player_name} size={48} color={COLORS.ACCENT} type="player" />
-                              <Text style={st.perfCardName} numberOfLines={1}>{b.player_name}</Text>
-                              <Text style={st.perfCardTeam} numberOfLines={1}>{b.team_name}</Text>
-                              <View style={st.perfCardDivider} />
-                              <Text style={st.perfCardMainStat}>{b.runs}<Text style={st.perfCardStatUnit}> runs</Text></Text>
-                              <Text style={st.perfCardSubStat}>{b.balls_faced}b  {b.fours || 0}x4  {b.sixes || 0}x6</Text>
-                              <Text style={st.perfCardSubStat}>SR {(b.strike_rate || 0).toFixed(1)}</Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </ScrollView>
-                    </View>
-                  )}
-
-                  {/* Best Bowlers */}
-                  {bowlers.length > 0 && (
-                    <View style={st.perfSection}>
-                      <View style={st.perfSectionHead}>
-                        <MaterialCommunityIcons name="baseball" size={16} color={COLORS.WARNING} />
-                        <Text style={st.perfSectionTitle}>Best Bowlers</Text>
-                      </View>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.perfCardScroll}>
-                        {bowlers.map((bw, i) => {
-                          return (
-                            <TouchableOpacity key={i} style={st.perfPlayerCard} onPress={() => goToPlayer(bw.player_id)} activeOpacity={0.7}>
-                              {i === 0 && <View style={st.perfBestBadge}><MaterialCommunityIcons name="star" size={10} color="#FFD700" /></View>}
-                              <Avatar name={bw.player_name} size={48} color={COLORS.WARNING} type="player" />
-                              <Text style={st.perfCardName} numberOfLines={1}>{bw.player_name}</Text>
-                              <Text style={st.perfCardTeam} numberOfLines={1}>{bw.team_name}</Text>
-                              <View style={st.perfCardDivider} />
-                              <Text style={st.perfCardMainStat}>{bw.wickets}/{bw.runs_conceded}</Text>
-                              <Text style={st.perfCardSubStat}>{bw.overs_bowled} ov  {bw.maidens || 0}m</Text>
-                              <Text style={st.perfCardSubStat}>Econ {(bw.economy_rate || 0).toFixed(1)}</Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </ScrollView>
-                    </View>
-                  )}
-
-                  {/* Match Stats removed — available in Scorecard tab */}
-                </>
-              );
-            })()}
-
             {/* Bowling team score removed — shown in Score Hero card */}
 
             {/* Recent Overs removed — available in Commentary tab */}
+
+            {/* ====== TOP PERFORMERS — per innings with player avatars ======
+                 One block per innings ("Innings 1 — Team A", "Innings 2 — Team B",
+                 plus any super-over innings). Each innings shows the top 2
+                 batters for that innings and the top 2 bowlers (from the
+                 opposing team who bowled that innings). Avatars use each
+                 player's profile image when the backend sends one; otherwise
+                 Avatar falls back to initials on a colored gradient. */}
+            {isCompleted && innings.length > 0 && (
+              <View style={st.tpSection}>
+                <View style={st.tpSectionHead}>
+                  <MaterialCommunityIcons name="star-four-points" size={16} color={COLORS.ACCENT_LIGHT} />
+                  <Text style={st.tpSectionTitle}>Top Performers</Text>
+                </View>
+                {innings.map((inn, idx) => {
+                  const batList = (inn.batting || [])
+                    .filter((b) => (b.balls_faced || 0) > 0 || (b.runs || 0) > 0)
+                    .sort((a, b) => (b.runs || 0) - (a.runs || 0))
+                    .slice(0, 2);
+                  const bowlList = (inn.bowling || [])
+                    .filter((b) => (b.overs_bowled || 0) > 0)
+                    .sort((a, b) =>
+                      (b.wickets || 0) - (a.wickets || 0) ||
+                      (a.economy_rate || 0) - (b.economy_rate || 0)
+                    )
+                    .slice(0, 2);
+                  if (!batList.length && !bowlList.length) return null;
+                  const battingTeamColor = getTeamColor(inn.batting_team_id);
+                  const bowlingTeamColor = getTeamColor(inn.bowling_team_id);
+                  const inningsLabel = inn.innings_number > 2
+                    ? `Super Over ${inn.innings_number - 2}`
+                    : `Innings ${inn.innings_number}`;
+                  return (
+                    <View key={`tp-${idx}`} style={st.tpCard}>
+                      {/* Innings + batting-team header */}
+                      <View style={st.tpInnHead}>
+                        <Text style={st.tpInnLabel}>{inningsLabel}</Text>
+                        <View style={[st.tpTeamChip, { backgroundColor: battingTeamColor }]}>
+                          <Text style={st.tpTeamChipText}>{getTeamShort(inn.batting_team_id)}</Text>
+                        </View>
+                        <Text style={st.tpTeamName} numberOfLines={1}>{getTeamName(inn.batting_team_id)}</Text>
+                        <Text style={st.tpInnScore}>
+                          {inn.total_runs}/{inn.total_wickets}
+                          <Text style={st.tpInnOvers}> ({inn.total_overs})</Text>
+                        </Text>
+                      </View>
+
+                      {/* Top batters */}
+                      {batList.length > 0 && (
+                        <View style={st.tpGroup}>
+                          <Text style={st.tpGroupLabel}>TOP BATTERS</Text>
+                          {batList.map((b, i) => (
+                            <TouchableOpacity
+                              key={`bat-${i}`}
+                              style={st.tpRow}
+                              activeOpacity={0.7}
+                              onPress={() => goToPlayer(b.player_id)}
+                            >
+                              <Avatar uri={b.profile} name={b.player_name} size={32} color={battingTeamColor} type="player" />
+                              <View style={st.tpRowMain}>
+                                <Text style={st.tpRowName} numberOfLines={1}>{b.player_name}</Text>
+                                <Text style={st.tpRowMeta}>
+                                  {b.fours || 0}×4  •  {b.sixes || 0}×6  •  SR{' '}
+                                  {(b.balls_faced || 0) > 0 ? ((b.runs / b.balls_faced) * 100).toFixed(1) : '0.0'}
+                                </Text>
+                              </View>
+                              <View style={st.tpRowStat}>
+                                <Text style={st.tpRowStatValue}>{b.runs || 0}</Text>
+                                <Text style={st.tpRowStatUnit}>({b.balls_faced || 0})</Text>
+                              </View>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
+
+                      {/* Top bowlers (from the bowling side) */}
+                      {bowlList.length > 0 && (
+                        <View style={[st.tpGroup, { borderTopWidth: 1, borderTopColor: COLORS.BORDER }]}>
+                          <Text style={st.tpGroupLabel}>TOP BOWLERS</Text>
+                          {bowlList.map((bw, i) => (
+                            <TouchableOpacity
+                              key={`bowl-${i}`}
+                              style={st.tpRow}
+                              activeOpacity={0.7}
+                              onPress={() => goToPlayer(bw.player_id)}
+                            >
+                              <Avatar uri={bw.profile} name={bw.player_name} size={32} color={bowlingTeamColor} type="player" />
+                              <View style={st.tpRowMain}>
+                                <Text style={st.tpRowName} numberOfLines={1}>{bw.player_name}</Text>
+                                <Text style={st.tpRowMeta}>
+                                  {bw.overs_bowled || 0}ov  •  {bw.maidens || 0}m  •  Econ {(bw.economy_rate || 0).toFixed(2)}
+                                </Text>
+                              </View>
+                              <View style={st.tpRowStat}>
+                                <Text style={st.tpRowStatValue}>{bw.wickets || 0}/{bw.runs_conceded || 0}</Text>
+                                <Text style={st.tpRowStatUnit}>({bw.overs_bowled || 0}ov)</Text>
+                              </View>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
 
             {/* Mini Scorecard */}
             {isLive && sumInnIdx === innings.length - 1 && liveState && !liveState.message && (
@@ -945,10 +1275,13 @@ const MatchDetailScreen = ({ navigation, route }) => {
               </View>
             )}
 
-            {/* Last Wicket only (no partnership in summary) */}
-            {lastFow && (isLive || isCompleted) && (
+            {/* Last Wicket — only during live play. Hidden on completed matches
+                 because the full result is already visible in the hero card +
+                 scorecard, and the "last wicket" framing feels stale once the
+                 match is over. */}
+            {lastFow && isLive && (
               <View style={[st.pshipRow, { justifyContent: 'center' }]}>
-                <View style={st.pshipCard}>
+                <View style={st.lastWicketCard}>
                   <Text style={st.pshipLabel}>LAST WICKET</Text>
                   {lastWicketBatter && (
                     <Text style={st.pshipWicketName}>{lastWicketBatter.player_name} {lastWicketBatter.runs}({lastWicketBatter.balls_faced})</Text>
@@ -995,34 +1328,66 @@ const MatchDetailScreen = ({ navigation, route }) => {
 
         {/* ── PAGE 1: SCORECARD ── */}
         <ScrollView style={{ width: SCREEN_WIDTH }} showsVerticalScrollIndicator={false} nestedScrollEnabled>
-        {(!visitedTabs[1] || !scorecard) && (
-          <View style={st.tabContent}>
-            <View style={{ padding: 16, gap: 12 }}>
-              <Skeleton width="40%" height={14} />
-              <Skeleton width="100%" height={120} borderRadius={12} />
-              <Skeleton width="100%" height={120} borderRadius={12} />
-              <Skeleton width="60%" height={14} style={{ marginTop: 8 }} />
-              <Skeleton width="100%" height={80} borderRadius={12} />
-            </View>
-          </View>
+        {/* Skeleton only until scorecard data arrives. If it's already cached,
+            render immediately — don't wait for the content-ready tick. */}
+        {!scorecard && (
+          <TabContentSkeleton variant="scorecard" />
         )}
         {scorecard && (
           <View style={st.tabContent}>
-            {/* Innings selector */}
+            {/* Innings selector — segmented pill with a sliding indicator
+                 (same transition feel as the tournament tab bar). */}
             {innings.length > 0 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.inningsRow}>
-                {innings.map((inn, i) => (
-                  <TouchableOpacity
-                    key={i}
-                    style={[st.inningsTab, activeInnings === i && st.inningsTabActive]}
-                    onPress={() => onInningsChange(i)}
-                  >
-                    <Text style={[st.inningsTabText, activeInnings === i && st.inningsTabTextActive]}>
-                      {getTeamShort(inn.batting_team_id)} {inn.total_runs}/{inn.total_wickets}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              <View style={st.segmentedWrap}>
+                <View
+                  style={st.segmented}
+                  onLayout={(e) => setInningsPillWidth(e.nativeEvent.layout.width)}
+                >
+                  {/* Sliding active indicator — translates in pixels under the segments */}
+                  {inningsPillWidth > 0 && (
+                    <Animated.View
+                      pointerEvents="none"
+                      style={[
+                        st.segmentIndicator,
+                        {
+                          width: (inningsPillWidth - 6) / innings.length,
+                          transform: [{ translateX: inningsPillX }],
+                        },
+                      ]}
+                    />
+                  )}
+                  {innings.map((inn, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      style={st.segment}
+                      onPress={() => onInningsChange(i)}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={[st.segmentCompact, activeInnings === i && st.segmentCompactActive]}>
+                        {getTeamShort(inn.batting_team_id)} {inn.total_runs}/{inn.total_wickets}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* Innings Hero — big total at top */}
+            {currentInn && (
+              <View style={st.sHero}>
+                <View style={st.sHeroLeft}>
+                  <Text style={st.sHeroTeam}>{currentInn.batting_team_name || getTeamShort(currentInn.batting_team_id)}</Text>
+                  <Text style={st.sHeroOvers}>{currentInn.total_overs} overs{currentInn.target ? ` • Target ${currentInn.target}` : ''}</Text>
+                </View>
+                <View style={st.sHeroRight}>
+                  <Text style={st.sHeroScore}>
+                    {currentInn.total_runs}<Text style={st.sHeroWkts}>/{currentInn.total_wickets}</Text>
+                  </Text>
+                  {currentInn.total_overs > 0 && (
+                    <Text style={st.sHeroRR}>RR {(currentInn.total_runs / currentInn.total_overs).toFixed(2)}</Text>
+                  )}
+                </View>
+              </View>
             )}
 
             {!scorecard || innings.length === 0 ? (
@@ -1030,63 +1395,77 @@ const MatchDetailScreen = ({ navigation, route }) => {
                 <Icon name="scorecard" size={32} />
                 <Text style={st.emptyText}>No scorecard available yet</Text>
               </View>
+            ) : !inningsReady[activeInnings] ? (
+              <TabContentSkeleton variant="scorecard" />
             ) : currentInn ? (
-              <>
+              <Animated.View style={{ opacity: inningsFade }}>
                 {/* Batting */}
                 <View style={st.card}>
                   <View style={st.sectionHeader}>
-                    <Text style={st.sectionTitle}>Batting</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <MaterialCommunityIcons name="cricket" size={15} color={COLORS.ACCENT_LIGHT} />
+                      <Text style={st.sectionTitle}>Batting</Text>
+                    </View>
                     {currentInn.total_overs > 0 && (
                       <View style={st.rrBadge}>
                         <Text style={st.rrBadgeText}>
-                          RR: {(currentInn.total_runs / currentInn.total_overs).toFixed(2)}
+                          RR {(currentInn.total_runs / currentInn.total_overs).toFixed(2)}
                         </Text>
                       </View>
                     )}
                   </View>
                   <View style={st.tableHeader}>
-                    <Text style={[st.thCell, st.thName]}>Batsman</Text>
+                    <Text style={[st.thCell, st.thName]}>BATTER</Text>
                     <Text style={st.thCell}>R</Text>
                     <Text style={st.thCell}>B</Text>
                     <Text style={st.thCell}>4s</Text>
                     <Text style={st.thCell}>6s</Text>
                     <Text style={st.thCell}>SR</Text>
                   </View>
-                  {currentInn.batting.map((b, i) => {
-                    const isNotOut = !b.is_out;
-                    return (
-                      <TouchableOpacity
-                        key={i}
-                        style={[st.tableRow, isNotOut && st.tableRowHighlight]}
-                        onPress={() => goToPlayer(b.player_id)}
-                      >
-                        <View style={[st.tdCell, st.tdName]}>
-                          <Text style={[st.playerName, isNotOut && { color: PRIMARY }]}>{b.player_name}</Text>
-                          <Text style={[st.howOut, isNotOut && { color: PRIMARY, fontStyle: 'italic' }]}>
-                            {b.is_out ? b.how_out : 'not out'}
-                          </Text>
-                        </View>
-                        <Text style={[st.tdCell, st.tdBold]}>{b.runs}</Text>
-                        <Text style={st.tdCell}>{b.balls_faced}</Text>
-                        <Text style={st.tdCell}>{b.fours}</Text>
-                        <Text style={st.tdCell}>{b.sixes}</Text>
-                        <Text style={st.tdCell}>{b.strike_rate?.toFixed(1)}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                  {(() => {
+                    const teamTotal = Math.max(1, currentInn.total_runs || 1);
+                    return currentInn.batting.map((b, i) => {
+                      const isNotOut = !b.is_out;
+                      const sharePct = Math.min(100, Math.round(((b.runs || 0) / teamTotal) * 100));
+                      return (
+                        <TouchableOpacity
+                          key={i}
+                          style={st.batRow}
+                          onPress={() => goToPlayer(b.player_id)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={[st.tdCell, st.tdName]}>
+                            <Text style={st.playerName} numberOfLines={1}>
+                              {b.player_name}
+                            </Text>
+                            <Text
+                              style={[
+                                st.howOut,
+                                isNotOut
+                                  ? { color: PRIMARY, fontStyle: 'italic' }
+                                  : /run out/i.test(b.how_out || '')
+                                  ? { color: COLORS.WARNING }
+                                  : { color: COLORS.TEXT_MUTED },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {b.is_out ? b.how_out : 'not out'}
+                            </Text>
+                          </View>
+                          <Text style={[st.tdCell, st.tdBold]}>{b.runs}</Text>
+                          <Text style={st.tdCell}>{b.balls_faced}</Text>
+                          <Text style={st.tdCell}>{b.fours}</Text>
+                          <Text style={st.tdCell}>{b.sixes}</Text>
+                          <Text style={st.tdCell}>{b.strike_rate?.toFixed(1)}</Text>
+                        </TouchableOpacity>
+                      );
+                    });
+                  })()}
 
                   {/* Extras */}
                   <View style={st.extrasRow}>
                     <Text style={st.extrasLabel}>Extras</Text>
                     <Text style={st.extrasValue}>{currentInn.total_extras}</Text>
-                  </View>
-
-                  {/* Total */}
-                  <View style={st.totalRow}>
-                    <Text style={st.totalLabel}>Total</Text>
-                    <Text style={st.totalValue}>
-                      {currentInn.total_runs}/{currentInn.total_wickets} ({currentInn.total_overs} Overs)
-                    </Text>
                   </View>
 
                   {/* Did not bat */}
@@ -1096,84 +1475,6 @@ const MatchDetailScreen = ({ navigation, route }) => {
                     </Text>
                   )}
                 </View>
-
-                {/* Fall of Wickets */}
-                {currentInn.fall_of_wickets?.length > 0 && (
-                  <View style={st.card}>
-                    <Text style={st.sectionTitle}>Fall of Wickets</Text>
-                    <View style={st.fowRow}>
-                      {currentInn.fall_of_wickets.map((f, i) => (
-                        <TouchableOpacity key={i} style={st.fowChip} onPress={() => goToPlayer(f.player_id)}>
-                          <Text style={st.fowScore}>{f.wicket_number}-{f.runs_at_fall}</Text>
-                          {f.player_name && <Text style={st.fowPlayer}>{f.player_name}</Text>}
-                          <Text style={st.fowOvers}>{f.overs_at_fall} ov</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-                )}
-
-                {/* Partnerships */}
-                {currentInn.partnerships?.length > 0 && (
-                  <View style={st.card}>
-                    <Text style={st.sectionTitle}>Partnerships</Text>
-                    {currentInn.partnerships
-                      .filter(p => p.total_runs > 0 || p.is_active)
-                      .sort((a, b) => a.wicket_number - b.wicket_number)
-                      .map((p, i) => {
-                        const totalP = p.total_runs || 1;
-                        const aRuns = p.player_a_runs || 0;
-                        const bRuns = p.player_b_runs || 0;
-                        const extras = (p.extras || 0);
-                        const aPct = totalP > 0 ? Math.round((aRuns / totalP) * 100) : 50;
-                        const bPct = totalP > 0 ? Math.round((bRuns / totalP) * 100) : 50;
-                        // Find max partnership for relative bar sizing
-                        const maxRuns = Math.max(...currentInn.partnerships.map(pp => pp.total_runs || 0), 1);
-                        const barPct = Math.round((totalP / maxRuns) * 100);
-
-                        const totalBalls = p.total_balls || 0;
-                        const aBalls = Math.round(totalBalls * (aPct / 100)) || 0;
-                        const bBalls = totalBalls - aBalls;
-
-                        return (
-                          <View key={i} style={st.ptnrRow}>
-                            {/* Wicket number */}
-                            <View style={st.ptnrWicketBadge}>
-                              <Text style={st.ptnrWicketNum}>{p.wicket_number}</Text>
-                            </View>
-
-                            {/* Content */}
-                            <View style={st.ptnrBarArea}>
-                              {/* Player A (left) + Total (center) + Player B (right) */}
-                              <View style={st.ptnrPlayersRow}>
-                                <View style={st.ptnrPlayerLeft}>
-                                  <Text style={st.ptnrPlayerName}>{p.player_a_name || 'Player A'}</Text>
-                                  <Text style={st.ptnrPlayerStats}>{aRuns} ({aBalls})</Text>
-                                </View>
-                                <View style={st.ptnrCenter}>
-                                  <Text style={st.ptnrTotalRuns}>{totalP}</Text>
-                                  <Text style={st.ptnrTotalBalls}>({totalBalls})</Text>
-                                  {p.is_active && <View style={st.ptnrActiveBadge}><Text style={st.ptnrActiveText}>LIVE</Text></View>}
-                                </View>
-                                <View style={st.ptnrPlayerRight}>
-                                  <Text style={[st.ptnrPlayerName, { textAlign: 'right' }]}>{p.player_b_name || 'Player B'}</Text>
-                                  <Text style={[st.ptnrPlayerStats, { textAlign: 'right' }]}>{bRuns} ({bBalls})</Text>
-                                </View>
-                              </View>
-
-                              {/* Split bar */}
-                              <View style={[st.ptnrBarTrack, { width: `${barPct}%`, alignSelf: 'center' }]}>
-                                <View style={[st.ptnrBarLeft, { flex: aPct || 1 }]} />
-                                {extras > 0 && <View style={[st.ptnrBarExtras, { flex: Math.max(1, 100 - aPct - bPct) }]} />}
-                                <View style={[st.ptnrBarRight, { flex: bPct || 1 }]} />
-                              </View>
-                            </View>
-                            )}
-                          </View>
-                        );
-                      })}
-                  </View>
-                )}
 
                 {/* Bowling */}
                 <View style={st.card}>
@@ -1187,7 +1488,12 @@ const MatchDetailScreen = ({ navigation, route }) => {
                     <Text style={st.thCell}>ECO</Text>
                   </View>
                   {currentInn.bowling.map((b, i) => (
-                    <TouchableOpacity key={i} style={st.tableRow} onPress={() => goToPlayer(b.player_id)}>
+                    <TouchableOpacity
+                      key={i}
+                      style={st.tableRow}
+                      onPress={() => goToPlayer(b.player_id)}
+                      activeOpacity={0.7}
+                    >
                       <Text style={[st.tdCell, st.tdName, st.playerName]}>{b.player_name}</Text>
                       <Text style={st.tdCell}>{b.overs_bowled}</Text>
                       <Text style={st.tdCell}>{b.maidens}</Text>
@@ -1197,7 +1503,196 @@ const MatchDetailScreen = ({ navigation, route }) => {
                     </TouchableOpacity>
                   ))}
                 </View>
-              </>
+
+                {/* Fall of Wickets — three-column table (Batter / Score / Over).
+                     Columns are flex-sized so Score and Over sit snugly next to
+                     the Batter column instead of floating off to the right. */}
+                {currentInn.fall_of_wickets?.length > 0 && (
+                  <View style={st.card}>
+                    <Text style={st.sectionTitle}>Fall of Wickets</Text>
+                    <View style={st.tableHeader}>
+                      <Text style={[st.thCell, st.fowColName]}>Batter</Text>
+                      <Text style={[st.thCell, st.fowColNum]}>Score</Text>
+                      <Text style={[st.thCell, st.fowColNum]}>Over</Text>
+                    </View>
+                    {currentInn.fall_of_wickets.map((f, i) => (
+                      <TouchableOpacity
+                        key={i}
+                        style={st.tableRow}
+                        onPress={() => goToPlayer(f.player_id)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[st.tdCell, st.fowColName, st.playerName]} numberOfLines={1}>
+                          {f.player_name || '—'}
+                        </Text>
+                        <Text style={[st.tdCell, st.fowColNum, st.tdBold]}>
+                          {f.runs_at_fall}-{f.wicket_number}
+                        </Text>
+                        <Text style={[st.tdCell, st.fowColNum]}>{f.overs_at_fall}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
+                {/* Partnerships — stacked horizontal bars, biggest stand highlighted */}
+                {currentInn.partnerships?.length > 0 && (
+                  <View style={st.card}>
+                    <View style={st.sectionHeader}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <MaterialCommunityIcons name="link-variant" size={15} color={COLORS.ACCENT_LIGHT} />
+                        <Text style={st.sectionTitle}>Partnerships</Text>
+                      </View>
+                    </View>
+                    {(() => {
+                      const visible = currentInn.partnerships
+                        .filter((p) => p.total_runs > 0 || p.is_active)
+                        .sort((a, b) => a.wicket_number - b.wicket_number);
+                      const maxRuns = Math.max(...visible.map((pp) => pp.total_runs || 0), 1);
+                      const bestIdx = visible.reduce((best, p, idx, arr) => ((p.total_runs || 0) > (arr[best].total_runs || 0) ? idx : best), 0);
+                      return visible.map((p, i) => {
+                        const totalP = p.total_runs || 0;
+                        const aRuns = p.player_a_runs || 0;
+                        const bRuns = p.player_b_runs || 0;
+                        const extras = Math.max(0, totalP - aRuns - bRuns);
+                        const aPct = totalP > 0 ? (aRuns / totalP) * 100 : 50;
+                        const bPct = totalP > 0 ? (bRuns / totalP) * 100 : 50;
+                        const extrasPct = totalP > 0 ? (extras / totalP) * 100 : 0;
+                        const barPct = Math.round(((totalP || 1) / maxRuns) * 100);
+                        const isBest = i === bestIdx && totalP > 0;
+                        const totalBalls = p.total_balls || 0;
+                        return (
+                          <View key={i} style={st.pshipCard}>
+                            <View style={st.pshipHead}>
+                              <View style={st.pshipWktChip}>
+                                {/* Label from the loop index so partnerships
+                                    are numbered 1-upwards regardless of how
+                                    `wicket_number` is stored on the backend
+                                    (0 for opening, 2+ after each wicket). */}
+                                <Text style={st.pshipWktText}>W{i + 1}</Text>
+                              </View>
+                              <View style={{ flex: 1, alignItems: 'center' }}>
+                                <Text style={st.pshipTotal}>
+                                  {totalP} <Text style={st.pshipBalls}>({totalBalls})</Text>
+                                </Text>
+                              </View>
+                              {/* Only show LIVE when the match itself is actually live.
+                                  Backend doesn't always flip is_active=false when
+                                  end_match is called without a wicket, so guard
+                                  on match state here. */}
+                              {p.is_active && isLive ? (
+                                <View style={st.pshipLiveBadge}>
+                                  <View style={st.pshipLiveDot} />
+                                  <Text style={st.pshipLiveText}>LIVE</Text>
+                                </View>
+                              ) : isBest ? (
+                                <View style={st.pshipBestBadge}>
+                                  <MaterialCommunityIcons name="star" size={9} color={COLORS.ACCENT_LIGHT} />
+                                  <Text style={st.pshipBestText}>BEST</Text>
+                                </View>
+                              ) : (
+                                <View style={{ width: 44 }} />
+                              )}
+                            </View>
+                            {/* Stacked bar — width proportional to biggest stand */}
+                            <View style={[st.pshipBarTrack, { width: `${barPct}%` }]}>
+                              <View style={[st.pshipBarSlice, { flex: aPct || 0.1, backgroundColor: COLORS.ACCENT_LIGHT, borderTopLeftRadius: 6, borderBottomLeftRadius: 6 }]} />
+                              {extras > 0 && <View style={[st.pshipBarSlice, { flex: extrasPct || 0.1, backgroundColor: COLORS.TEXT_MUTED }]} />}
+                              <View style={[st.pshipBarSlice, { flex: bPct || 0.1, backgroundColor: COLORS.ACCENT_DARK, borderTopRightRadius: 6, borderBottomRightRadius: 6 }]} />
+                            </View>
+                            {/* Players */}
+                            <View style={st.pshipPlayersRow}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={[st.pshipPlayerName, { color: COLORS.ACCENT_LIGHT }]} numberOfLines={1}>
+                                  {p.player_a_name || 'Player A'}
+                                </Text>
+                                <Text style={st.pshipPlayerStat}>{aRuns}</Text>
+                              </View>
+                              <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                                <Text style={[st.pshipPlayerName, { color: COLORS.ACCENT_DARK, textAlign: 'right' }]} numberOfLines={1}>
+                                  {p.player_b_name || 'Player B'}
+                                </Text>
+                                <Text style={st.pshipPlayerStat}>{bRuns}</Text>
+                              </View>
+                            </View>
+                          </View>
+                        );
+                      });
+                    })()}
+                  </View>
+                )}
+
+                {/* ====== OVER PULSE — lazy-mounted after the rest of the innings,
+                     horizontal-scroll so every over stays readable. ====== */}
+                {scorecardChartData.manhattan.length > 1 && (
+                  chartsReady[activeInnings] ? (
+                    <View style={st.pulseCard}>
+                      <View style={st.pulseHead}>
+                        <MaterialCommunityIcons name="chart-bar" size={16} color={COLORS.ACCENT_LIGHT} />
+                        <Text style={st.pulseTitle}>Runs per Over</Text>
+                        <Text style={st.pulseSub}>{currentInn.batting_team_name || ''}</Text>
+                      </View>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        nestedScrollEnabled
+                        directionalLockEnabled
+                        onTouchStart={() => setPagerScrollEnabled(false)}
+                        onTouchEnd={() => setPagerScrollEnabled(true)}
+                        onTouchCancel={() => setPagerScrollEnabled(true)}
+                      >
+                        <ManhattanChart
+                          overs={scorecardChartData.manhattan}
+                          height={150}
+                          barColor={COLORS.ACCENT}
+                          minBarSlot={CHART_SLOT_WIDTH}
+                          showTitle={false}
+                          showLegend={false}
+                          style={st.pulseChartInner}
+                        />
+                      </ScrollView>
+                      <View style={st.pulseDivider} />
+                      <View style={st.pulseHead}>
+                        <MaterialCommunityIcons name="chart-line" size={16} color={COLORS.SUCCESS_LIGHT} />
+                        <Text style={st.pulseTitle}>Run Rate</Text>
+                      </View>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        nestedScrollEnabled
+                        directionalLockEnabled
+                        onTouchStart={() => setPagerScrollEnabled(false)}
+                        onTouchEnd={() => setPagerScrollEnabled(true)}
+                        onTouchCancel={() => setPagerScrollEnabled(true)}
+                      >
+                        <RunRateChart
+                          data={scorecardChartData.runRate}
+                          height={150}
+                          lineColor={COLORS.SUCCESS_LIGHT}
+                          showTitle={false}
+                          showLegend={false}
+                          style={st.pulseChartInner}
+                        />
+                      </ScrollView>
+                      <Text style={st.pulseHint}>Swipe charts sideways to see all overs →</Text>
+                    </View>
+                  ) : (
+                    // Skeleton placeholder while charts mount in the background
+                    <View style={st.pulseCard}>
+                      <View style={st.pulseHead}>
+                        <MaterialCommunityIcons name="chart-bar" size={16} color={COLORS.ACCENT_LIGHT} />
+                        <Text style={st.pulseTitle}>Runs per Over</Text>
+                      </View>
+                      <Skeleton width="100%" height={150} borderRadius={10} />
+                      <View style={st.pulseDivider} />
+                      <View style={st.pulseHead}>
+                        <MaterialCommunityIcons name="chart-line" size={16} color={COLORS.SUCCESS_LIGHT} />
+                        <Text style={st.pulseTitle}>Run Rate</Text>
+                      </View>
+                      <Skeleton width="100%" height={150} borderRadius={10} />
+                    </View>
+                  )
+                )}
+              </Animated.View>
             ) : null}
           </View>
         )}
@@ -1221,41 +1716,52 @@ const MatchDetailScreen = ({ navigation, route }) => {
           }}
           scrollEventThrottle={400}
         >
-        {(!visitedTabs[2] || !scorecard) && (
-          <View style={st.tabContent}>
-            <View style={{ padding: 16, gap: 10 }}>
-              {[1,2,3,4,5,6].map(i => (
-                <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Skeleton width={36} height={36} borderRadius={18} />
-                  <View style={{ flex: 1 }}>
-                    <Skeleton width="80%" height={12} />
-                    <Skeleton width="50%" height={10} style={{ marginTop: 4 }} />
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
+        {/* Show skeleton until scorecard is cached (gives us innings info
+            needed to render the tab). Cached = render instantly. */}
+        {!scorecard && (
+          <TabContentSkeleton variant="commentary" />
         )}
         {scorecard && (
           <View style={st.tabContent}>
-            {/* Innings selector */}
+            {/* Innings selector — segmented pill with sliding indicator
+                 (same transition feel as the Scorecard tab and the tournament tab bar). */}
             {innings.length > 0 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.inningsRow}>
-                {innings.map((inn, i) => (
-                  <TouchableOpacity
-                    key={i}
-                    style={[st.inningsTab, activeInnings === i && st.inningsTabActive]}
-                    onPress={() => onInningsChange(i)}
-                  >
-                    <Text style={[st.inningsTabText, activeInnings === i && st.inningsTabTextActive]}>
-                      {getTeamShort(inn.batting_team_id)} {inn.total_runs}/{inn.total_wickets}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              <View style={st.segmentedWrap}>
+                <View
+                  style={st.segmented}
+                  onLayout={(e) => setInningsPillWidth(e.nativeEvent.layout.width)}
+                >
+                  {inningsPillWidth > 0 && (
+                    <Animated.View
+                      pointerEvents="none"
+                      style={[
+                        st.segmentIndicator,
+                        {
+                          width: (inningsPillWidth - 6) / innings.length,
+                          transform: [{ translateX: inningsPillX }],
+                        },
+                      ]}
+                    />
+                  )}
+                  {innings.map((inn, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      style={st.segment}
+                      onPress={() => onInningsChange(i)}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={[st.segmentCompact, activeInnings === i && st.segmentCompactActive]}>
+                        {getTeamShort(inn.batting_team_id)} {inn.total_runs}/{inn.total_wickets}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
             )}
 
-            {/* Commentary Filters */}
+            {/* Commentary Filters + list — wrapped in Animated.View so the
+                 content dims during an innings switch, matching the Scorecard tab. */}
+            <Animated.View style={{ opacity: inningsFade }}>
             <View style={st.filterRow}>
               {COMM_FILTERS.map(f => (
                 <TouchableOpacity
@@ -1268,8 +1774,11 @@ const MatchDetailScreen = ({ navigation, route }) => {
               ))}
             </View>
 
-            {commLoading ? (
-              <ActivityIndicator size="small" color={PRIMARY} style={{ marginVertical: 30 }} />
+            {commLoading && commData.length === 0 ? (
+              // Skeleton only when we have nothing cached yet — subsequent
+              // refetches (e.g. innings switch with cached data) keep the
+              // existing commentary visible instead of blanking to a spinner.
+              <TabContentSkeleton variant="commentary" />
             ) : commData.length === 0 ? (
               <View style={st.emptyState}>
                 <Icon name="commentary" size={32} />
@@ -1338,6 +1847,7 @@ const MatchDetailScreen = ({ navigation, route }) => {
                 <Text style={{ fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 6 }}>Loading older overs...</Text>
               </View>
             )}
+            </Animated.View>
           </View>
         )}
 
@@ -1446,12 +1956,183 @@ const InfoRow = ({ label, value, highlight }) => (
   </View>
 );
 
-// ═══════════════════════════════════════════════════════════════
 // STYLES
-// ═══════════════════════════════════════════════════════════════
 
 const st = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.BG },
+  pulseCard: {
+    backgroundColor: COLORS.CARD,
+    marginHorizontal: 12,
+    marginTop: 10,
+    marginBottom: 4,
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+  },
+  pulseHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 4,
+    paddingBottom: 6,
+  },
+  pulseTitle: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '800', color: COLORS.TEXT, letterSpacing: 0.5 },
+  pulseSub: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '600', color: COLORS.TEXT_MUTED, marginLeft: 'auto' },
+  pulseDivider: { height: 1, backgroundColor: COLORS.BORDER, marginVertical: 10 },
+  pulseChartInner: {
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    padding: 0,
+    borderRadius: 0,
+    // no horizontal padding — the outer pulseCard already provides padding,
+    // and we want the chart to consume full scroll width
+  },
+  pulseHint: {
+    fontFamily: FONTS.family,    fontSize: 10,
+    color: COLORS.TEXT_MUTED,
+    textAlign: 'center',
+    marginTop: 8,
+    letterSpacing: 0.3,
+  },
+  /* Player of the Match — highlighted card with a gold ribbon.
+     Subtle gold tint + gold accent elements make it stand out without a border. */
+  pomCard: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,215,0,0.06)',
+  },
+  pomRibbon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(255,215,0,0.14)',
+  },
+  pomRibbonText: {
+    fontFamily: FONTS.family,    fontSize: 10,
+    fontWeight: '900',
+    color: '#FFD700',
+    letterSpacing: 1.2,
+  },
+  pomBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  pomInfo: {
+    flex: 1,
+    minWidth: 0, // lets the children actually shrink + ellipsize
+  },
+  pomName: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '800', color: COLORS.TEXT },
+  pomTeam: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 1 },
+  pomStatsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  pomPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: COLORS.SURFACE,
+  },
+  pomPillValue: {
+    fontFamily: FONTS.family,    fontSize: 12,
+    fontWeight: '900',
+    color: COLORS.TEXT,
+    fontVariant: ['tabular-nums'],
+  },
+  pomPillUnit: {
+    fontFamily: FONTS.family,    fontSize: 10,
+    fontWeight: '600',
+    color: COLORS.TEXT_MUTED,
+    fontVariant: ['tabular-nums'],
+  },
+
+  /* Top Performers — per innings, flat borderless blocks */
+  tpSection: { marginTop: 12, gap: 6 },
+  tpSectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingBottom: 2,
+  },
+  tpSectionTitle: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '800', color: COLORS.TEXT, letterSpacing: 0.3 },
+  tpCard: {
+    marginHorizontal: 16,
+    backgroundColor: COLORS.BG,
+    overflow: 'hidden',
+  },
+  tpInnHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 8,
+    backgroundColor: COLORS.BG,
+  },
+  tpInnLabel: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '800', color: COLORS.TEXT_MUTED, letterSpacing: 0.5 },
+  tpTeamChip: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 4,
+    minWidth: 34,
+    alignItems: 'center',
+  },
+  tpTeamChipText: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
+  tpTeamName: { fontFamily: FONTS.family, flex: 1, fontSize: 11, fontWeight: '700', color: COLORS.TEXT },
+  tpInnScore: {
+    fontFamily: FONTS.family,    fontSize: 12,
+    fontWeight: '900',
+    color: COLORS.TEXT,
+    fontVariant: ['tabular-nums'],
+  },
+  tpInnOvers: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '600', color: COLORS.TEXT_MUTED },
+  tpGroup: { paddingHorizontal: 4, paddingTop: 6, paddingBottom: 4 },
+  tpGroupLabel: {
+    fontFamily: FONTS.family,    fontSize: 9,
+    fontWeight: '800',
+    color: COLORS.TEXT_MUTED,
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  tpRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 5,
+  },
+  tpRowMain: { flex: 1, marginLeft: 10 },
+  tpRowName: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: COLORS.TEXT },
+  tpRowMeta: { fontFamily: FONTS.family, fontSize: 9, color: COLORS.TEXT_MUTED, marginTop: 2, fontVariant: ['tabular-nums'] },
+  tpRowStat: { alignItems: 'flex-end' },
+  tpRowStatValue: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '900', color: COLORS.TEXT, fontVariant: ['tabular-nums'] },
+  tpRowStatUnit: { fontFamily: FONTS.family, fontSize: 9, color: COLORS.TEXT_MUTED, fontVariant: ['tabular-nums'] },
+  liveCommentaryBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginHorizontal: 12,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    backgroundColor: COLORS.SURFACE,
+    borderRadius: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.ACCENT,
+  },
+  liveCommentaryQuote: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '900', color: COLORS.ACCENT, lineHeight: 18 },
+  liveCommentaryText: { fontFamily: FONTS.family, flex: 1, fontSize: 13, color: COLORS.TEXT, fontStyle: 'italic', lineHeight: 18 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.BG },
   scrollBody: { flex: 1 },
 
@@ -1459,24 +2140,24 @@ const st = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 12,
-    backgroundColor: COLORS.CARD, borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
+    backgroundColor: COLORS.BG,
   },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  backArrow: { fontSize: 22, color: COLORS.TEXT, fontWeight: '600' },
+  backArrow: { fontFamily: FONTS.family, fontSize: 22, color: COLORS.TEXT, fontWeight: '600' },
   headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.LIVE },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
-  shareIcon: { fontSize: 18, color: COLORS.TEXT },
+  headerTitle: { fontFamily: FONTS.family, fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
+  shareIcon: { fontFamily: FONTS.family, fontSize: 18, color: COLORS.TEXT },
 
   // ── Header center & subtitle
   headerCenter: { flex: 1, alignItems: 'center' },
-  headerSubtitle: { fontSize: 11, color: COLORS.TEXT_MUTED, fontWeight: '500', marginTop: 2 },
+  headerSubtitle: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_MUTED, fontWeight: '500', marginTop: 2 },
 
   // ── Tab bar
-  tabBarWrap: { backgroundColor: COLORS.CARD, borderBottomWidth: 1, borderBottomColor: COLORS.BORDER, position: 'relative' },
+  tabBarWrap: { backgroundColor: COLORS.BG, position: 'relative' },
   tabBarScroll: { paddingHorizontal: 0 },
   tab: { width: SCREEN_WIDTH / 4, alignItems: 'center', justifyContent: 'center', paddingVertical: 12 },
-  tabText: { fontSize: 13, color: COLORS.TEXT_MUTED, fontWeight: '600' },
+  tabText: { fontFamily: FONTS.family, fontSize: 13, color: COLORS.TEXT_MUTED, fontWeight: '600' },
   tabTextActive: { color: COLORS.TEXT, fontWeight: '700' },
   tabIndicator: { position: 'absolute', bottom: 0, height: 3, backgroundColor: PRIMARY, borderRadius: 2 },
 
@@ -1485,88 +2166,95 @@ const st = StyleSheet.create({
 
   // ── Score Hero Card
   scoreHero: {
-    margin: 16, borderRadius: 16, padding: 20, backgroundColor: COLORS.CARD,
-    borderWidth: 1, borderColor: COLORS.BORDER,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 2,
+    // Flat, borderless panel — padding alone groups the content.
+    marginHorizontal: 16, marginTop: 12, padding: 16, backgroundColor: COLORS.BG,
+  },
+  // When the match is completed we render the hero as an ImageBackground —
+  // give it a minimum height so the image is visible and clip children to the
+  // rounded corners.
+  scoreHeroCompleted: {
+    backgroundColor: '#111',
+    minHeight: 220,
+    borderRadius: 16,
+    overflow: 'hidden',
+    padding: 18,
+    justifyContent: 'flex-end',
   },
   heroTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
   heroTeamRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 },
   heroFlagChip: { width: 28, height: 18, borderRadius: 3, alignItems: 'center', justifyContent: 'center' },
-  heroFlagChipText: { fontSize: 8, fontWeight: '800', color: COLORS.TEXT },
-  heroTeamLabel: { fontSize: 14, fontWeight: '700', color: COLORS.TEXT, flexShrink: 1 },
+  heroFlagChipText: { fontFamily: FONTS.family, fontSize: 8, fontWeight: '800', color: COLORS.TEXT },
+  heroTeamLabel: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.TEXT, flexShrink: 1 },
   heroScoreRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
-  heroScoreBig: { fontSize: 30, fontWeight: '900', color: COLORS.TEXT },
-  heroOversLabel: { fontSize: 14, fontWeight: '500', color: COLORS.TEXT_MUTED },
+  heroScoreBig: { fontFamily: FONTS.family, fontSize: 26, fontWeight: '900', color: COLORS.TEXT },
+  heroOversLabel: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '500', color: COLORS.TEXT_MUTED },
   heroRightCol: { alignItems: 'flex-end', gap: 4 },
-  heroCrrText: { fontSize: 12, fontWeight: '500', color: COLORS.TEXT_MUTED, marginTop: 4 },
-  heroRrrText: { fontSize: 12, fontWeight: '700', color: PRIMARY },
+  heroCrrText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '500', color: COLORS.TEXT_MUTED, marginTop: 4 },
+  heroRrrText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: PRIMARY },
   heroInfoBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12,
     backgroundColor: COLORS.ACCENT_SOFT, borderRadius: 10, borderWidth: 1, borderColor: COLORS.ACCENT_SOFT_BORDER,
     marginTop: 4,
   },
-  heroInfoIcon: { fontSize: 16, color: PRIMARY },
-  heroInfoText: { flex: 1, fontSize: 12, fontWeight: '500', color: COLORS.TEXT_SECONDARY },
+  heroInfoIcon: { fontFamily: FONTS.family, fontSize: 16, color: PRIMARY },
+  heroInfoText: { fontFamily: FONTS.family, flex: 1, fontSize: 12, fontWeight: '500', color: COLORS.TEXT_SECONDARY },
   broadcastBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     marginHorizontal: 16, marginTop: 10, paddingVertical: 12, paddingHorizontal: 16,
     backgroundColor: COLORS.WARNING + '15', borderRadius: 12,
     borderWidth: 1, borderColor: COLORS.WARNING + '30',
   },
-  broadcastBannerText: { flex: 1, fontSize: 14, fontWeight: '700', color: COLORS.WARNING },
+  broadcastBannerText: { fontFamily: FONTS.family, flex: 1, fontSize: 14, fontWeight: '700', color: COLORS.WARNING },
   heroStatusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   liveBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: COLORS.LIVE_BG, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
   },
   liveBadgeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.LIVE },
-  liveBadgeText: { fontSize: 10, fontWeight: '800', color: COLORS.LIVE, letterSpacing: 0.8 },
-  heroMatchInfo: { fontSize: 11, color: COLORS.TEXT_MUTED, fontWeight: '500' },
+  liveBadgeText: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '800', color: COLORS.LIVE, letterSpacing: 0.8 },
+  heroMatchInfo: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_MUTED, fontWeight: '500' },
   heroTeamScoreRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
   },
-  heroTeamScoreText: { fontSize: 14, fontWeight: '700', color: COLORS.TEXT, textAlign: 'right' },
+  heroTeamScoreText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.TEXT, textAlign: 'right' },
   heroDateRow: { marginTop: 12, borderTopWidth: 1, borderTopColor: COLORS.BORDER, paddingTop: 10 },
-  heroDateText: { fontSize: 12, color: COLORS.TEXT_MUTED, textAlign: 'center' },
+  heroDateText: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, textAlign: 'center' },
 
   // ── Secondary score bar (bowling team in live)
   secondaryScoreBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    marginHorizontal: 16, marginTop: 8, paddingVertical: 10, paddingHorizontal: 14,
-    backgroundColor: COLORS.CARD, borderRadius: 10, borderWidth: 1, borderColor: COLORS.BORDER,
+    marginHorizontal: 16, marginTop: 8, paddingVertical: 8, paddingHorizontal: 10,
+    backgroundColor: COLORS.BG,
   },
-  secondaryScoreText: { fontSize: 13, fontWeight: '600', color: COLORS.TEXT_SECONDARY },
+  secondaryScoreText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.TEXT_SECONDARY },
 
   // ── Recent Overs section
   recentSection: { marginTop: 16 },
-  sectionLabel: { fontSize: 10, fontWeight: '700', color: COLORS.TEXT_MUTED, letterSpacing: 1.5, marginBottom: 10, paddingHorizontal: 16 },
+  sectionLabel: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700', color: COLORS.TEXT_MUTED, letterSpacing: 1.5, marginBottom: 10, paddingHorizontal: 16 },
   oversScroll: { paddingHorizontal: 16, alignItems: 'center', gap: 5 },
-  overTag: { fontSize: 10, fontWeight: '700', color: COLORS.TEXT_MUTED, marginRight: 2 },
+  overTag: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700', color: COLORS.TEXT_MUTED, marginRight: 2 },
   overSep: { width: 1, height: 20, backgroundColor: COLORS.BORDER_LIGHT, marginHorizontal: 4 },
   recentBallSm: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  recentBallSmText: { fontSize: 10, fontWeight: '700' },
+  recentBallSmText: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700' },
 
   // ── Mini Scorecard card
   miniCard: {
-    backgroundColor: COLORS.CARD, marginHorizontal: 16, marginTop: 12, borderRadius: 16, overflow: 'hidden',
-    borderWidth: 1, borderColor: COLORS.BORDER,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 1,
+    backgroundColor: COLORS.BG, marginHorizontal: 16, marginTop: 10, overflow: 'hidden',
   },
   miniTHead: {
-    flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16,
-    backgroundColor: COLORS.SURFACE,
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 12,
+    backgroundColor: COLORS.BG,
   },
-  miniTh: { width: 34, textAlign: 'right', fontSize: 10, fontWeight: '700', color: COLORS.TEXT_MUTED, letterSpacing: 0.5 },
+  miniTh: { fontFamily: FONTS.family, width: 32, textAlign: 'right', fontSize: 9, fontWeight: '700', color: COLORS.TEXT_MUTED, letterSpacing: 0.5 },
   miniTRow: {
-    flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16,
-    borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 9, paddingHorizontal: 12,
   },
-  miniPlayerBold: { fontSize: 13, fontWeight: '700', color: COLORS.TEXT },
-  miniPlayerMed: { fontSize: 13, fontWeight: '500', color: COLORS.TEXT },
-  miniTd: { width: 34, textAlign: 'right', fontSize: 13, color: COLORS.TEXT_SECONDARY },
-  miniTdBold: { width: 34, textAlign: 'right', fontSize: 13, fontWeight: '700', color: COLORS.TEXT },
-  miniTdLight: { textAlign: 'right', fontSize: 13, color: COLORS.TEXT_MUTED },
+  miniPlayerBold: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: COLORS.TEXT },
+  miniPlayerMed: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '500', color: COLORS.TEXT },
+  miniTd: { fontFamily: FONTS.family, width: 32, textAlign: 'right', fontSize: 12, color: COLORS.TEXT_SECONDARY },
+  miniTdBold: { fontFamily: FONTS.family, width: 32, textAlign: 'right', fontSize: 12, fontWeight: '700', color: COLORS.TEXT },
+  miniTdLight: { fontFamily: FONTS.family, textAlign: 'right', fontSize: 12, color: COLORS.TEXT_MUTED },
 
   // ── Partnership & Last Wicket
   // Partnership bars
@@ -1578,16 +2266,16 @@ const st = StyleSheet.create({
     width: 26, height: 26, borderRadius: 13, backgroundColor: COLORS.SURFACE,
     alignItems: 'center', justifyContent: 'center', marginTop: 2,
   },
-  ptnrWicketNum: { fontSize: 11, fontWeight: '800', color: COLORS.TEXT_MUTED },
+  ptnrWicketNum: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '800', color: COLORS.TEXT_MUTED },
   ptnrBarArea: { flex: 1 },
   ptnrPlayersRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
   ptnrPlayerLeft: { flex: 1 },
   ptnrCenter: { alignItems: 'center', paddingHorizontal: 8, minWidth: 60 },
   ptnrPlayerRight: { flex: 1 },
-  ptnrPlayerName: { fontSize: 12, fontWeight: '700', color: COLORS.TEXT, lineHeight: 16 },
-  ptnrPlayerStats: { fontSize: 12, fontWeight: '600', color: COLORS.ACCENT_LIGHT, marginTop: 2 },
-  ptnrTotalRuns: { fontSize: 20, fontWeight: '900', color: COLORS.TEXT },
-  ptnrTotalBalls: { fontSize: 11, fontWeight: '500', color: COLORS.TEXT_MUTED },
+  ptnrPlayerName: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: COLORS.TEXT, lineHeight: 16 },
+  ptnrPlayerStats: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '600', color: COLORS.ACCENT_LIGHT, marginTop: 2 },
+  ptnrTotalRuns: { fontFamily: FONTS.family, fontSize: 20, fontWeight: '900', color: COLORS.TEXT },
+  ptnrTotalBalls: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '500', color: COLORS.TEXT_MUTED },
   ptnrBarTrack: {
     flexDirection: 'row', height: 10, borderRadius: 5, overflow: 'hidden',
     backgroundColor: COLORS.SURFACE, minWidth: '20%', width: '100%',
@@ -1598,31 +2286,34 @@ const st = StyleSheet.create({
   ptnrActiveBadge: {
     backgroundColor: COLORS.LIVE + '20', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
   },
-  ptnrActiveText: { fontSize: 8, fontWeight: '800', color: COLORS.LIVE },
+  ptnrActiveText: { fontFamily: FONTS.family, fontSize: 8, fontWeight: '800', color: COLORS.LIVE },
 
+  // Summary "Last Wicket" mini-card. Renamed from pshipCard to avoid a
+  // name clash with the Partnerships style later in this stylesheet —
+  // StyleSheet.create overrides earlier keys silently, which was making
+  // the summary card inherit the partnerships row's bottom border.
   pshipRow: { flexDirection: 'row', gap: 12, marginHorizontal: 16, marginTop: 12 },
-  pshipCard: {
-    flex: 1, backgroundColor: COLORS.CARD, padding: 14, borderRadius: 16,
-    borderWidth: 1, borderColor: COLORS.BORDER,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 1,
+  lastWicketCard: {
+    flex: 1, backgroundColor: COLORS.BG, padding: 10,
   },
-  pshipLabel: { fontSize: 10, fontWeight: '700', color: COLORS.TEXT_MUTED, letterSpacing: 0.5, marginBottom: 6 },
-  pshipValue: { fontSize: 18, fontWeight: '900', color: COLORS.TEXT },
-  pshipWicketName: { fontSize: 13, fontWeight: '700', color: COLORS.TEXT, marginBottom: 2 },
-  pshipWicketScore: { fontSize: 11, color: COLORS.TEXT_MUTED },
+  pshipLabel: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700', color: COLORS.TEXT_MUTED, letterSpacing: 0.5, marginBottom: 6 },
+  pshipValue: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '900', color: COLORS.TEXT },
+  pshipWicketName: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.TEXT, marginBottom: 2 },
+  pshipWicketScore: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_MUTED },
 
   // ── Cards (used by other tabs)
+  // No outer border — rely on the card background to separate it from the page.
+  // Keeps the scorecard tables feeling light and flat instead of boxy.
   card: {
-    backgroundColor: COLORS.CARD, marginHorizontal: 16, marginTop: 12, borderRadius: 16, padding: 16,
-    borderWidth: 1, borderColor: COLORS.BORDER,
+    backgroundColor: COLORS.BG, marginHorizontal: 16, marginTop: 10, padding: 12,
   },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: COLORS.TEXT, marginBottom: 12 },
+  sectionTitle: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '700', color: COLORS.TEXT, marginBottom: 12 },
 
   // ── Recent Over
   recentOverRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   recentBall: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  recentBallText: { fontSize: 11, fontWeight: '700' },
+  recentBallText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700' },
 
 
   // ── Toss
@@ -1631,9 +2322,9 @@ const st = StyleSheet.create({
     marginHorizontal: 16, marginTop: 12, padding: 14,
     backgroundColor: COLORS.ACCENT_SOFT, borderRadius: 12, borderWidth: 1, borderColor: COLORS.ACCENT_SOFT_BORDER,
   },
-  tossIcon: { fontSize: 22 },
-  tossLabel: { fontSize: 9, fontWeight: '700', color: COLORS.TEXT_MUTED, letterSpacing: 1, marginBottom: 2 },
-  tossText: { fontSize: 13, fontWeight: '500', color: COLORS.TEXT },
+  tossIcon: { fontFamily: FONTS.family, fontSize: 22 },
+  tossLabel: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '700', color: COLORS.TEXT_MUTED, letterSpacing: 1, marginBottom: 2 },
+  tossText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '500', color: COLORS.TEXT },
 
   // ── Innings selector (horizontal scroll pills)
   inningsRow: {
@@ -1645,42 +2336,204 @@ const st = StyleSheet.create({
     backgroundColor: COLORS.SURFACE, borderRadius: 12,
   },
   inningsTabActive: { backgroundColor: PRIMARY },
-  inningsTabText: { fontSize: 13, color: COLORS.TEXT_MUTED, fontWeight: '600' },
+  inningsTabText: { fontFamily: FONTS.family, fontSize: 13, color: COLORS.TEXT_MUTED, fontWeight: '600' },
   inningsTabTextActive: { color: COLORS.TEXT, fontWeight: '700' },
 
   // ── Run rate badge
   rrBadge: { backgroundColor: COLORS.ACCENT_SOFT, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  rrBadgeText: { fontSize: 11, fontWeight: '700', color: PRIMARY },
+  rrBadgeText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: PRIMARY },
 
   // ── Scorecard table
+  // Flat look: no row dividers, soft zebra stripes on alternating rows,
+  // muted header background. Reads like a proper table without feeling boxy.
   tableHeader: {
-    flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 4,
-    backgroundColor: COLORS.SURFACE, borderRadius: 8, marginBottom: 4,
+    flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 8,
+    backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 8, marginBottom: 2,
   },
-  thCell: { width: 38, textAlign: 'center', fontSize: 10, fontWeight: '700', color: COLORS.TEXT_MUTED, textTransform: 'uppercase', letterSpacing: 0.5 },
+  thCell: { fontFamily: FONTS.family, width: 38, textAlign: 'center', fontSize: 10, fontWeight: '700', color: COLORS.TEXT_MUTED, textTransform: 'uppercase', letterSpacing: 0.5 },
   thName: { flex: 1, textAlign: 'left', paddingLeft: 4 },
   tableRow: {
-    flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 4,
-    borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 8,
+    borderRadius: 6,
   },
+  tableRowStripe: { backgroundColor: 'rgba(255,255,255,0.025)' },
+  // Fall-of-Wickets column sizing — three evenly-balanced columns
+  // (Batter : Score : Over = 2 : 1 : 1) so the number cells stay close to
+  // the name instead of being pushed to the right edge.
+  fowColName: { flex: 2, textAlign: 'left', paddingLeft: 4, width: undefined },
+  fowColNum: { flex: 1, textAlign: 'center', width: undefined },
   tableRowHighlight: { backgroundColor: COLORS.ACCENT_SOFT },
-  tdCell: { width: 38, textAlign: 'center', fontSize: 13, color: COLORS.TEXT_SECONDARY },
+  tdCell: { fontFamily: FONTS.family, width: 38, textAlign: 'center', fontSize: 13, color: COLORS.TEXT_SECONDARY },
   tdName: { flex: 1, textAlign: 'left', paddingLeft: 4 },
   tdBold: { fontWeight: '700', color: COLORS.TEXT },
-  playerName: { fontSize: 13, fontWeight: '600', color: COLORS.TEXT },
-  howOut: { fontSize: 11, color: COLORS.TEXT_MUTED, fontStyle: 'italic', marginTop: 2 },
+  playerName: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.TEXT },
+  howOut: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_MUTED, fontStyle: 'italic', marginTop: 2 },
 
-  // Extras & Total
+  // Extras & Total — no border, just soft surface tone to separate from rows above.
   extrasRow: {
     flexDirection: 'row', justifyContent: 'space-between',
-    paddingVertical: 8, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
+    paddingVertical: 10, paddingHorizontal: 8, marginTop: 4,
+    backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 6,
   },
-  extrasLabel: { fontSize: 13, color: COLORS.TEXT_MUTED, fontWeight: '500' },
-  extrasValue: { fontSize: 13, color: COLORS.TEXT_SECONDARY, fontWeight: '600' },
+  extrasLabel: { fontFamily: FONTS.family, fontSize: 13, color: COLORS.TEXT_MUTED, fontWeight: '500' },
+  extrasValue: { fontFamily: FONTS.family, fontSize: 13, color: COLORS.TEXT_SECONDARY, fontWeight: '600' },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 10, paddingHorizontal: 4 },
-  totalLabel: { fontSize: 14, fontWeight: '700', color: COLORS.TEXT },
-  totalValue: { fontSize: 14, fontWeight: '700', color: COLORS.TEXT },
-  dnbText: { fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 10, paddingHorizontal: 4, lineHeight: 16 },
+  totalLabel: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT },
+  totalValue: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT },
+  dnbText: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 10, paddingHorizontal: 4, lineHeight: 16 },
+
+  // ── Segmented innings pill with sliding indicator (matches tournament tab feel)
+  segmentedWrap: { paddingHorizontal: 12, marginTop: 10 },
+  segmented: {
+    flexDirection: 'row',
+    position: 'relative',
+    backgroundColor: COLORS.SURFACE,
+    borderRadius: 10,
+    padding: 3,
+    overflow: 'hidden',
+  },
+  segmentIndicator: {
+    position: 'absolute',
+    top: 3,
+    left: 3,
+    bottom: 3,
+    backgroundColor: PRIMARY,
+    borderRadius: 8,
+    shadowColor: PRIMARY,
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  segment: {
+    flex: 1,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  segmentCompact: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: COLORS.TEXT_MUTED, letterSpacing: 0.3, fontVariant: ['tabular-nums'] },
+  segmentCompactActive: { color: '#fff', fontWeight: '900' },
+
+  // ── Scorecard hero (innings total at the top of the tab)
+  sHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.BG,
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  sHeroLeft: { flex: 1 },
+  sHeroTeam: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '900', color: COLORS.TEXT, letterSpacing: 0.3 },
+  sHeroOvers: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '600', color: COLORS.TEXT_MUTED, marginTop: 3 },
+  sHeroRight: { alignItems: 'flex-end' },
+  sHeroScore: { fontFamily: FONTS.family, fontSize: 24, fontWeight: '900', color: COLORS.TEXT, fontVariant: ['tabular-nums'], lineHeight: 26 },
+  sHeroWkts: { fontFamily: FONTS.family, color: COLORS.TEXT_SECONDARY, fontWeight: '700', fontSize: 18 },
+  sHeroRR: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '800', color: PRIMARY, marginTop: 2, letterSpacing: 0.4 },
+
+  // ── Redesigned batting rows
+  batRow: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    marginBottom: 2,
+  },
+  batRowStripe: { backgroundColor: 'rgba(255,255,255,0.02)' },
+  batRowActive: { backgroundColor: COLORS.ACCENT_SOFT, borderWidth: 1, borderColor: COLORS.ACCENT_SOFT_BORDER },
+  batShareBar: {
+    position: 'absolute',
+    left: 0,
+    top: '20%',
+    width: 3,
+    borderRadius: 2,
+    opacity: 0.9,
+  },
+
+  // ── Prominent total footer
+  totalFooter: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.SURFACE_HIGHLIGHT || COLORS.SURFACE,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  totalFooterLeft: {},
+  totalFooterLabel: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '900', letterSpacing: 1.2, color: COLORS.TEXT_MUTED },
+  totalFooterOvers: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '600', color: COLORS.TEXT_SECONDARY, marginTop: 2 },
+  totalFooterRight: { alignItems: 'flex-end' },
+  totalFooterScore: { fontFamily: FONTS.family, fontSize: 22, fontWeight: '900', color: COLORS.TEXT, fontVariant: ['tabular-nums'] },
+  totalFooterWkts: { color: COLORS.TEXT_SECONDARY, fontWeight: '700' },
+  totalFooterRR: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: PRIMARY, marginTop: 2, letterSpacing: 0.5 },
+
+  // ── Partnerships (redesigned stacked bars)
+  pshipCard: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.BORDER_LIGHT,
+  },
+  pshipHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 2,
+    marginBottom: 8,
+  },
+  pshipWktChip: {
+    backgroundColor: COLORS.SURFACE,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+  },
+  pshipWktText: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '900', color: COLORS.TEXT_SECONDARY, letterSpacing: 0.5 },
+  pshipTotal: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '900', color: COLORS.TEXT, fontVariant: ['tabular-nums'] },
+  pshipBalls: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '600', color: COLORS.TEXT_MUTED },
+  pshipLiveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.LIVE_BG,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  pshipLiveDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: COLORS.LIVE },
+  pshipLiveText: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '900', color: COLORS.LIVE, letterSpacing: 0.5 },
+  pshipBestBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: COLORS.ACCENT_SOFT,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.ACCENT_SOFT_BORDER,
+  },
+  pshipBestText: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '900', color: COLORS.ACCENT_LIGHT, letterSpacing: 0.5 },
+  pshipBarTrack: {
+    flexDirection: 'row',
+    height: 10,
+    borderRadius: 6,
+    overflow: 'hidden',
+    backgroundColor: COLORS.SURFACE,
+    alignSelf: 'center',
+    minWidth: '15%',
+  },
+  pshipBarSlice: {},
+  pshipPlayersRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 10 },
+  pshipPlayerName: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700' },
+  pshipPlayerStat: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_SECONDARY, marginTop: 2, fontVariant: ['tabular-nums'] },
 
   // ── Fall of Wickets
   fowRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -1688,9 +2541,9 @@ const st = StyleSheet.create({
     backgroundColor: COLORS.ACCENT_SOFT, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
     borderWidth: 1, borderColor: COLORS.ACCENT_SOFT_BORDER, alignItems: 'center',
   },
-  fowScore: { fontSize: 12, fontWeight: '700', color: PRIMARY },
-  fowPlayer: { fontSize: 10, fontWeight: '600', color: COLORS.TEXT_SECONDARY, marginTop: 2 },
-  fowOvers: { fontSize: 10, color: COLORS.TEXT_MUTED, marginTop: 1 },
+  fowScore: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: PRIMARY },
+  fowPlayer: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '600', color: COLORS.TEXT_SECONDARY, marginTop: 2 },
+  fowOvers: { fontFamily: FONTS.family, fontSize: 10, color: COLORS.TEXT_MUTED, marginTop: 1 },
 
   // ── Commentary
   filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginTop: 12 },
@@ -1699,26 +2552,26 @@ const st = StyleSheet.create({
     backgroundColor: COLORS.CARD, borderWidth: 1, borderColor: COLORS.BORDER,
   },
   filterPillActive: { backgroundColor: COLORS.ACCENT, borderColor: COLORS.ACCENT },
-  filterPillText: { fontSize: 12, fontWeight: '600', color: COLORS.TEXT },
+  filterPillText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '600', color: COLORS.TEXT },
   filterPillTextActive: { color: COLORS.TEXT },
 
   overHeader: { marginBottom: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: COLORS.BORDER },
-  overTitle: { fontSize: 14, fontWeight: '700', color: COLORS.TEXT },
-  overSummary: { fontSize: 12, color: COLORS.TEXT_SECONDARY, fontWeight: '500', marginTop: 2 },
+  overTitle: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT },
+  overSummary: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_SECONDARY, fontWeight: '500', marginTop: 2 },
   overBallsRow: { flexDirection: 'row', gap: 5, marginTop: 8 },
   overBallCircle: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  overBallText: { fontSize: 10, fontWeight: '700' },
+  overBallText: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700' },
 
   ballDetail: { flexDirection: 'row', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.BORDER },
   ballDetailWicket: { backgroundColor: COLORS.DANGER_SOFT, borderRadius: 8, marginVertical: 2, paddingHorizontal: 6 },
   ballNumCol: { width: 44, alignItems: 'center', gap: 4 },
-  ballNum: { fontSize: 11, fontWeight: '700', color: COLORS.TEXT_MUTED },
+  ballNum: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.TEXT_MUTED },
   ballDot: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  ballDotText: { fontSize: 10, fontWeight: '700' },
+  ballDotText: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700' },
   ballDescCol: { flex: 1, marginLeft: 8, justifyContent: 'center' },
-  wicketLabel: { fontSize: 11, fontWeight: '800', color: COLORS.LIVE, marginBottom: 2 },
-  ballDescTitle: { fontSize: 13, fontWeight: '600', color: COLORS.TEXT, marginBottom: 2 },
-  ballDesc: { fontSize: 12, color: COLORS.TEXT_SECONDARY, lineHeight: 18 },
+  wicketLabel: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '800', color: COLORS.LIVE, marginBottom: 2 },
+  ballDescTitle: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.TEXT, marginBottom: 2 },
+  ballDesc: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_SECONDARY, lineHeight: 18 },
 
   // ── Info tab
   infoSectionHeader: {
@@ -1728,10 +2581,10 @@ const st = StyleSheet.create({
     width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.ACCENT + '15',
   },
-  infoSectionTitle: { fontSize: 15, fontWeight: '700', color: COLORS.TEXT },
+  infoSectionTitle: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '700', color: COLORS.TEXT },
   infoRow: { flexDirection: 'row', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.BORDER },
-  infoLabel: { width: 90, fontSize: 13, color: COLORS.TEXT_MUTED, fontWeight: '500' },
-  infoValue: { flex: 1, fontSize: 13, color: COLORS.TEXT, fontWeight: '500' },
+  infoLabel: { fontFamily: FONTS.family, width: 90, fontSize: 13, color: COLORS.TEXT_MUTED, fontWeight: '500' },
+  infoValue: { fontFamily: FONTS.family, flex: 1, fontSize: 13, color: COLORS.TEXT, fontWeight: '500' },
 
   // ── Squads
   squadHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
@@ -1740,22 +2593,22 @@ const st = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
   },
-  squadName: { fontSize: 13, fontWeight: '600', color: COLORS.TEXT },
-  squadRole: { fontSize: 10, color: COLORS.TEXT_MUTED, marginTop: 1 },
-  squadJersey: { fontSize: 11, fontWeight: '600', color: COLORS.TEXT_MUTED },
+  squadName: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.TEXT },
+  squadRole: { fontFamily: FONTS.family, fontSize: 10, color: COLORS.TEXT_MUTED, marginTop: 1 },
+  squadJersey: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '600', color: COLORS.TEXT_MUTED },
 
   // ── Action button
   actionBtn: {
     backgroundColor: PRIMARY, borderRadius: 14, paddingVertical: 16,
     alignItems: 'center', marginHorizontal: 16, marginTop: 16,
   },
-  actionBtnText: { color: COLORS.TEXT, fontSize: 16, fontWeight: '700' },
+  actionBtnText: { fontFamily: FONTS.family, color: COLORS.TEXT, fontSize: 16, fontWeight: '700' },
 
   // ── Empty state
   emptyState: { alignItems: 'center', paddingVertical: 48 },
-  emptyIcon: { fontSize: 40 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: COLORS.TEXT, marginTop: 10 },
-  emptyText: { fontSize: 13, color: COLORS.TEXT_MUTED, marginTop: 6, fontWeight: '500' },
+  emptyIcon: { fontFamily: FONTS.family, fontSize: 40 },
+  emptyTitle: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: COLORS.TEXT, marginTop: 10 },
+  emptyText: { fontFamily: FONTS.family, fontSize: 13, color: COLORS.TEXT_MUTED, marginTop: 6, fontWeight: '500' },
 
   /* Player of the Match */
   pomCard: {
@@ -1768,7 +2621,7 @@ const st = StyleSheet.create({
     paddingVertical: 10, backgroundColor: 'rgba(255,215,0,0.08)',
     borderBottomWidth: 1, borderBottomColor: 'rgba(255,215,0,0.15)',
   },
-  pomBadgeText: { fontSize: 11, fontWeight: '800', color: COLORS.GOLD, letterSpacing: 1.5 },
+  pomBadgeText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '800', color: COLORS.GOLD, letterSpacing: 1.5 },
   pomContent: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 14 },
   pomAvatarWrap: { position: 'relative' },
   pomAvatar: {
@@ -1782,11 +2635,11 @@ const st = StyleSheet.create({
     backgroundColor: COLORS.CARD, borderWidth: 1.5, borderColor: COLORS.GOLD,
     alignItems: 'center', justifyContent: 'center',
   },
-  pomName: { fontSize: 16, fontWeight: '800', color: COLORS.TEXT, marginBottom: 6 },
+  pomName: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '800', color: COLORS.TEXT, marginBottom: 6 },
   pomStatLine: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3, flexWrap: 'wrap' },
-  pomStatVal: { fontSize: 14, fontWeight: '800', color: COLORS.TEXT },
-  pomStatLabel: { fontSize: 11, fontWeight: '500', color: COLORS.TEXT_MUTED },
-  pomStatDetail: { fontSize: 11, fontWeight: '600', color: COLORS.TEXT_SECONDARY },
+  pomStatVal: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '800', color: COLORS.TEXT },
+  pomStatLabel: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '500', color: COLORS.TEXT_MUTED },
+  pomStatDetail: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '600', color: COLORS.TEXT_SECONDARY },
 
   /* Key Performers - CricHeroes style player cards */
   perfSection: { marginTop: 14 },
@@ -1794,7 +2647,7 @@ const st = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     paddingHorizontal: 16, marginBottom: 10,
   },
-  perfSectionTitle: { fontSize: 15, fontWeight: '700', color: COLORS.TEXT },
+  perfSectionTitle: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '700', color: COLORS.TEXT },
   perfCardScroll: { paddingHorizontal: 16, gap: 10, justifyContent: 'center' },
   perfPlayerCard: {
     width: 130, backgroundColor: COLORS.CARD, borderRadius: 16,
@@ -1806,25 +2659,25 @@ const st = StyleSheet.create({
     width: 20, height: 20, borderRadius: 10,
     backgroundColor: 'rgba(255,215,0,0.15)', alignItems: 'center', justifyContent: 'center',
   },
-  perfCardName: { fontSize: 12, fontWeight: '700', color: COLORS.TEXT, textAlign: 'center' },
-  perfCardTeam: { fontSize: 10, color: COLORS.TEXT_MUTED, marginTop: 2, textAlign: 'center' },
+  perfCardName: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: COLORS.TEXT, textAlign: 'center' },
+  perfCardTeam: { fontFamily: FONTS.family, fontSize: 10, color: COLORS.TEXT_MUTED, marginTop: 2, textAlign: 'center' },
   perfCardDivider: { width: 30, height: 1.5, backgroundColor: COLORS.BORDER, marginVertical: 8, borderRadius: 1 },
-  perfCardMainStat: { fontSize: 18, fontWeight: '900', color: COLORS.TEXT },
-  perfCardStatUnit: { fontSize: 11, fontWeight: '500', color: COLORS.TEXT_MUTED },
-  perfCardSubStat: { fontSize: 10, color: COLORS.TEXT_SECONDARY, marginTop: 2, textAlign: 'center' },
+  perfCardMainStat: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '900', color: COLORS.TEXT },
+  perfCardStatUnit: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '500', color: COLORS.TEXT_MUTED },
+  perfCardSubStat: { fontFamily: FONTS.family, fontSize: 10, color: COLORS.TEXT_SECONDARY, marginTop: 2, textAlign: 'center' },
 
   /* Key Match Stats */
   keyStatsCard: {
-    backgroundColor: COLORS.CARD, borderRadius: 16, marginHorizontal: 16, marginTop: 14,
-    padding: 16, borderWidth: 1, borderColor: COLORS.BORDER,
+    backgroundColor: COLORS.BG, marginHorizontal: 16, marginTop: 12,
+    padding: 10,
   },
-  keyStatsTitle: { fontSize: 15, fontWeight: '800', color: COLORS.TEXT, marginBottom: 12 },
+  keyStatsTitle: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '800', color: COLORS.TEXT, marginBottom: 12 },
   keyStatsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 0 },
   keyStatItem: {
     width: '33.33%', alignItems: 'center', paddingVertical: 10,
   },
-  keyStatValue: { fontSize: 18, fontWeight: '900', color: COLORS.TEXT },
-  keyStatLabel: { fontSize: 10, fontWeight: '600', color: COLORS.TEXT_MUTED, marginTop: 3, textAlign: 'center' },
+  keyStatValue: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '900', color: COLORS.TEXT },
+  keyStatLabel: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '600', color: COLORS.TEXT_MUTED, marginTop: 3, textAlign: 'center' },
 });
 
 export default MatchDetailScreen;

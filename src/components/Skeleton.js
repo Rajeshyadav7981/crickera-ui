@@ -48,19 +48,30 @@ const Skeleton = ({ width = '100%', height = 16, borderRadius = 8, style }) => {
   );
 };
 
-// Pre-built skeleton cards for common patterns
+// Skeleton mirrors the compact MatchCard (single-line team rows, inline score).
 export const MatchCardSkeleton = () => (
   <View style={sk.matchCard}>
-    <View style={sk.row}>
-      <Skeleton width={60} height={20} borderRadius={6} />
+    <View style={[sk.row, { gap: 5 }]}>
       <Skeleton width={40} height={16} borderRadius={4} />
+      <Skeleton width={32} height={16} borderRadius={4} />
+      <Skeleton width={60} height={10} borderRadius={3} />
     </View>
-    <Skeleton width="70%" height={16} style={{ marginTop: 10 }} />
-    <Skeleton width="30%" height={12} style={{ marginTop: 6 }} />
-    <Skeleton width="70%" height={16} style={{ marginTop: 6 }} />
-    <View style={[sk.row, { marginTop: 10 }]}>
-      <Skeleton width={50} height={12} />
-      <Skeleton width={60} height={12} />
+    <View style={[sk.row, { gap: 8, marginTop: 10 }]}>
+      <Skeleton width={24} height={24} borderRadius={12} />
+      <Skeleton width="45%" height={13} borderRadius={3} />
+      <View style={{ flex: 1 }} />
+      <Skeleton width={54} height={14} borderRadius={3} />
+    </View>
+    <View style={[sk.row, { gap: 8, marginTop: 6 }]}>
+      <Skeleton width={24} height={24} borderRadius={12} />
+      <Skeleton width="40%" height={13} borderRadius={3} />
+      <View style={{ flex: 1 }} />
+      <Skeleton width={54} height={14} borderRadius={3} />
+    </View>
+    <View style={[sk.row, { gap: 5, marginTop: 10 }]}>
+      <Skeleton width={70} height={18} borderRadius={4} />
+      <Skeleton width={52} height={18} borderRadius={4} />
+      <Skeleton width={40} height={18} borderRadius={4} />
     </View>
   </View>
 );
@@ -115,15 +126,16 @@ export const HorizontalSkeleton = ({ count = 3 }) => (
 const sk = StyleSheet.create({
   base: { backgroundColor: COLORS.SURFACE },
   matchCard: {
-    backgroundColor: COLORS.CARD, marginHorizontal: 12, marginBottom: 10,
-    borderRadius: 16, padding: 16, borderWidth: 1, borderColor: COLORS.BORDER,
+    backgroundColor: COLORS.BG, marginHorizontal: 12, marginBottom: 10,
+    borderRadius: 12, borderWidth: 1, borderColor: COLORS.BORDER,
+    padding: 10,
   },
   postCard: {
     backgroundColor: COLORS.CARD, marginHorizontal: 12, marginBottom: 10,
     borderRadius: 16, padding: 16, borderWidth: 1, borderColor: COLORS.BORDER,
   },
   profile: { alignItems: 'center', paddingVertical: 24 },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  row: { flexDirection: 'row', alignItems: 'center' },
 });
 
 export default React.memo(Skeleton);

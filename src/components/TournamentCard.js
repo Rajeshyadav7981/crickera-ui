@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 import StatusBadge from './StatusBadge';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -40,11 +40,11 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.06)',
   },
   topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  name: { fontSize: 15, fontWeight: '800', color: COLORS.TEXT, marginBottom: 8 },
+  name: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '800', color: COLORS.TEXT, marginBottom: 8 },
   bottom: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  meta: { fontSize: 11, color: COLORS.TEXT_SECONDARY, fontWeight: '500' },
+  meta: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_SECONDARY, fontWeight: '500' },
   codeBadge: {
-    fontSize: 9, fontWeight: '700', color: COLORS.ACCENT_LIGHT,
+    fontFamily: FONTS.family,    fontSize: 9, fontWeight: '700', color: COLORS.ACCENT_LIGHT,
     backgroundColor: COLORS.ACCENT_SOFT, paddingHorizontal: 8, paddingVertical: 3,
     borderRadius: 6, overflow: 'hidden',
   },

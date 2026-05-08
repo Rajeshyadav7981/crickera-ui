@@ -6,7 +6,7 @@ import { View, Text, StyleSheet, Platform, TouchableOpacity } from 'react-native
 import { enableFreeze } from 'react-native-screens';
 import { useAuth } from '../context/AuthContext';
 import { useThemeContext } from '../context/ThemeContext';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { linkingConfig } from '../services/linking';
 import offlineQueue from '../services/offlineQueue';
@@ -18,12 +18,29 @@ enableFreeze(true);
 import SplashScreen from '../screens/SplashScreen';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import { SignInPromptProvider, navigationRef } from '../components/SignInPrompt';
+import { ScreenErrorBoundary } from '../components/ErrorBoundary';
 
 import HomeTab from '../screens/tabs/HomeTab';
 import TournamentsTab from '../screens/tabs/TournamentsTab';
 import CommunityTab from '../screens/tabs/CommunityTab';
 import ProfileTab from '../screens/tabs/ProfileTab';
+
+// Wrap tab contents in their own ErrorBoundary so a crash in one tab doesn't
+// unmount the entire app; the other tabs keep working and the user can retry.
+const withErrorBoundary = (Component) => {
+  const Wrapped = (props) => (
+    <ScreenErrorBoundary><Component {...props} /></ScreenErrorBoundary>
+  );
+  Wrapped.displayName = `WithErrorBoundary(${Component.displayName || Component.name || 'Screen'})`;
+  return Wrapped;
+};
+
+const HomeTabSafe = withErrorBoundary(HomeTab);
+const TournamentsTabSafe = withErrorBoundary(TournamentsTab);
+const CommunityTabSafe = withErrorBoundary(CommunityTab);
+const ProfileTabSafe = withErrorBoundary(ProfileTab);
 
 import CreateTournamentScreen from '../screens/tournament/CreateTournamentScreen';
 import TournamentDetailScreen from '../screens/tournament/TournamentDetailScreen';
@@ -45,6 +62,7 @@ import PlayerProfileScreen from '../screens/player/PlayerProfileScreen';
 import EditProfileScreen from '../screens/profile/EditProfileScreen';
 import UsernameSetupScreen from '../screens/profile/UsernameSetupScreen';
 import UserPublicProfileScreen from '../screens/profile/UserPublicProfileScreen';
+import FollowersListScreen from '../screens/profile/FollowersListScreen';
 import MyStatsScreen from '../screens/profile/MyStatsScreen';
 import SettingsScreen from '../screens/profile/SettingsScreen';
 import HelpScreen from '../screens/profile/HelpScreen';
@@ -106,7 +124,7 @@ const ts = StyleSheet.create({
   },
   iconWrapActive: {},
   label: {
-    fontSize: 10,
+    fontFamily: FONTS.family,    fontSize: 10,
     fontWeight: '500',
     marginTop: 2,
   },
@@ -122,10 +140,10 @@ const MainTabs = () => (
       detachInactiveScreens: true,
     }}
   >
-    <Tab.Screen name="Home" component={HomeTab} />
-    <Tab.Screen name="Tournaments" component={TournamentsTab} />
-    <Tab.Screen name="Community" component={CommunityTab} />
-    <Tab.Screen name="Profile" component={ProfileTab} />
+    <Tab.Screen name="Home" component={HomeTabSafe} />
+    <Tab.Screen name="Tournaments" component={TournamentsTabSafe} />
+    <Tab.Screen name="Community" component={CommunityTabSafe} />
+    <Tab.Screen name="Profile" component={ProfileTabSafe} />
   </Tab.Navigator>
 );
 
@@ -134,7 +152,6 @@ const AppNavigator = () => {
   const { isDark, colors: C } = useThemeContext();
   const [showSplash, setShowSplash] = useState(true);
 
-  // Initialize offline queue
   useEffect(() => {
     offlineQueue.init();
     return () => offlineQueue.destroy();
@@ -159,19 +176,20 @@ const AppNavigator = () => {
         notification: C.ACCENT,
       },
       fonts: {
-        regular: { fontFamily: 'System', fontWeight: '400' },
-        medium: { fontFamily: 'System', fontWeight: '500' },
-        bold: { fontFamily: 'System', fontWeight: '700' },
-        heavy: { fontFamily: 'System', fontWeight: '900' },
+        regular: FONTS.regular,
+        medium: FONTS.medium,
+        bold: FONTS.bold,
+        heavy: FONTS.heavy,
       },
     }}>
       <SignInPromptProvider>
       <Stack.Navigator screenOptions={{
         headerShown: false,
         animation: 'slide_from_right',
-        animationDuration: 250,
+        animationDuration: 150,
         gestureEnabled: true,
         gestureDirection: 'horizontal',
+        freezeOnBlur: true,
         detachInactiveScreens: true,
       }}>
         {/* Main tabs always available — guest users land here first */}
@@ -179,6 +197,7 @@ const AppNavigator = () => {
         {/* Auth screens — accessible from anywhere when user triggers a protected action */}
         <Stack.Screen name="Login" component={LoginScreen} options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="Register" component={RegisterScreen} options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{ animation: 'slide_from_right' }} />
         {/* Feature screens — some require auth (gated via useRequireAuth inside the screen) */}
         <Stack.Screen name="CreateTournament" component={CreateTournamentScreen} options={{ animation: 'fade_from_bottom' }} />
         <Stack.Screen name="TournamentSetup" component={TournamentSetupScreen} />
@@ -194,9 +213,9 @@ const AppNavigator = () => {
         <Stack.Screen name="Toss" component={TossScreen} options={{ animation: 'fade' }} />
         <Stack.Screen name="SelectSquad" component={SelectSquadScreen} />
         <Stack.Screen name="SelectOpeners" component={SelectOpenersScreen} />
-        <Stack.Screen name="LiveScoring" component={LiveScoringScreen} options={{ animation: 'fade' }} />
-        <Stack.Screen name="Scorecard" component={ScorecardScreen} />
-        <Stack.Screen name="MatchDetail" component={MatchDetailScreen} />
+        <Stack.Screen name="LiveScoring" component={LiveScoringScreen} options={{ animation: 'fade', animationDuration: 100 }} />
+        <Stack.Screen name="Scorecard" component={ScorecardScreen} options={{ animationDuration: 150 }} />
+        <Stack.Screen name="MatchDetail" component={MatchDetailScreen} options={{ animationDuration: 150 }} />
         <Stack.Screen name="PlayerProfile" component={PlayerProfileScreen} />
         <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="MyStats" component={MyStatsScreen} />
@@ -204,6 +223,7 @@ const AppNavigator = () => {
         <Stack.Screen name="Help" component={HelpScreen} />
         <Stack.Screen name="UsernameSetup" component={UsernameSetupScreen} options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="UserPublicProfile" component={UserPublicProfileScreen} />
+        <Stack.Screen name="FollowersList" component={FollowersListScreen} options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="HashtagFeed" component={HashtagFeedScreen} />
         <Stack.Screen name="PointsTable" component={PointsTableScreen} />
         <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 import Icon from './Icon';
 
 /**
@@ -119,11 +119,11 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.SURFACE_LIGHT || COLORS.SURFACE,
     borderColor: COLORS.ACCENT,
   },
-  dotText: { fontSize: 12, fontWeight: '700', color: COLORS.TEXT_MUTED },
-  dotTextCompact: { fontSize: 10 },
+  dotText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: COLORS.TEXT_MUTED },
+  dotTextCompact: { fontFamily: FONTS.family, fontSize: 10 },
   dotTextActive: { color: COLORS.ACCENT, fontWeight: '800' },
-  tickText: { fontSize: 14, fontWeight: '800', color: COLORS.TEXT },
-  label: { fontSize: 9, fontWeight: '500', color: COLORS.TEXT_MUTED, textAlign: 'center' },
+  tickText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '800', color: COLORS.TEXT },
+  label: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '500', color: COLORS.TEXT_MUTED, textAlign: 'center' },
   labelDone: { color: COLORS.ACCENT },
   labelActive: { color: COLORS.TEXT, fontWeight: '700' },
   line: {

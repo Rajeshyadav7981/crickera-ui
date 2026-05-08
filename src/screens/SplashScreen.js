@@ -8,7 +8,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { COLORS, GRADIENTS } from '../theme';
+import { COLORS, GRADIENTS, FONTS } from '../theme';
 
 const SplashScreen = ({ onFinish }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -69,17 +69,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   icon: {
-    fontSize: 64,
+    fontFamily: FONTS.family,    fontSize: 64,
     marginBottom: 16,
   },
   title: {
-    fontSize: 32,
+    fontFamily: FONTS.family,    fontSize: 32,
     fontWeight: 'bold',
     color: COLORS.TEXT,
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     color: COLORS.TEXT_SECONDARY,
     marginBottom: 32,
   },
@@ -92,7 +92,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   poweredBy: {
-    fontSize: 11,
+    fontFamily: FONTS.family,    fontSize: 11,
     color: COLORS.TEXT_MUTED,
   },
 });

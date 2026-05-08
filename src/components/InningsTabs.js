@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 
 const InningsTabs = ({ tabs = [], activeIndex = 0, onChange, style }) => (
   <ScrollView
@@ -35,7 +35,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.SURFACE,
   },
   tabActive: { backgroundColor: COLORS.ACCENT },
-  tabText: { fontSize: 13, fontWeight: '600', color: COLORS.TEXT_MUTED },
+  tabText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.TEXT_MUTED },
   tabTextActive: { color: COLORS.TEXT, fontWeight: '700' },
 });
 

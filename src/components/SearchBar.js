@@ -9,7 +9,7 @@
 import React from 'react';
 import { View, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, RADIUS, SPACING, TYPE } from '../theme';
+import { COLORS, RADIUS, SPACING, TYPE, FONTS } from '../theme';
 
 const SearchBar = ({
   value,
@@ -59,7 +59,7 @@ const styles = StyleSheet.create({
     height: 44,
   },
   input: {
-    flex: 1,
+    fontFamily: FONTS.family,    flex: 1,
     fontSize: TYPE.body,
     color: COLORS.TEXT,
     padding: 0,

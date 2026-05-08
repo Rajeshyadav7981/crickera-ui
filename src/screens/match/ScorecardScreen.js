@@ -6,7 +6,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scoringAPI, matchesAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import Icon from '../../components/Icon';
 import Avatar from '../../components/Avatar';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -651,12 +651,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: DARK },
+  headerTitle: { fontFamily: FONTS.family, fontSize: 17, fontWeight: '700', color: DARK },
 
   /* Result Banner */
   /* Score Hero Card */
   scoreHero: {
-    backgroundColor: COLORS.CARD,
+    backgroundColor: COLORS.BG,
     marginHorizontal: 16,
     marginTop: 16,
     borderRadius: 20,
@@ -675,8 +675,8 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 10,
   },
-  heroBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-  heroMatchInfo: { fontSize: 12, color: GRAY_400, fontWeight: '600' },
+  heroBadgeText: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  heroMatchInfo: { fontFamily: FONTS.family, fontSize: 12, color: GRAY_400, fontWeight: '600' },
   heroTeamRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -699,12 +699,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroFlagText: { color: WHITE, fontSize: 11, fontWeight: '800' },
-  heroTeamName: { fontSize: 14, fontWeight: '600', color: GRAY_500, flexShrink: 1 },
+  heroFlagText: { fontFamily: FONTS.family, color: WHITE, fontSize: 11, fontWeight: '800' },
+  heroTeamName: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: GRAY_500, flexShrink: 1 },
   heroTeamNameWinner: { color: WHITE, fontWeight: '800' },
-  heroTeamScore: { fontSize: 20, fontWeight: '900', color: WHITE, marginLeft: 10 },
+  heroTeamScore: { fontFamily: FONTS.family, fontSize: 20, fontWeight: '900', color: WHITE, marginLeft: 10 },
   heroTeamScoreWinner: { color: WHITE },
-  heroTeamOvers: { fontSize: 12, fontWeight: '500', color: GRAY_400 },
+  heroTeamOvers: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '500', color: GRAY_400 },
   heroResultBar: {
     marginTop: 14,
     paddingTop: 12,
@@ -712,7 +712,7 @@ const styles = StyleSheet.create({
     borderTopColor: CARD_BORDER,
     alignItems: 'center',
   },
-  heroResultText: { fontSize: 13, fontWeight: '700', color: COLORS.SUCCESS, textAlign: 'center' },
+  heroResultText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.SUCCESS, textAlign: 'center' },
 
   /* Revert abandoned match */
   revertBtn: {
@@ -720,11 +720,11 @@ const styles = StyleSheet.create({
     marginTop: 12, paddingVertical: 10, paddingHorizontal: 20, borderRadius: 10,
     backgroundColor: COLORS.WARNING + '15', borderWidth: 1, borderColor: COLORS.WARNING + '40',
   },
-  revertBtnText: { fontSize: 13, fontWeight: '700', color: COLORS.WARNING },
+  revertBtnText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.WARNING },
 
   /* Player of the Match Card */
   pomCard: {
-    backgroundColor: COLORS.CARD_ELEVATED,
+    backgroundColor: COLORS.BG,
     marginHorizontal: 16,
     marginTop: 14,
     borderRadius: 16,
@@ -742,7 +742,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,215,0,0.15)',
   },
-  pomBadgeText: { fontSize: 11, fontWeight: '800', color: GOLD, letterSpacing: 1.5 },
+  pomBadgeText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '800', color: GOLD, letterSpacing: 1.5 },
   pomContent: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -756,7 +756,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: COLORS.SURFACE,
+    backgroundColor: COLORS.BG,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
@@ -779,7 +779,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   pomName: {
-    fontSize: 17,
+    fontFamily: FONTS.family,    fontSize: 17,
     fontWeight: '800',
     color: WHITE,
     marginBottom: 6,
@@ -790,7 +790,7 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: 3,
   },
-  pomStatText: { fontSize: 12, color: GRAY_500 },
+  pomStatText: { fontFamily: FONTS.family, fontSize: 12, color: GRAY_500 },
 
   /* Innings Tabs (horizontal scroll) */
   inningsTabScroll: {
@@ -803,7 +803,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 12,
-    backgroundColor: COLORS.SURFACE,
+    backgroundColor: COLORS.BG,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -813,7 +813,7 @@ const styles = StyleSheet.create({
   inningsTabActiveSO: {
     backgroundColor: COLORS.WARNING,
   },
-  inningsTabText: { fontSize: 13, fontWeight: '700', color: GRAY_400 },
+  inningsTabText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: GRAY_400 },
   inningsTabTextActive: { color: WHITE },
 
   /* Super Over Section */
@@ -822,7 +822,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   soInningsCard: {
-    backgroundColor: COLORS.CARD,
+    backgroundColor: COLORS.BG,
     marginHorizontal: 16,
     borderRadius: 16,
     borderWidth: 1,
@@ -837,8 +837,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     backgroundColor: 'rgba(255,152,0,0.08)',
   },
-  soInningsTeam: { flex: 1, fontSize: 14, fontWeight: '700', color: DARK },
-  soInningsScore: { fontSize: 16, fontWeight: '800', color: COLORS.WARNING },
+  soInningsTeam: { fontFamily: FONTS.family, flex: 1, fontSize: 14, fontWeight: '700', color: DARK },
+  soInningsScore: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '800', color: COLORS.WARNING },
 
   /* Top Performers */
   perfSectionHeader: {
@@ -851,7 +851,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: CARD_BORDER,
   },
-  perfSectionTitle: { fontSize: 12, fontWeight: '700', color: GRAY_400, textTransform: 'uppercase', letterSpacing: 0.5 },
+  perfSectionTitle: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: GRAY_400, textTransform: 'uppercase', letterSpacing: 0.5 },
   perfRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -869,13 +869,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 10,
   },
-  perfRankText: { fontSize: 11, fontWeight: '700', color: GRAY_400 },
+  perfRankText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: GRAY_400 },
   perfInfo: { flex: 1 },
-  perfName: { fontSize: 13, fontWeight: '600', color: DARK },
-  perfTeam: { fontSize: 11, color: GRAY_400, marginTop: 1 },
+  perfName: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: DARK },
+  perfTeam: { fontFamily: FONTS.family, fontSize: 11, color: GRAY_400, marginTop: 1 },
   perfStats: { alignItems: 'flex-end' },
-  perfMainStat: { fontSize: 15, fontWeight: '800', color: DARK },
-  perfSubStat: { fontSize: 10, color: GRAY_400, marginTop: 1 },
+  perfMainStat: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '800', color: DARK },
+  perfSubStat: { fontFamily: FONTS.family, fontSize: 10, color: GRAY_400, marginTop: 1 },
 
   /* Innings Top Strip */
   inningsTopStrip: {
@@ -889,19 +889,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: COLORS.CARD,
+    backgroundColor: COLORS.BG,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: CARD_BORDER,
     paddingVertical: 8,
     paddingHorizontal: 10,
   },
-  inningsTopName: { flex: 1, fontSize: 12, fontWeight: '600', color: DARK },
-  inningsTopStat: { fontSize: 12, fontWeight: '700', color: PRIMARY },
+  inningsTopName: { fontFamily: FONTS.family, flex: 1, fontSize: 12, fontWeight: '600', color: DARK },
+  inningsTopStat: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: PRIMARY },
 
   /* Cards */
   card: {
-    backgroundColor: COLORS.CARD,
+    backgroundColor: COLORS.BG,
     marginHorizontal: 16,
     marginTop: 14,
     borderRadius: 16,
@@ -910,7 +910,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   cardTitle: {
-    fontSize: 15,
+    fontFamily: FONTS.family,    fontSize: 15,
     fontWeight: '700',
     color: DARK,
     paddingHorizontal: 16,
@@ -930,7 +930,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: CARD_BORDER,
   },
-  thCell: { fontSize: 11, fontWeight: '700', color: GRAY_400, textTransform: 'uppercase' },
+  thCell: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: GRAY_400, textTransform: 'uppercase' },
   cellName: { flex: 1 },
   cellStat: { width: 34, textAlign: 'center' },
   cellStatWide: { width: 42, textAlign: 'center' },
@@ -944,11 +944,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.BORDER,
   },
-  tdCell: { fontSize: 13, color: COLORS.TEXT_SECONDARY },
+  tdCell: { fontFamily: FONTS.family, fontSize: 13, color: COLORS.TEXT_SECONDARY },
   runsBold: { fontWeight: '700', color: DARK },
-  batsmanName: { fontSize: 13, fontWeight: '600', color: DARK },
-  dismissalText: { fontSize: 11, color: GRAY_400, fontStyle: 'italic', marginTop: 1 },
-  bowlerName: { fontSize: 13, fontWeight: '600', color: DARK },
+  batsmanName: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: DARK },
+  dismissalText: { fontFamily: FONTS.family, fontSize: 11, color: GRAY_400, fontStyle: 'italic', marginTop: 1 },
+  bowlerName: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: DARK },
 
   /* Extras & Total */
   extrasRow: {
@@ -959,8 +959,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.BORDER,
   },
-  extrasLabel: { fontSize: 13, color: GRAY_500 },
-  extrasValue: { fontSize: 13, color: GRAY_500 },
+  extrasLabel: { fontFamily: FONTS.family, fontSize: 13, color: GRAY_500 },
+  extrasValue: { fontFamily: FONTS.family, fontSize: 13, color: GRAY_500 },
   totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -968,8 +968,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     backgroundColor: TABLE_HEADER_BG,
   },
-  totalLabel: { fontSize: 14, fontWeight: '800', color: DARK },
-  totalValue: { fontSize: 14, fontWeight: '800', color: DARK },
+  totalLabel: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '800', color: DARK },
+  totalValue: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '800', color: DARK },
 
   /* Fall of Wickets */
   fowContainer: {
@@ -980,7 +980,7 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   fowChip: {
-    backgroundColor: COLORS.SURFACE,
+    backgroundColor: COLORS.BG,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
@@ -988,9 +988,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: CARD_BORDER,
   },
-  fowScore: { fontSize: 13, fontWeight: '700', color: DARK },
-  fowPlayer: { fontSize: 10, color: GRAY_500, marginTop: 2, maxWidth: 70 },
-  fowOvers: { fontSize: 10, color: GRAY_400, marginTop: 1 },
+  fowScore: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: DARK },
+  fowPlayer: { fontFamily: FONTS.family, fontSize: 10, color: GRAY_500, marginTop: 2, maxWidth: 70 },
+  fowOvers: { fontFamily: FONTS.family, fontSize: 10, color: GRAY_400, marginTop: 1 },
 });
 
 export default ScorecardScreen;

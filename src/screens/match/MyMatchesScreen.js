@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { useAuthGate } from '../../hooks/useRequireAuth';
 import { matchesAPI } from '../../services/api';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import Skeleton, { MatchCardSkeleton, ListSkeleton } from '../../components/Skeleton';
 import SearchBar from '../../components/SearchBar';
@@ -211,20 +211,18 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.BG },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 14, backgroundColor: COLORS.CARD,
-    borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
+    paddingHorizontal: 16, paddingVertical: 14, backgroundColor: COLORS.BG,
   },
-  backIcon: { fontSize: 22, color: COLORS.TEXT, fontWeight: '600' },
-  title: { fontSize: 18, fontWeight: '700', color: COLORS.TEXT },
+  backIcon: { fontFamily: FONTS.family, fontSize: 22, color: COLORS.TEXT, fontWeight: '600' },
+  title: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '700', color: COLORS.TEXT },
 
   searchBar: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.SURFACE, borderRadius: 12,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.BG, borderRadius: 12,
     marginHorizontal: 16, marginTop: 12, marginBottom: 8, paddingHorizontal: 14, paddingVertical: 10,
-    borderWidth: 1, borderColor: COLORS.BORDER,
   },
-  searchIcon: { fontSize: 14, marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 14, color: COLORS.TEXT, paddingVertical: 0 },
-  searchClear: { fontSize: 16, color: COLORS.TEXT_MUTED, padding: 4 },
+  searchIcon: { fontFamily: FONTS.family, fontSize: 14, marginRight: 8 },
+  searchInput: { fontFamily: FONTS.family, flex: 1, fontSize: 14, color: COLORS.TEXT, paddingVertical: 0 },
+  searchClear: { fontFamily: FONTS.family, fontSize: 16, color: COLORS.TEXT_MUTED, padding: 4 },
 
   card: {
     backgroundColor: COLORS.CARD, borderRadius: 14, padding: 16, marginTop: 10,
@@ -233,21 +231,21 @@ const s = StyleSheet.create({
   },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
-  badgeText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
-  code: { fontSize: 11, fontWeight: '600', color: COLORS.INFO, backgroundColor: COLORS.INFO_BG, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  overs: { fontSize: 12, fontWeight: '600', color: COLORS.TEXT_MUTED },
+  badgeText: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
+  code: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '600', color: COLORS.INFO, backgroundColor: COLORS.INFO_BG, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  overs: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '600', color: COLORS.TEXT_MUTED },
   teams: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  teamName: { fontSize: 15, fontWeight: '700', color: COLORS.TEXT, flex: 1 },
-  vs: { fontSize: 12, fontWeight: '600', color: COLORS.TEXT_MUTED, marginHorizontal: 8 },
-  result: { fontSize: 13, fontWeight: '600', color: COLORS.SUCCESS, marginTop: 4 },
-  date: { fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 4 },
+  teamName: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '700', color: COLORS.TEXT, flex: 1 },
+  vs: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '600', color: COLORS.TEXT_MUTED, marginHorizontal: 8 },
+  result: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.SUCCESS, marginTop: 4 },
+  date: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 4 },
 
   empty: { alignItems: 'center', paddingVertical: 60 },
-  emptyIcon: { fontSize: 40, marginBottom: 12 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: COLORS.TEXT, marginBottom: 4 },
-  emptySub: { fontSize: 13, color: COLORS.TEXT_MUTED, marginBottom: 16 },
+  emptyIcon: { fontFamily: FONTS.family, fontSize: 40, marginBottom: 12 },
+  emptyTitle: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: COLORS.TEXT, marginBottom: 4 },
+  emptySub: { fontFamily: FONTS.family, fontSize: 13, color: COLORS.TEXT_MUTED, marginBottom: 16 },
   emptyBtn: { backgroundColor: COLORS.ACCENT, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 24 },
-  emptyBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  emptyBtnText: { fontFamily: FONTS.family, color: '#fff', fontSize: 14, fontWeight: '700' },
 });
 
 export default MyMatchesScreen;

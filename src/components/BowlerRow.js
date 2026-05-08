@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 
 const BowlerRow = ({ bowler, isCurrent = false, onPress, compact = false }) => {
   if (!bowler) return null;
@@ -60,16 +60,16 @@ const styles = StyleSheet.create({
   headerRow: { backgroundColor: COLORS.SURFACE, borderBottomWidth: 0 },
   nameCol: { flex: 1, minWidth: 0 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  name: { fontSize: 13, fontWeight: '600', color: COLORS.TEXT, flexShrink: 1 },
+  name: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.TEXT, flexShrink: 1 },
   nameActive: { fontWeight: '800', color: COLORS.ACCENT_LIGHT },
   currentDot: {
     width: 6, height: 6, borderRadius: 3,
     backgroundColor: COLORS.SUCCESS,
   },
-  stat: { width: 36, textAlign: 'center', fontSize: 13, fontWeight: '500', color: COLORS.TEXT_SECONDARY },
+  stat: { fontFamily: FONTS.family, width: 36, textAlign: 'center', fontSize: 13, fontWeight: '500', color: COLORS.TEXT_SECONDARY },
   wickets: { fontWeight: '800', color: COLORS.TEXT },
   econ: { color: COLORS.TEXT_MUTED },
-  headerText: { fontSize: 10, fontWeight: '700', color: COLORS.TEXT_MUTED, letterSpacing: 0.5 },
+  headerText: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700', color: COLORS.TEXT_MUTED, letterSpacing: 0.5 },
 });
 
 export default React.memo(BowlerRow);

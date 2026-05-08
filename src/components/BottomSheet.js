@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 
 const { height: SH } = Dimensions.get('window');
 
@@ -131,7 +131,7 @@ const s = StyleSheet.create({
   },
   handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: COLORS.SURFACE, alignSelf: 'center', marginBottom: 16 },
 
-  sheetTitle: { fontSize: 16, fontWeight: '700', color: COLORS.TEXT, textAlign: 'center', marginBottom: 12 },
+  sheetTitle: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: COLORS.TEXT, textAlign: 'center', marginBottom: 12 },
 
   // Action rows
   actionRow: {
@@ -143,14 +143,14 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   iconDestructive: { backgroundColor: COLORS.DANGER + '12' },
-  actionLabel: { fontSize: 16, fontWeight: '600', color: COLORS.TEXT },
+  actionLabel: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '600', color: COLORS.TEXT },
   destructiveLabel: { color: COLORS.DANGER },
 
   cancelBtn: {
     marginTop: 12, paddingVertical: 14, borderRadius: 14,
     backgroundColor: COLORS.SURFACE, alignItems: 'center',
   },
-  cancelText: { fontSize: 16, fontWeight: '600', color: COLORS.TEXT_MUTED },
+  cancelText: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '600', color: COLORS.TEXT_MUTED },
 
   // Confirm dialog
   confirmWrap: { alignItems: 'center', paddingVertical: 8 },
@@ -158,18 +158,18 @@ const s = StyleSheet.create({
     width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.ACCENT + '15',
     alignItems: 'center', justifyContent: 'center', marginBottom: 16,
   },
-  confirmTitle: { fontSize: 18, fontWeight: '800', color: COLORS.TEXT, marginBottom: 8 },
-  confirmMsg: { fontSize: 14, color: COLORS.TEXT_MUTED, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
+  confirmTitle: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '800', color: COLORS.TEXT, marginBottom: 8 },
+  confirmMsg: { fontFamily: FONTS.family, fontSize: 14, color: COLORS.TEXT_MUTED, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
   confirmBtns: { flexDirection: 'row', gap: 12, width: '100%' },
   confirmCancel: {
     flex: 1, paddingVertical: 14, borderRadius: 14, backgroundColor: COLORS.SURFACE, alignItems: 'center',
   },
-  confirmCancelText: { fontSize: 15, fontWeight: '600', color: COLORS.TEXT_MUTED },
+  confirmCancelText: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '600', color: COLORS.TEXT_MUTED },
   confirmAction: {
     flex: 1, paddingVertical: 14, borderRadius: 14, backgroundColor: COLORS.ACCENT, alignItems: 'center',
   },
   confirmDestructive: { backgroundColor: COLORS.DANGER },
-  confirmActionText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  confirmActionText: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '700', color: '#fff' },
 });
 
 export default React.memo(BottomSheet);

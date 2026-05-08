@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 
 const getBallColor = (ball) => {
   const b = String(ball).toUpperCase();
@@ -47,7 +47,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.BORDER,
   },
   overLabel: {
-    fontSize: 11, fontWeight: '700', color: COLORS.TEXT_MUTED,
+    fontFamily: FONTS.family,    fontSize: 11, fontWeight: '700', color: COLORS.TEXT_MUTED,
     marginBottom: 8, letterSpacing: 0.5,
   },
   scrollContent: { flexDirection: 'row', gap: 8, alignItems: 'center' },
@@ -55,7 +55,7 @@ const styles = StyleSheet.create({
     width: 36, height: 36, borderRadius: 18,
     alignItems: 'center', justifyContent: 'center',
   },
-  ballText: { fontSize: 13, fontWeight: '800' },
+  ballText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '800' },
   nextBall: {
     backgroundColor: 'transparent',
     borderWidth: 2,

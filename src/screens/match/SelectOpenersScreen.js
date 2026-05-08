@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { matchesAPI } from '../../services/api';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import Skeleton from '../../components/Skeleton';
 import StepIndicator from '../../components/StepIndicator';
 
@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   backArrow: {
-    fontSize: 18,
+    fontFamily: FONTS.family,    fontSize: 18,
     fontWeight: '600',
     color: COLORS.TEXT,
     marginLeft: -1,
@@ -313,12 +313,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 18,
+    fontFamily: FONTS.family,    fontSize: 18,
     fontWeight: '700',
     color: COLORS.TEXT,
   },
   headerSubtitle: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '600',
     color: PRIMARY,
     marginTop: 2,
@@ -334,7 +334,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   infoText: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     color: COLORS.TEXT_SECONDARY,
     textAlign: 'center',
   },
@@ -356,12 +356,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   sectionTitle: {
-    fontSize: 15,
+    fontFamily: FONTS.family,    fontSize: 15,
     fontWeight: '700',
     color: COLORS.TEXT,
   },
   sectionCounter: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '500',
     color: COLORS.TEXT_MUTED,
   },
@@ -403,7 +403,7 @@ const styles = StyleSheet.create({
     borderColor: PRIMARY,
   },
   checkIcon: {
-    color: '#FFFFFF',
+    fontFamily: FONTS.family,    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
     marginTop: -1,
@@ -441,7 +441,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   avatarText: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     fontWeight: '700',
     color: COLORS.ACCENT_LIGHT,
   },
@@ -451,12 +451,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   playerName: {
-    fontSize: 15,
+    fontFamily: FONTS.family,    fontSize: 15,
     fontWeight: '600',
     color: COLORS.TEXT,
   },
   playerRole: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     color: COLORS.TEXT_MUTED,
     marginTop: 2,
   },
@@ -483,7 +483,7 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   startBtnText: {
-    color: '#FFFFFF',
+    fontFamily: FONTS.family,    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
   },

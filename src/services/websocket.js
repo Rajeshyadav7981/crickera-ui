@@ -3,6 +3,9 @@ import { WS_BASE_URL } from './api';
 const INITIAL_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 30000;
 const PING_INTERVAL_MS = 25000; // Client-side ping every 25s (server expects within 30s)
+// Declare the connection stale if we haven't heard a pong in this long. Kept
+// below 2× ping interval so a single dropped packet doesn't trip us.
+const PONG_STALENESS_MS = 40000;
 
 class MatchWebSocket {
   constructor() {
@@ -71,17 +74,23 @@ class MatchWebSocket {
   }
 
   _scheduleReconnect() {
-    // Infinite reconnect with capped exponential backoff
+    // Infinite reconnect with capped exponential backoff.
+    // Clearing any pending timer first prevents double-reconnects when both
+    // onclose and the stale-pong check fire close to each other.
     if (!this.matchId) return;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     const delay = Math.min(INITIAL_BACKOFF_MS * Math.pow(2, this._retryCount), MAX_BACKOFF_MS);
     this._retryCount++;
     if (__DEV__) console.log(`[WS] Reconnecting in ${delay}ms (attempt ${this._retryCount})`);
     this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       if (this.matchId) this.connect(this.matchId);
     }, delay);
   }
 
-  // Manual reconnect (e.g., from UI "Reconnect" button)
   reconnect() {
     if (!this.matchId) return;
     this._retryCount = 0;
@@ -119,7 +128,6 @@ class MatchWebSocket {
     };
   }
 
-  // Subscribe to connection state changes (connected, retryCount)
   addStateListener(fn) {
     this.stateListeners.push(fn);
     return () => {
@@ -135,18 +143,26 @@ class MatchWebSocket {
   _startPing() {
     this._pingInterval = setInterval(() => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send('ping');
-        // Detect zombie connections: if no pong in 2x ping interval, reconnect
-        if (this._lastPongAt && Date.now() - this._lastPongAt > PING_INTERVAL_MS * 2) {
-          if (__DEV__) console.log('[WS] No pong received — forcing reconnect');
-          this.ws.close();
+        try { this.ws.send('ping'); } catch {}
+        // Detect zombie connections: if no pong within staleness window,
+        // close AND kick off a reconnect immediately. onclose will schedule too,
+        // but _scheduleReconnect clears any existing timer so we don't double up.
+        if (this._lastPongAt && Date.now() - this._lastPongAt > PONG_STALENESS_MS) {
+          if (__DEV__) console.log('[WS] Stale pong — forcing reconnect');
+          try { this.ws.close(); } catch {}
+          this._connected = false;
+          this._notifyState();
+          this._scheduleReconnect();
         }
       }
     }, PING_INTERVAL_MS);
   }
 
   _stopPing() {
-    if (this._pingInterval) clearInterval(this._pingInterval);
+    if (this._pingInterval) {
+      clearInterval(this._pingInterval);
+      this._pingInterval = null;
+    }
   }
 }
 

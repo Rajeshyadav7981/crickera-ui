@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 import { communityAPI } from '../services/api';
 
 /**
@@ -56,7 +56,7 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   labelText: {
-    fontSize: 11,
+    fontFamily: FONTS.family,    fontSize: 11,
     fontWeight: '700',
     color: COLORS.TEXT_MUTED,
     textTransform: 'uppercase',
@@ -74,17 +74,17 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   chipHash: {
-    fontSize: 13,
+    fontFamily: FONTS.family,    fontSize: 13,
     fontWeight: '800',
     color: COLORS.ACCENT,
   },
   chipText: {
-    fontSize: 12,
+    fontFamily: FONTS.family,    fontSize: 12,
     fontWeight: '600',
     color: COLORS.ACCENT_LIGHT,
   },
   chipCount: {
-    fontSize: 10,
+    fontFamily: FONTS.family,    fontSize: 10,
     fontWeight: '600',
     color: COLORS.TEXT_MUTED,
     marginLeft: 4,

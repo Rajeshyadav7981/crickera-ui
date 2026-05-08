@@ -7,7 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { usersAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useUserProfile } from '../../hooks/useUsers';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import BackButton from '../../components/BackButton';
 import Avatar from '../../components/Avatar';
 import Skeleton from '../../components/Skeleton';
@@ -266,7 +266,13 @@ const UserPublicProfileScreen = ({ navigation, route }) => {
                   <TouchableOpacity
                     key={u.id}
                     style={s.userRow}
-                    onPress={() => navigation.push('UserPublicProfile', { username: u.username })}
+                    onPress={() => {
+                      if (u.player_id) {
+                        navigation.push('PlayerProfile', { playerId: u.player_id });
+                      } else {
+                        navigation.push('UserPublicProfile', { username: u.username });
+                      }
+                    }}
                     activeOpacity={0.7}
                   >
                     <Avatar uri={u.profile} name={u.full_name} size={40} color={COLORS.ACCENT} />
@@ -306,27 +312,27 @@ const s = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 12,
-    backgroundColor: COLORS.CARD, borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
+    backgroundColor: COLORS.BG,
   },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
+  headerTitle: { fontFamily: FONTS.family, fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  notFound: { fontSize: 16, color: COLORS.TEXT_MUTED },
+  notFound: { fontFamily: FONTS.family, fontSize: 16, color: COLORS.TEXT_MUTED },
   content: { paddingBottom: 40 },
 
   // Hero
   hero: { alignItems: 'center', paddingVertical: 24, paddingHorizontal: 20 },
-  name: { fontSize: 22, fontWeight: '800', color: COLORS.TEXT, marginTop: 14 },
-  usernameText: { fontSize: 14, fontWeight: '600', color: COLORS.ACCENT, marginTop: 4 },
+  name: { fontFamily: FONTS.family, fontSize: 22, fontWeight: '800', color: COLORS.TEXT, marginTop: 14 },
+  usernameText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.ACCENT, marginTop: 4 },
 
   // Stats
   statsRow: {
     flexDirection: 'row', alignItems: 'center', marginTop: 20,
-    backgroundColor: COLORS.SURFACE, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 8,
+    backgroundColor: COLORS.BG, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 8,
     width: '80%',
   },
   statItem: { flex: 1, alignItems: 'center' },
-  statNum: { fontSize: 20, fontWeight: '800', color: COLORS.TEXT },
-  statLabel: { fontSize: 11, fontWeight: '600', color: COLORS.TEXT_MUTED, marginTop: 2 },
+  statNum: { fontFamily: FONTS.family, fontSize: 20, fontWeight: '800', color: COLORS.TEXT },
+  statLabel: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '600', color: COLORS.TEXT_MUTED, marginTop: 2 },
   statDivider: { width: 1, height: 28, backgroundColor: COLORS.BORDER },
 
   // Follow button
@@ -337,21 +343,20 @@ const s = StyleSheet.create({
   followBtnActive: {
     backgroundColor: COLORS.SURFACE, borderWidth: 1, borderColor: COLORS.BORDER,
   },
-  followBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  followBtnText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: '#fff' },
   followBtnTextActive: { color: COLORS.TEXT },
 
   // Edit button
   editBtn: {
     marginTop: 16, paddingVertical: 10, paddingHorizontal: 32, borderRadius: 10,
-    backgroundColor: COLORS.SURFACE, borderWidth: 1, borderColor: COLORS.BORDER,
+    backgroundColor: COLORS.BG, borderWidth: 1, borderColor: COLORS.BORDER,
   },
-  editBtnText: { fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
+  editBtnText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
 
   // Followers/Following list
   cricketCard: {
     marginHorizontal: 16, marginTop: 16,
-    backgroundColor: COLORS.CARD, borderRadius: 14,
-    borderWidth: 1, borderColor: COLORS.BORDER,
+    backgroundColor: COLORS.BG, borderRadius: 14,
     padding: 14, gap: 10,
   },
   cricketPill: {
@@ -362,20 +367,20 @@ const s = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 4,
     borderRadius: 12,
   },
-  cricketPillText: { fontSize: 11, fontWeight: '700', color: COLORS.ACCENT, textTransform: 'uppercase', letterSpacing: 0.3 },
+  cricketPillText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.ACCENT, textTransform: 'uppercase', letterSpacing: 0.3 },
   cricketRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  cricketText: { flex: 1, fontSize: 13, color: COLORS.TEXT_SECONDARY, lineHeight: 19 },
+  cricketText: { fontFamily: FONTS.family, flex: 1, fontSize: 13, color: COLORS.TEXT_SECONDARY, lineHeight: 19 },
 
   listSection: { paddingHorizontal: 16, marginTop: 8 },
-  listTitle: { fontSize: 16, fontWeight: '700', color: COLORS.TEXT, marginBottom: 12 },
-  emptyList: { fontSize: 13, color: COLORS.TEXT_MUTED, textAlign: 'center', paddingVertical: 20 },
+  listTitle: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: COLORS.TEXT, marginBottom: 12 },
+  emptyList: { fontFamily: FONTS.family, fontSize: 13, color: COLORS.TEXT_MUTED, textAlign: 'center', paddingVertical: 20 },
   userRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: COLORS.BORDER,
   },
   userInfo: { flex: 1 },
-  userName: { fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
-  userHandle: { fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 1 },
+  userName: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.TEXT },
+  userHandle: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 1 },
   followChip: {
     paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8,
     backgroundColor: COLORS.ACCENT,
@@ -383,7 +388,7 @@ const s = StyleSheet.create({
   followChipActive: {
     backgroundColor: COLORS.SURFACE, borderWidth: 1, borderColor: COLORS.BORDER,
   },
-  followChipText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  followChipText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: '#fff' },
   followChipTextActive: { color: COLORS.TEXT_MUTED },
 });
 

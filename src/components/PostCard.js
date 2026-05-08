@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated } from 'react-native';
 import { Image } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS } from '../theme';
+import { COLORS, FONTS } from '../theme';
 import Avatar from './Avatar';
 import RichText from './RichText';
 
@@ -186,15 +186,15 @@ const s = StyleSheet.create({
   card: { backgroundColor: COLORS.CARD, borderBottomWidth: 0.5, borderBottomColor: COLORS.BORDER, paddingBottom: 6 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingTop: 14, paddingBottom: 8, gap: 8 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 },
-  name: { fontSize: 14, fontWeight: '700', color: COLORS.TEXT, flexShrink: 1 },
-  time: { fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 1 },
+  name: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT, flexShrink: 1 },
+  time: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 1 },
   tag: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  tagLabel: { fontSize: 9, fontWeight: '800', textTransform: 'uppercase' },
+  tagLabel: { fontFamily: FONTS.family, fontSize: 9, fontWeight: '800', textTransform: 'uppercase' },
   pollBadge: { backgroundColor: '#F59E0B15', padding: 6, borderRadius: 8 },
 
   body: { paddingHorizontal: 14, marginBottom: 4 },
-  title: { fontSize: 16, fontWeight: '800', color: COLORS.TEXT, marginBottom: 4, lineHeight: 22 },
-  bodyText: { fontSize: 14, color: COLORS.TEXT_SECONDARY, lineHeight: 21 },
+  title: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '800', color: COLORS.TEXT, marginBottom: 4, lineHeight: 22 },
+  bodyText: { fontFamily: FONTS.family, fontSize: 14, color: COLORS.TEXT_SECONDARY, lineHeight: 21 },
   imgWrap: { marginTop: 4 },
   img: { width: '100%', height: SW * 0.75, backgroundColor: COLORS.SURFACE },
 
@@ -206,10 +206,10 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingVertical: 4, paddingHorizontal: 8,
   },
-  actionLabel: { fontSize: 13, fontWeight: '600', color: COLORS.TEXT_MUTED },
+  actionLabel: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.TEXT_MUTED },
 
   pollWrap: { paddingHorizontal: 14, paddingBottom: 2 },
-  pollQ: { fontSize: 16, fontWeight: '700', color: COLORS.TEXT, marginBottom: 10, lineHeight: 22 },
+  pollQ: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: COLORS.TEXT, marginBottom: 10, lineHeight: 22 },
   pollOpt: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     borderRadius: 10, marginBottom: 6, paddingHorizontal: 12, paddingVertical: 12,
@@ -219,10 +219,10 @@ const s = StyleSheet.create({
   pollBar: { position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.04)' },
   pollBarMine: { backgroundColor: COLORS.ACCENT + '15' },
   pollOptInner: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, zIndex: 1 },
-  pollOptText: { fontSize: 14, fontWeight: '500', color: COLORS.TEXT, flex: 1 },
+  pollOptText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '500', color: COLORS.TEXT, flex: 1 },
   pollOptTextMine: { color: COLORS.ACCENT, fontWeight: '700' },
-  pollPct: { fontSize: 13, fontWeight: '700', color: COLORS.TEXT_MUTED, zIndex: 1 },
-  pollMeta: { fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 6 },
+  pollPct: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.TEXT_MUTED, zIndex: 1 },
+  pollMeta: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 6 },
 });
 
 export default React.memo(PostCard);

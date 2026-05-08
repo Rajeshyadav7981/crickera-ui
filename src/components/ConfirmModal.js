@@ -23,7 +23,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, GRADIENTS } from '../theme';
+import { COLORS, GRADIENTS, FONTS } from '../theme';
 
 const ConfirmModal = ({
   visible,
@@ -223,7 +223,7 @@ const styles = StyleSheet.create({
 
   // Text
   title: {
-    fontSize: 20,
+    fontFamily: FONTS.family,    fontSize: 20,
     fontWeight: '900',
     color: COLORS.TEXT,
     textAlign: 'center',
@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
   message: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     color: COLORS.TEXT_SECONDARY,
     lineHeight: 20,
     textAlign: 'center',
@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cancelText: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     fontWeight: '700',
     color: COLORS.TEXT_SECONDARY,
   },
@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   confirmText: {
-    fontSize: 14,
+    fontFamily: FONTS.family,    fontSize: 14,
     fontWeight: '900',
     color: '#fff',
     letterSpacing: 0.3,

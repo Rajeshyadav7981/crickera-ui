@@ -4,9 +4,10 @@ import {
   ActivityIndicator, TextInput, Platform, Modal, FlatList, InteractionManager,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { matchesAPI, teamsAPI, venuesAPI } from '../../services/api';
 import { useAuthGate } from '../../hooks/useRequireAuth';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import StepIndicator from '../../components/StepIndicator';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -814,14 +815,16 @@ const QuickMatchScreen = ({ navigation }) => {
       />
 
       {/* Content */}
-      <ScrollView
+      <KeyboardAwareScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: step < 3 ? 100 : 40 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        enableOnAndroid
+        extraScrollHeight={40}
       >
         {renderContent()}
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {/* Bottom bar (not on review step) */}
       {step < 3 && (
@@ -852,13 +855,13 @@ const styles = StyleSheet.create({
     width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.SURFACE,
     alignItems: 'center', justifyContent: 'center',
   },
-  backArrow: { fontSize: 18, color: DARK },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: DARK },
+  backArrow: { fontFamily: FONTS.family, fontSize: 18, color: DARK },
+  headerTitle: { fontFamily: FONTS.family, fontSize: 17, fontWeight: '700', color: DARK },
 
   /* Steps */
   stepContent: { paddingTop: 20 },
-  stepTitle: { fontSize: 22, fontWeight: '700', color: DARK },
-  stepSubtitle: { fontSize: 14, color: MUTED, marginTop: 4, marginBottom: 20, lineHeight: 20 },
+  stepTitle: { fontFamily: FONTS.family, fontSize: 22, fontWeight: '700', color: DARK },
+  stepSubtitle: { fontFamily: FONTS.family, fontSize: 14, color: MUTED, marginTop: 4, marginBottom: 20, lineHeight: 20 },
 
   /* Type cards */
   typeCard: {
@@ -867,9 +870,9 @@ const styles = StyleSheet.create({
     padding: 16, marginBottom: 10, gap: 14,
   },
   typeCardActive: { borderColor: PRIMARY, backgroundColor: COLORS.ACCENT_SOFT },
-  typeIcon: { fontSize: 28 },
-  typeLabel: { fontSize: 15, fontWeight: '700', color: DARK },
-  typeDesc: { fontSize: 12, color: MUTED, marginTop: 2 },
+  typeIcon: { fontFamily: FONTS.family, fontSize: 28 },
+  typeLabel: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '700', color: DARK },
+  typeDesc: { fontFamily: FONTS.family, fontSize: 12, color: MUTED, marginTop: 2 },
   radio: {
     width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: BORDER,
     alignItems: 'center', justifyContent: 'center',
@@ -888,19 +891,19 @@ const styles = StyleSheet.create({
   teamSlotCircle: {
     width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
   },
-  teamSlotInitial: { fontSize: 18, fontWeight: '700', color: COLORS.TEXT },
+  teamSlotInitial: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '700', color: COLORS.TEXT },
   teamSlotEmpty: {
     width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.SURFACE,
     alignItems: 'center', justifyContent: 'center',
   },
-  teamSlotName: { fontSize: 15, fontWeight: '700', color: DARK },
-  teamSlotShort: { fontSize: 12, color: MUTED },
-  teamSlotPlaceholder: { fontSize: 14, color: MUTED },
+  teamSlotName: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '700', color: DARK },
+  teamSlotShort: { fontFamily: FONTS.family, fontSize: 12, color: MUTED },
+  teamSlotPlaceholder: { fontFamily: FONTS.family, fontSize: 14, color: MUTED },
   vsCircle: {
     width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.SURFACE_LIGHT,
     alignItems: 'center', justifyContent: 'center', marginVertical: 8,
   },
-  vsText: { fontSize: 12, fontWeight: '800', color: COLORS.TEXT },
+  vsText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '800', color: COLORS.TEXT },
 
   /* Team picker */
   teamPicker: {
@@ -910,13 +913,13 @@ const styles = StyleSheet.create({
   teamPickerHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10,
   },
-  teamPickerTitle: { fontSize: 15, fontWeight: '700', color: DARK },
+  teamPickerTitle: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '700', color: DARK },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.SURFACE,
     borderRadius: 10, borderWidth: 1, borderColor: BORDER, height: 40,
     paddingHorizontal: 10, marginBottom: 10,
   },
-  searchInput: { flex: 1, fontSize: 14, color: DARK },
+  searchInput: { fontFamily: FONTS.family, flex: 1, fontSize: 14, color: DARK },
   createTeamRow: {
     flexDirection: 'row', alignItems: 'center', paddingVertical: 10,
     borderBottomWidth: 1, borderBottomColor: COLORS.BORDER, gap: 10,
@@ -925,24 +928,24 @@ const styles = StyleSheet.create({
     width: 28, height: 28, borderRadius: 14, backgroundColor: PRIMARY,
     alignItems: 'center', justifyContent: 'center',
   },
-  createTeamText: { fontSize: 14, fontWeight: '600', color: PRIMARY },
+  createTeamText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: PRIMARY },
   teamPickRow: {
     flexDirection: 'row', alignItems: 'center', paddingVertical: 10,
     borderBottomWidth: 1, borderBottomColor: COLORS.BORDER, gap: 10,
   },
   teamPickDot: { width: 32, height: 32, borderRadius: 16 },
-  teamPickName: { fontSize: 14, fontWeight: '600', color: DARK },
-  teamPickShort: { fontSize: 11, color: MUTED },
+  teamPickName: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: DARK },
+  teamPickShort: { fontFamily: FONTS.family, fontSize: 11, color: MUTED },
 
   /* Warning */
   warningBanner: {
     backgroundColor: COLORS.LIVE_BG, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,59,48,0.3)',
     padding: 12, marginTop: 8,
   },
-  warningText: { fontSize: 13, color: COLORS.LIVE, fontWeight: '500' },
+  warningText: { fontFamily: FONTS.family, fontSize: 13, color: COLORS.LIVE, fontWeight: '500' },
 
   /* Details */
-  fieldLabel: { fontSize: 14, fontWeight: '600', color: DARK, marginBottom: 10, marginTop: 18 },
+  fieldLabel: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: DARK, marginBottom: 10, marginTop: 18 },
   toggleRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   toggleBtn: {
     flex: 1, minWidth: 70, height: 42, borderRadius: 10,
@@ -950,7 +953,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   toggleBtnActive: { backgroundColor: COLORS.ACCENT_SOFT, borderColor: PRIMARY },
-  toggleText: { fontSize: 13, fontWeight: '600', color: MID },
+  toggleText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: MID },
   toggleTextActive: { color: COLORS.ACCENT_LIGHT },
   selectBox: {
     height: 48, backgroundColor: COLORS.SURFACE, borderRadius: 10, borderWidth: 1,
@@ -958,7 +961,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginBottom: 8,
   },
-  selectText: { fontSize: 14, color: DARK, flex: 1 },
+  selectText: { fontFamily: FONTS.family, fontSize: 14, color: DARK, flex: 1 },
 
   /* Modal */
   modalOverlay: {
@@ -967,12 +970,12 @@ const styles = StyleSheet.create({
   modalContent: {
     backgroundColor: COLORS.CARD, borderRadius: 16, paddingVertical: 20, paddingHorizontal: 16,
   },
-  modalTitle: { fontSize: 16, fontWeight: '700', color: DARK, marginBottom: 12 },
+  modalTitle: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: DARK, marginBottom: 12 },
   modalOption: {
     paddingVertical: 14, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
   },
   modalOptionActive: { backgroundColor: COLORS.ACCENT_SOFT, borderRadius: 8 },
-  modalOptionText: { fontSize: 15, color: DARK },
+  modalOptionText: { fontFamily: FONTS.family, fontSize: 15, color: DARK },
   modalCancel: { marginTop: 12, alignItems: 'center', paddingVertical: 10 },
 
   /* Review card */
@@ -988,45 +991,45 @@ const styles = StyleSheet.create({
     width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center',
     marginBottom: 8,
   },
-  reviewTeamInitial: { fontSize: 22, fontWeight: '700', color: COLORS.TEXT },
-  reviewTeamName: { fontSize: 14, fontWeight: '600', color: DARK, textAlign: 'center' },
+  reviewTeamInitial: { fontFamily: FONTS.family, fontSize: 22, fontWeight: '700', color: COLORS.TEXT },
+  reviewTeamName: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: DARK, textAlign: 'center' },
   reviewVsBox: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.SURFACE_LIGHT,
     alignItems: 'center', justifyContent: 'center', marginHorizontal: 8,
   },
-  reviewVsText: { fontSize: 13, fontWeight: '800', color: COLORS.TEXT },
+  reviewVsText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '800', color: COLORS.TEXT },
   reviewDivider: { height: 1, backgroundColor: COLORS.BORDER, marginVertical: 16 },
   reviewDetailsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   reviewDetailItem: {
     backgroundColor: BG, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10,
     flex: 1, minWidth: 80,
   },
-  reviewDetailLabel: { fontSize: 11, color: MUTED, fontWeight: '500' },
-  reviewDetailValue: { fontSize: 15, fontWeight: '700', color: DARK, marginTop: 2 },
+  reviewDetailLabel: { fontFamily: FONTS.family, fontSize: 11, color: MUTED, fontWeight: '500' },
+  reviewDetailValue: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '700', color: DARK, marginTop: 2 },
   reviewInfoRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
-  reviewInfoText: { fontSize: 13, color: MID },
+  reviewInfoText: { fontFamily: FONTS.family, fontSize: 13, color: MID },
 
   /* Flow card */
   flowCard: {
     backgroundColor: COLORS.CARD, borderRadius: 14, borderWidth: 1, borderColor: BORDER,
     padding: 16, marginBottom: 20,
   },
-  flowTitle: { fontSize: 15, fontWeight: '700', color: DARK, marginBottom: 12 },
+  flowTitle: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '700', color: DARK, marginBottom: 12 },
   flowRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
   flowStepCircle: {
     width: 28, height: 28, borderRadius: 14, backgroundColor: COLORS.ACCENT_SOFT,
     alignItems: 'center', justifyContent: 'center',
   },
-  flowStepNum: { fontSize: 12, fontWeight: '700', color: COLORS.ACCENT_LIGHT },
-  flowLabel: { fontSize: 13, fontWeight: '600', color: DARK },
-  flowDesc: { fontSize: 11, color: MUTED },
+  flowStepNum: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: COLORS.ACCENT_LIGHT },
+  flowLabel: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: DARK },
+  flowDesc: { fontFamily: FONTS.family, fontSize: 11, color: MUTED },
 
   /* Create button */
   createBtn: {
     backgroundColor: PRIMARY, borderRadius: 14, paddingVertical: 16,
     alignItems: 'center', marginBottom: 20,
   },
-  createBtnText: { color: COLORS.TEXT, fontSize: 16, fontWeight: '700' },
+  createBtnText: { fontFamily: FONTS.family, color: COLORS.TEXT, fontSize: 16, fontWeight: '700' },
 
   /* Bottom nav */
   bottomBar: {
@@ -1037,25 +1040,25 @@ const styles = StyleSheet.create({
   backNavBtn: {
     backgroundColor: COLORS.SURFACE, borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20,
   },
-  backNavBtnText: { fontSize: 14, fontWeight: '600', color: DARK },
+  backNavBtnText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: DARK },
   nextBtn: {
     flex: 1, backgroundColor: PRIMARY, borderRadius: 12, paddingVertical: 14, alignItems: 'center',
   },
-  nextBtnText: { color: COLORS.TEXT, fontSize: 15, fontWeight: '700' },
+  nextBtnText: { fontFamily: FONTS.family, color: COLORS.TEXT, fontSize: 15, fontWeight: '700' },
 
   /* Calendar */
   calendarWrap: { backgroundColor: COLORS.CARD, borderRadius: 16, padding: 16, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 },
   calHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   calNavBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.SURFACE, alignItems: 'center', justifyContent: 'center' },
-  calNavText: { fontSize: 12, color: MID },
-  calMonthYear: { fontSize: 16, fontWeight: '700', color: DARK },
+  calNavText: { fontFamily: FONTS.family, fontSize: 12, color: MID },
+  calMonthYear: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: DARK },
   calRow: { flexDirection: 'row' },
   calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   calCell: { width: '14.28%', height: 40, alignItems: 'center', justifyContent: 'center' },
   calCellSelected: { backgroundColor: PRIMARY, borderRadius: 20 },
   calCellToday: { borderWidth: 1.5, borderColor: PRIMARY, borderRadius: 20 },
-  calDayHeader: { fontSize: 11, fontWeight: '700', color: MUTED, textTransform: 'uppercase' },
-  calDayText: { fontSize: 14, fontWeight: '500', color: DARK },
+  calDayHeader: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: MUTED, textTransform: 'uppercase' },
+  calDayText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '500', color: DARK },
   calDayTextSelected: { color: COLORS.TEXT, fontWeight: '700' },
   calDayTextToday: { color: PRIMARY, fontWeight: '700' },
 });

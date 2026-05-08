@@ -124,8 +124,8 @@ export const applyTheme = (isDark) => {
 export const STATUS_CONFIG = {
   get live() { return { bg: COLORS.LIVE_BG, text: COLORS.LIVE, chipBg: COLORS.LIVE, chipText: '#fff', label: 'LIVE' }; },
   get in_progress() { return { bg: COLORS.LIVE_BG, text: COLORS.LIVE, chipBg: COLORS.LIVE, chipText: '#fff', label: 'LIVE' }; },
-  get upcoming() { return { bg: COLORS.INFO_BG, text: COLORS.INFO, chipBg: COLORS.INFO, chipText: '#fff', label: 'UPCOMING' }; },
-  get completed() { return { bg: COLORS.COMPLETED_BG, text: COLORS.COMPLETED, chipBg: COLORS.COMPLETED, chipText: '#fff', label: 'COMPLETED' }; },
+  get upcoming() { return { bg: COLORS.ACCENT_SOFT, text: COLORS.ACCENT_LIGHT, chipBg: COLORS.ACCENT_DARK, chipText: '#fff', label: 'UPCOMING' }; },
+  get completed() { return { bg: COLORS.ACCENT_SOFT, text: COLORS.ACCENT, chipBg: COLORS.ACCENT, chipText: '#fff', label: 'COMPLETED' }; },
   get toss() { return { bg: COLORS.WARNING_BG, text: COLORS.WARNING, chipBg: COLORS.WARNING, chipText: '#fff', label: 'TOSS' }; },
   get squad_set() { return { bg: COLORS.WARNING_BG, text: COLORS.WARNING, chipBg: COLORS.WARNING, chipText: '#fff', label: 'SQUAD SET' }; },
   get created() { return { bg: COLORS.COMPLETED_BG, text: COLORS.TEXT_MUTED, chipBg: COLORS.SURFACE, chipText: COLORS.TEXT_SECONDARY, label: 'CREATED' }; },
@@ -167,6 +167,42 @@ export const TYPE = {
   small: 12,
   micro: 11,
   tiny: 10,
+};
+
+// ══════ FONT FAMILY ══════
+// Single source of truth for app fonts. React Native 0.81 resolves 'System' to
+// SF Pro on iOS and Roboto on Android — matches what Match Detail uses. If we
+// ever ship a custom font, swap the `family` value here and every screen picks
+// it up automatically.
+const FONT_FAMILY = 'System';
+
+export const FONTS = {
+  family: FONT_FAMILY,
+  regular:    { fontFamily: FONT_FAMILY, fontWeight: '400' },
+  medium:     { fontFamily: FONT_FAMILY, fontWeight: '500' },
+  semibold:   { fontFamily: FONT_FAMILY, fontWeight: '600' },
+  bold:       { fontFamily: FONT_FAMILY, fontWeight: '700' },
+  extrabold:  { fontFamily: FONT_FAMILY, fontWeight: '800' },
+  heavy:      { fontFamily: FONT_FAMILY, fontWeight: '900' },
+};
+
+// ══════ TYPOGRAPHY PRESETS ══════
+// size + weight bundles. Drop into any style: `...TYPO.h2` or `style={TYPO.body}`.
+// Matches the flat Match-Detail hierarchy so every screen reads the same.
+export const TYPO = {
+  hero:       { fontFamily: FONT_FAMILY, fontSize: 26, fontWeight: '900', letterSpacing: -0.3 },
+  h1:         { fontFamily: FONT_FAMILY, fontSize: 20, fontWeight: '800' },
+  h2:         { fontFamily: FONT_FAMILY, fontSize: 17, fontWeight: '800' },
+  h3:         { fontFamily: FONT_FAMILY, fontSize: 15, fontWeight: '700' },
+  sectionTitle: { fontFamily: FONT_FAMILY, fontSize: 13, fontWeight: '800', letterSpacing: 0.3 },
+  body:       { fontFamily: FONT_FAMILY, fontSize: 13, fontWeight: '500' },
+  bodyBold:   { fontFamily: FONT_FAMILY, fontSize: 13, fontWeight: '700' },
+  caption:    { fontFamily: FONT_FAMILY, fontSize: 12, fontWeight: '500' },
+  label:      { fontFamily: FONT_FAMILY, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
+  tiny:       { fontFamily: FONT_FAMILY, fontSize: 9,  fontWeight: '600' },
+  statBig:    { fontFamily: FONT_FAMILY, fontSize: 24, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  statMed:    { fontFamily: FONT_FAMILY, fontSize: 16, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  num:        { fontFamily: FONT_FAMILY, fontVariant: ['tabular-nums'] },
 };
 
 // Button preset gradients

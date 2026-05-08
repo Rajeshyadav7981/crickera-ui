@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import Svg, { Rect, Line, Text as SvgText, G } from 'react-native-svg';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -11,12 +11,18 @@ const ManhattanChart = ({
   height = 180,
   barColor = COLORS.ACCENT,
   wicketColor = COLORS.DANGER,
+  minBarSlot = 26, // minimum horizontal room per over; chart grows wider than `width` when overs exceed fit
   style,
+  showTitle = true,
+  showLegend = true,
 }) => {
   if (!overs.length) return null;
 
   const chartPadding = { top: 16, right: 12, bottom: 28, left: 30 };
-  const chartW = width - chartPadding.left - chartPadding.right;
+  // Effective width: either the caller's width (short innings) or enough room to keep bars readable.
+  const neededInner = overs.length * minBarSlot;
+  const effectiveWidth = Math.max(width, neededInner + chartPadding.left + chartPadding.right);
+  const chartW = effectiveWidth - chartPadding.left - chartPadding.right;
   const chartH = height - chartPadding.top - chartPadding.bottom;
   const maxRuns = Math.max(...overs.map(o => o.runs), 6);
   const barWidth = Math.max(4, Math.min(20, (chartW / overs.length) - 2));
@@ -28,15 +34,15 @@ const ManhattanChart = ({
 
   return (
     <View style={[styles.container, style]}>
-      <Text style={styles.title}>Runs per Over</Text>
-      <Svg width={width} height={height}>
+      {showTitle && <Text style={styles.title}>Runs per Over</Text>}
+      <Svg width={effectiveWidth} height={height}>
         {/* Y-axis gridlines and labels */}
         {Array.from({ length: ySteps + 1 }, (_, i) => {
           const val = i * yStep;
           const y = chartPadding.top + chartH - (val / maxRuns) * chartH;
           return (
             <G key={`y-${i}`}>
-              <Line x1={chartPadding.left} y1={y} x2={width - chartPadding.right} y2={y}
+              <Line x1={chartPadding.left} y1={y} x2={effectiveWidth - chartPadding.right} y2={y}
                 stroke={COLORS.BORDER} strokeWidth={0.5} />
               <SvgText x={chartPadding.left - 6} y={y + 4}
                 fill={COLORS.TEXT_MUTED} fontSize={9} textAnchor="end">
@@ -60,8 +66,8 @@ const ManhattanChart = ({
                 rx={2} fill={hasWicket ? wicketColor : barColor}
                 opacity={0.85}
               />
-              {/* Over number label */}
-              {(i % Math.max(1, Math.floor(overs.length / 10)) === 0 || i === overs.length - 1) && (
+              {/* Over number label — every over when the canvas is wide enough */}
+              {(minBarSlot >= 24 || i % Math.max(1, Math.floor(overs.length / 10)) === 0 || i === overs.length - 1) && (
                 <SvgText
                   x={x + barWidth / 2}
                   y={chartPadding.top + chartH + 14}
@@ -86,16 +92,18 @@ const ManhattanChart = ({
           );
         })}
       </Svg>
-      <View style={styles.legend}>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: barColor }]} />
-          <Text style={styles.legendText}>Runs</Text>
+      {showLegend && (
+        <View style={styles.legend}>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: barColor }]} />
+            <Text style={styles.legendText}>Runs</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: wicketColor }]} />
+            <Text style={styles.legendText}>Wicket in over</Text>
+          </View>
         </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: wicketColor }]} />
-          <Text style={styles.legendText}>Wicket in over</Text>
-        </View>
-      </View>
+      )}
     </View>
   );
 };
@@ -105,11 +113,11 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.CARD, borderRadius: 16, padding: 16,
     borderWidth: 1, borderColor: COLORS.BORDER,
   },
-  title: { fontSize: 14, fontWeight: '700', color: COLORS.TEXT, marginBottom: 8 },
+  title: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT, marginBottom: 8 },
   legend: { flexDirection: 'row', gap: 16, marginTop: 8, justifyContent: 'center' },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 10, height: 10, borderRadius: 2 },
-  legendText: { fontSize: 10, color: COLORS.TEXT_MUTED },
+  legendText: { fontFamily: FONTS.family, fontSize: 10, color: COLORS.TEXT_MUTED },
 });
 
 export default React.memo(ManhattanChart);

@@ -4,9 +4,10 @@ import {
   Modal, FlatList, ActivityIndicator, TextInput, InteractionManager,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { matchesAPI, venuesAPI, tournamentsAPI } from '../../services/api';
 import { useAuthGate } from '../../hooks/useRequireAuth';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import CurrentLocationButton from '../../components/CurrentLocationButton';
 
@@ -732,11 +733,13 @@ const CreateMatchScreen = ({ navigation, route }) => {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
+      <KeyboardAwareScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        enableOnAndroid
+        extraScrollHeight={40}
       >
         {/* FIXTURES VIEW */}
         {activeView === 'fixtures' && (
@@ -922,7 +925,7 @@ const CreateMatchScreen = ({ navigation, route }) => {
         )}
 
         <View style={{ height: 40 }} />
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {/* Calendar for fixture dates */}
       <CalendarPicker
@@ -1098,8 +1101,8 @@ const styles = StyleSheet.create({
     width: 36, height: 36, borderRadius: 18,
     alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.SURFACE,
   },
-  headerBackIcon: { fontSize: 24, color: TEXT_DARK, marginTop: -2 },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: TEXT_DARK },
+  headerBackIcon: { fontFamily: FONTS.family, fontSize: 24, color: TEXT_DARK, marginTop: -2 },
+  headerTitle: { fontFamily: FONTS.family, fontSize: 17, fontWeight: '700', color: TEXT_DARK },
 
   /* View toggle */
   viewToggle: {
@@ -1111,7 +1114,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', backgroundColor: COLORS.SURFACE,
   },
   viewToggleBtnActive: { backgroundColor: COLORS.ACCENT },
-  viewToggleText: { fontSize: 13, fontWeight: '600', color: TEXT_MID },
+  viewToggleText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: TEXT_MID },
   viewToggleTextActive: { color: '#fff' },
 
   scroll: { flex: 1 },
@@ -1122,12 +1125,12 @@ const styles = StyleSheet.create({
   stageHeader: {
     flexDirection: 'row', alignItems: 'center', marginBottom: 12,
   },
-  stageName: { fontSize: 18, fontWeight: '700', color: TEXT_DARK },
-  stageCount: { fontSize: 12, color: TEXT_LIGHT, marginTop: 2 },
+  stageName: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '700', color: TEXT_DARK },
+  stageCount: { fontFamily: FONTS.family, fontSize: 12, color: TEXT_LIGHT, marginTop: 2 },
   saveScheduleBtn: {
     backgroundColor: PRIMARY, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8,
   },
-  saveScheduleBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  saveScheduleBtnText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: '#fff' },
 
   /* Fixture card */
   fixtureCard: {
@@ -1140,15 +1143,15 @@ const styles = StyleSheet.create({
   matchNumBadge: {
     backgroundColor: COLORS.SURFACE, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
   },
-  matchNumText: { fontSize: 11, fontWeight: '700', color: TEXT_MID },
+  matchNumText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: TEXT_MID },
   groupBadge: {
     backgroundColor: COLORS.INFO_BG, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
   },
-  groupBadgeText: { fontSize: 11, fontWeight: '600', color: COLORS.INFO },
+  groupBadgeText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '600', color: COLORS.INFO },
   statusDot: {
     borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
   },
-  statusDotText: { fontSize: 10, fontWeight: '700', color: '#fff' },
+  statusDotText: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '700', color: '#fff' },
 
   /* Teams row in fixture */
   fixtureTeamsRow: {
@@ -1158,10 +1161,10 @@ const styles = StyleSheet.create({
   teamFlag: {
     width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
   },
-  teamFlagText: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  fixtureTeamName: { fontSize: 14, fontWeight: '600', color: TEXT_DARK, flex: 1 },
-  fixtureVs: { fontSize: 12, fontWeight: '700', color: TEXT_LIGHT },
-  fixtureResult: { fontSize: 12, color: COLORS.SUCCESS, fontWeight: '600', textAlign: 'center', marginTop: 8 },
+  teamFlagText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: '#fff' },
+  fixtureTeamName: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: TEXT_DARK, flex: 1 },
+  fixtureVs: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: TEXT_LIGHT },
+  fixtureResult: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.SUCCESS, fontWeight: '600', textAlign: 'center', marginTop: 8 },
 
   /* Schedule controls */
   scheduleControls: {
@@ -1173,20 +1176,20 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.SURFACE, borderRadius: 8, borderWidth: 1, borderColor: BORDER,
     paddingHorizontal: 10, paddingVertical: 8,
   },
-  scheduleFieldIcon: { fontSize: 14 },
-  scheduleFieldText: { fontSize: 12, fontWeight: '600', color: TEXT_DARK, flex: 1 },
+  scheduleFieldIcon: { fontFamily: FONTS.family, fontSize: 14 },
+  scheduleFieldText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '600', color: TEXT_DARK, flex: 1 },
 
   /* Empty */
   emptyWrap: {
     backgroundColor: COLORS.CARD, borderRadius: 12, borderWidth: 1, borderColor: BORDER,
     padding: 40, alignItems: 'center',
   },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: TEXT_DARK, marginBottom: 8 },
-  emptyText: { fontSize: 14, color: TEXT_LIGHT, textAlign: 'center', lineHeight: 20 },
+  emptyTitle: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '700', color: TEXT_DARK, marginBottom: 8 },
+  emptyText: { fontFamily: FONTS.family, fontSize: 14, color: TEXT_LIGHT, textAlign: 'center', lineHeight: 20 },
 
   /* Create match form */
-  pageTitle: { fontSize: 22, fontWeight: '700', color: TEXT_DARK },
-  pageSubtitle: { fontSize: 14, color: TEXT_LIGHT, marginTop: 4, marginBottom: 20, lineHeight: 20 },
+  pageTitle: { fontFamily: FONTS.family, fontSize: 22, fontWeight: '700', color: TEXT_DARK },
+  pageSubtitle: { fontFamily: FONTS.family, fontSize: 14, color: TEXT_LIGHT, marginTop: 4, marginBottom: 20, lineHeight: 20 },
   card: {
     backgroundColor: COLORS.CARD, borderRadius: 16, borderWidth: 1,
     borderColor: BORDER, padding: 24,
@@ -1194,14 +1197,14 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   fieldWrap: { marginBottom: 16 },
-  label: { fontSize: 13, fontWeight: '600', color: TEXT_MID, marginBottom: 6 },
+  label: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: TEXT_MID, marginBottom: 6 },
   selectBox: {
     height: 48, backgroundColor: COLORS.SURFACE, borderRadius: 8,
     borderWidth: 1, borderColor: BORDER, paddingHorizontal: 14,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
-  selectText: { fontSize: 15, color: TEXT_DARK, flex: 1 },
-  chevron: { fontSize: 14, color: TEXT_LIGHT, marginLeft: 8 },
+  selectText: { fontFamily: FONTS.family, fontSize: 15, color: TEXT_DARK, flex: 1 },
+  chevron: { fontFamily: FONTS.family, fontSize: 14, color: TEXT_LIGHT, marginLeft: 8 },
   toggleRow: { flexDirection: 'row', gap: 10 },
   toggleBtn: {
     flex: 1, height: 44, borderRadius: 10,
@@ -1209,14 +1212,14 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: BORDER, backgroundColor: COLORS.SURFACE,
   },
   toggleBtnActive: { backgroundColor: PRIMARY_20, borderColor: PRIMARY },
-  toggleText: { fontSize: 14, fontWeight: '600', color: TEXT_MID },
+  toggleText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: TEXT_MID },
   toggleTextActive: { color: COLORS.ACCENT_LIGHT, fontWeight: '700' },
   scheduleBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     height: 52, backgroundColor: PRIMARY, borderRadius: 14, marginTop: 8,
   },
-  scheduleBtnIcon: { fontSize: 18, color: '#fff', marginRight: 8, fontWeight: '700' },
-  scheduleBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  scheduleBtnIcon: { fontFamily: FONTS.family, fontSize: 18, color: '#fff', marginRight: 8, fontWeight: '700' },
+  scheduleBtnText: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: '#fff' },
 
   /* Modal */
   modalOverlay: {
@@ -1227,7 +1230,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.CARD, borderRadius: 16, paddingVertical: 20, paddingHorizontal: 16,
     maxHeight: '70%',
   },
-  modalTitle: { fontSize: 16, fontWeight: '700', color: TEXT_DARK, marginBottom: 12, paddingHorizontal: 4 },
+  modalTitle: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: TEXT_DARK, marginBottom: 12, paddingHorizontal: 4 },
   searchModeRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   searchModeBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -1235,17 +1238,17 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.SURFACE, borderWidth: 1, borderColor: BORDER,
   },
   searchModeBtnActive: { backgroundColor: PRIMARY, borderColor: PRIMARY },
-  searchModeText: { fontSize: 12, fontWeight: '600', color: TEXT_LIGHT },
+  searchModeText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '600', color: TEXT_LIGHT },
   searchModeTextActive: { color: '#fff' },
   searchInputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.SURFACE, borderRadius: 10, borderWidth: 1, borderColor: BORDER, paddingHorizontal: 12, marginBottom: 10, gap: 8 },
-  searchInput: { flex: 1, height: 40, fontSize: 14, color: TEXT_DARK },
+  searchInput: { fontFamily: FONTS.family, flex: 1, height: 40, fontSize: 14, color: TEXT_DARK },
   modalOption: {
     paddingVertical: 14, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
   },
   modalOptionActive: { backgroundColor: PRIMARY_20, borderRadius: 8 },
-  modalOptionText: { fontSize: 15, color: TEXT_DARK },
+  modalOptionText: { fontFamily: FONTS.family, fontSize: 15, color: TEXT_DARK },
   modalCancel: { marginTop: 12, alignItems: 'center', paddingVertical: 10 },
-  modalCancelText: { fontSize: 15, fontWeight: '600', color: COLORS.RED },
+  modalCancelText: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '600', color: COLORS.RED },
 
   /* Calendar picker */
   calendarWrap: {
@@ -1257,8 +1260,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   calNavBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.SURFACE, alignItems: 'center', justifyContent: 'center' },
-  calNavText: { fontSize: 12, color: TEXT_MID },
-  calMonthYear: { fontSize: 16, fontWeight: '700', color: TEXT_DARK },
+  calNavText: { fontFamily: FONTS.family, fontSize: 12, color: TEXT_MID },
+  calMonthYear: { fontFamily: FONTS.family, fontSize: 16, fontWeight: '700', color: TEXT_DARK },
   calRow: { flexDirection: 'row' },
   calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   calCell: {
@@ -1266,15 +1269,15 @@ const styles = StyleSheet.create({
   },
   calCellSelected: { backgroundColor: PRIMARY, borderRadius: 20 },
   calCellToday: { borderWidth: 1.5, borderColor: PRIMARY, borderRadius: 20 },
-  calDayHeader: { fontSize: 11, fontWeight: '700', color: TEXT_LIGHT, textTransform: 'uppercase' },
-  calDayText: { fontSize: 14, fontWeight: '500', color: TEXT_DARK },
+  calDayHeader: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: TEXT_LIGHT, textTransform: 'uppercase' },
+  calDayText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '500', color: TEXT_DARK },
   calDayTextSelected: { color: '#fff', fontWeight: '700' },
   calDayTextToday: { color: PRIMARY, fontWeight: '700' },
   calFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
   calTodayBtn: { paddingVertical: 8, paddingHorizontal: 16 },
-  calTodayText: { fontSize: 14, fontWeight: '600', color: PRIMARY },
+  calTodayText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: PRIMARY },
   calCancelBtn: { paddingVertical: 8, paddingHorizontal: 16 },
-  calCancelText: { fontSize: 14, fontWeight: '600', color: COLORS.RED },
+  calCancelText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: COLORS.RED },
 
   /* Overs selector */
   oversRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
@@ -1284,13 +1287,13 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: BORDER,
   },
   oversBtnActive: { backgroundColor: PRIMARY_20, borderColor: PRIMARY },
-  oversBtnText: { fontSize: 14, fontWeight: '700', color: TEXT_MID },
+  oversBtnText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: TEXT_MID },
   oversBtnTextActive: { color: COLORS.ACCENT_LIGHT },
   customOversRow: {
     flexDirection: 'row', gap: 8, marginTop: 10, alignItems: 'center',
   },
   customOversInput: {
-    flex: 1, height: 44, backgroundColor: COLORS.SURFACE, borderRadius: 8,
+    fontFamily: FONTS.family,    flex: 1, height: 44, backgroundColor: COLORS.SURFACE, borderRadius: 8,
     borderWidth: 1, borderColor: BORDER, paddingHorizontal: 14,
     fontSize: 15, color: TEXT_DARK,
   },
@@ -1298,15 +1301,15 @@ const styles = StyleSheet.create({
     backgroundColor: PRIMARY, borderRadius: 8, paddingHorizontal: 20, height: 44,
     alignItems: 'center', justifyContent: 'center',
   },
-  customOversOkText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  customOversOkText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: '#fff' },
 
   /* Venue */
   venueSelected: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.ACCENT_SOFT,
     borderWidth: 1.5, borderColor: PRIMARY, borderRadius: 8, padding: 12,
   },
-  venueSelectedName: { fontSize: 14, fontWeight: '700', color: TEXT_DARK },
-  venueSelectedCity: { fontSize: 11, color: TEXT_MID, marginTop: 2 },
+  venueSelectedName: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: TEXT_DARK },
+  venueSelectedCity: { fontFamily: FONTS.family, fontSize: 11, color: TEXT_MID, marginTop: 2 },
 });
 
 export default CreateMatchScreen;

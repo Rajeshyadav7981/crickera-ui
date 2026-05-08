@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { communityAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import BackButton from '../../components/BackButton';
 import Avatar from '../../components/Avatar';
 import PostCard from '../../components/PostCard';
@@ -324,35 +324,35 @@ const s = StyleSheet.create({
     backgroundColor: COLORS.CARD, borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
   },
   headerCenter: { alignItems: 'center' },
-  headerHash: { fontSize: 22, fontWeight: '900', color: COLORS.ACCENT },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
-  headerCount: { fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 2 },
+  headerHash: { fontFamily: FONTS.family, fontSize: 22, fontWeight: '900', color: COLORS.ACCENT },
+  headerTitle: { fontFamily: FONTS.family, fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
+  headerCount: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, marginTop: 2 },
 
   empty: { alignItems: 'center', paddingVertical: 60, gap: 8 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: COLORS.TEXT },
-  emptyText: { fontSize: 13, color: COLORS.TEXT_MUTED },
+  emptyTitle: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '700', color: COLORS.TEXT },
+  emptyText: { fontFamily: FONTS.family, fontSize: 13, color: COLORS.TEXT_MUTED },
 
   // Comments Modal
   modalOverlay: { flex: 1, backgroundColor: COLORS.OVERLAY, justifyContent: 'flex-end' },
   modalHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: COLORS.SURFACE, alignSelf: 'center', marginBottom: 12 },
   commentsModal: { backgroundColor: COLORS.CARD, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '92%', flex: 1 },
   commentsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  commentsTitle: { fontSize: 18, fontWeight: '800', color: COLORS.TEXT },
+  commentsTitle: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '800', color: COLORS.TEXT },
   noComments: { alignItems: 'center', paddingVertical: 40, gap: 6 },
-  noCommentsText: { fontSize: 15, fontWeight: '600', color: COLORS.TEXT },
+  noCommentsText: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '600', color: COLORS.TEXT },
 
   commentRow: { flexDirection: 'row', paddingVertical: 8, gap: 10 },
   replyRow: { paddingLeft: 42 },
-  cName: { fontSize: 13, fontWeight: '700', color: COLORS.TEXT },
-  cTime: { fontSize: 11, fontWeight: '400', color: COLORS.TEXT_MUTED },
-  cText: { fontSize: 14, color: COLORS.TEXT_SECONDARY, lineHeight: 19, marginTop: 2 },
-  cReply: { fontSize: 12, color: COLORS.TEXT_MUTED, fontWeight: '600', marginTop: 4 },
+  cName: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.TEXT },
+  cTime: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '400', color: COLORS.TEXT_MUTED },
+  cText: { fontFamily: FONTS.family, fontSize: 14, color: COLORS.TEXT_SECONDARY, lineHeight: 19, marginTop: 2 },
+  cReply: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, fontWeight: '600', marginTop: 4 },
   replyInputRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
-  replyInput: { flex: 1, backgroundColor: COLORS.SURFACE, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 6, fontSize: 13, color: COLORS.TEXT, maxHeight: 60 },
+  replyInput: { fontFamily: FONTS.family, flex: 1, backgroundColor: COLORS.SURFACE, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 6, fontSize: 13, color: COLORS.TEXT, maxHeight: 60 },
   replySend: { width: 26, height: 26, borderRadius: 13, backgroundColor: COLORS.ACCENT, alignItems: 'center', justifyContent: 'center' },
 
   commentInputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12, borderTopWidth: 1, borderTopColor: COLORS.BORDER, paddingTop: 12, gap: 8 },
-  commentInput: { flex: 1, backgroundColor: COLORS.SURFACE, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, fontSize: 14, color: COLORS.TEXT, maxHeight: 80 },
+  commentInput: { fontFamily: FONTS.family, flex: 1, backgroundColor: COLORS.SURFACE, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, fontSize: 14, color: COLORS.TEXT, maxHeight: 80 },
   sendBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.ACCENT, alignItems: 'center', justifyContent: 'center' },
 });
 

@@ -5,7 +5,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { useThemeContext } from '../../context/ThemeContext';
-import { COLORS } from '../../theme';
+import { COLORS, FONTS } from '../../theme';
 import BackButton from '../../components/BackButton';
 
 const SettingsScreen = ({ navigation }) => {
@@ -165,15 +165,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.BG },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingBottom: 12, backgroundColor: COLORS.CARD,
-    borderBottomWidth: 1, borderBottomColor: COLORS.BORDER,
+    paddingHorizontal: 16, paddingBottom: 12, backgroundColor: COLORS.BG,
   },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  backArrow: { fontSize: 22, color: COLORS.TEXT, fontWeight: '600' },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
+  backArrow: { fontFamily: FONTS.family, fontSize: 22, color: COLORS.TEXT, fontWeight: '600' },
+  headerTitle: { fontFamily: FONTS.family, fontSize: 17, fontWeight: '700', color: COLORS.TEXT },
   content: { padding: 20, paddingBottom: 40 },
 
-  sectionLabel: { fontSize: 13, fontWeight: '600', color: COLORS.TEXT_SECONDARY, marginBottom: 8, marginTop: 16 },
+  sectionLabel: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.TEXT_SECONDARY, marginBottom: 8, marginTop: 16 },
   card: {
     backgroundColor: COLORS.CARD, borderRadius: 14, borderWidth: 1, borderColor: COLORS.BORDER,
     overflow: 'hidden',
@@ -182,9 +181,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 14,
   },
-  settingTitle: { fontSize: 15, fontWeight: '600', color: COLORS.TEXT },
-  settingDesc: { fontSize: 12, color: COLORS.TEXT_SECONDARY, marginTop: 2 },
-  settingValue: { fontSize: 14, color: COLORS.TEXT_SECONDARY },
+  settingTitle: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '600', color: COLORS.TEXT },
+  settingDesc: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_SECONDARY, marginTop: 2 },
+  settingValue: { fontFamily: FONTS.family, fontSize: 14, color: COLORS.TEXT_SECONDARY },
   divider: { height: 1, backgroundColor: COLORS.BORDER, marginLeft: 16 },
 
   // Theme selector
@@ -211,7 +210,7 @@ const styles = StyleSheet.create({
     height: 10, width: '100%', position: 'absolute', bottom: 0,
   },
   themeLabel: {
-    fontSize: 13, fontWeight: '700', marginTop: 8,
+    fontFamily: FONTS.family,    fontSize: 13, fontWeight: '700', marginTop: 8,
   },
   themeCheck: {
     position: 'absolute', top: 6, right: 6,
