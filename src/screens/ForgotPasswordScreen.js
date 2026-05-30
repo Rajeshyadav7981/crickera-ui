@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext';
 import { COLORS, GRADIENTS, FONTS } from '../theme';
 import BackButton from '../components/BackButton';
 import OTPInput from '../components/OTPInput';
+import useOtpCountdown, { formatCountdown } from '../hooks/useOtpCountdown';
 import { useToast } from '../components/Toast';
 import { Feather } from '@expo/vector-icons';
 
@@ -29,8 +30,8 @@ const ForgotPasswordScreen = ({ navigation }) => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [otpTimer, setOtpTimer] = useState(0);
-  const otpTimerRef = useRef(null);
+  // Drives both the validity countdown and the resend cooldown.
+  const otpTimer = useOtpCountdown(30);
 
   const fadeIn = useRef(new Animated.Value(0)).current;
   const slideUp = useRef(new Animated.Value(30)).current;
@@ -41,13 +42,6 @@ const ForgotPasswordScreen = ({ navigation }) => {
       Animated.timing(slideUp, { toValue: 0, duration: 500, useNativeDriver: true }),
     ]).start();
   }, []);
-
-  useEffect(() => {
-    if (otpTimer > 0) {
-      otpTimerRef.current = setTimeout(() => setOtpTimer((t) => t - 1), 1000);
-    }
-    return () => clearTimeout(otpTimerRef.current);
-  }, [otpTimer]);
 
   const handleMobileChange = (text) => setMobile(text.replace(/[^0-9]/g, ''));
 
@@ -66,12 +60,14 @@ const ForgotPasswordScreen = ({ navigation }) => {
     }
     setLoading(true);
     try {
-      await authAPI.sendOTP(mobile, 'reset_password');
+      const res = await authAPI.sendOTP(mobile, 'reset_password');
       toast.success('OTP Sent', 'Check your phone for the verification code');
       setStep(2);
-      setOtpTimer(60);
+      otpTimer.start(res.data?.expires_in);
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Failed to send OTP';
+      const msg = err.response?.status === 429
+        ? (err.response?.data?.detail || 'Too many requests. Please wait a moment and try again.')
+        : (err.response?.data?.detail || 'Failed to send OTP');
       toast.error('Failed', msg);
     } finally {
       setLoading(false);
@@ -79,24 +75,33 @@ const ForgotPasswordScreen = ({ navigation }) => {
   };
 
   const handleResendOtp = async () => {
-    if (otpTimer > 0 || loading) return;
+    if (!otpTimer.canResend || loading) return;
     setLoading(true);
     try {
-      await authAPI.sendOTP(mobile, 'reset_password');
+      const res = await authAPI.sendOTP(mobile, 'reset_password');
       toast.success('OTP Resent', 'New code sent to your phone');
-      setOtpTimer(60);
+      otpTimer.start(res.data?.expires_in);
       setOtp('');
     } catch (err) {
-      toast.error('Failed', err.response?.data?.detail || 'Could not resend OTP');
+      const msg = err.response?.status === 429
+        ? (err.response?.data?.detail || 'Too many requests. Please wait before resending.')
+        : (err.response?.data?.detail || 'Could not resend OTP');
+      toast.error('Failed', msg);
     } finally {
       setLoading(false);
     }
   };
 
-  // Step 2 → Step 3: just advance
+  // Step 2 → Step 3: advance to the new-password step. The reset-password call
+  // on step 3 validates the OTP server-side (it's one-time, so we don't verify
+  // it separately here). Enter the new password before the code expires.
   const handleOtpNext = () => {
     if (otp.length !== 6) {
       toast.warning('Enter the 6-digit OTP');
+      return;
+    }
+    if (otpTimer.expired) {
+      toast.warning('Code expired', 'Tap Resend OTP to get a new code.');
       return;
     }
     setStep(3);
@@ -150,7 +155,7 @@ const ForgotPasswordScreen = ({ navigation }) => {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         enableOnAndroid
-        extraScrollHeight={40}
+        extraScrollHeight={120}
       >
           <View style={{ alignItems: 'center', marginBottom: 12 }}>
             <View style={styles.iconCircle}>
@@ -197,11 +202,16 @@ const ForgotPasswordScreen = ({ navigation }) => {
 
             {step === 2 && (
               <>
-                <OTPInput value={otp} onChange={setOtp} />
+                <OTPInput value={otp} onChange={setOtp} error={otpTimer.expired} />
+                <Text style={[styles.expiryText, otpTimer.expired && styles.expiryExpired]}>
+                  {otpTimer.expired
+                    ? 'Code expired — tap Resend to get a new one'
+                    : `Code expires in ${formatCountdown(otpTimer.expiresIn)}`}
+                </Text>
                 <TouchableOpacity
-                  style={[styles.button, loading && styles.buttonDisabled]}
+                  style={[styles.button, (loading || otpTimer.expired) && styles.buttonDisabled]}
                   onPress={handleOtpNext}
-                  disabled={loading}
+                  disabled={loading || otpTimer.expired}
                   activeOpacity={0.8}
                 >
                   <LinearGradient colors={GRADIENTS.BUTTON} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.buttonGradient}>
@@ -209,8 +219,8 @@ const ForgotPasswordScreen = ({ navigation }) => {
                   </LinearGradient>
                 </TouchableOpacity>
                 <View style={styles.resendRow}>
-                  {otpTimer > 0 ? (
-                    <Text style={styles.timerText}>Resend in {otpTimer}s</Text>
+                  {!otpTimer.canResend ? (
+                    <Text style={styles.timerText}>Resend in {otpTimer.resendIn}s</Text>
                   ) : (
                     <TouchableOpacity onPress={handleResendOtp} disabled={loading}>
                       <Text style={styles.resendText}>{loading ? 'Sending...' : 'Resend OTP'}</Text>
@@ -333,6 +343,8 @@ const styles = StyleSheet.create({
   pwHintOk: { color: COLORS.SUCCESS },
 
   resendRow: { alignItems: 'center', marginTop: 14 },
+  expiryText: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_SECONDARY, fontWeight: '600', textAlign: 'center', marginTop: 10, marginBottom: 4 },
+  expiryExpired: { color: COLORS.LIVE },
   timerText: { fontFamily: FONTS.family, fontSize: 13, color: COLORS.TEXT_MUTED, fontWeight: '500' },
   resendText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.ACCENT },
 });

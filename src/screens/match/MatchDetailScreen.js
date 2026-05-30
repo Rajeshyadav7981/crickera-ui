@@ -21,9 +21,11 @@ import BackButton from '../../components/BackButton';
 import CelebrationOverlay from '../../components/CelebrationOverlay';
 import TabContentSkeleton from '../../components/TabContentSkeleton';
 import Icon from '../../components/Icon';
+import FavoriteButton from '../../components/FavoriteButton';
 import RunRateChart from '../../components/charts/RunRateChart';
 import ManhattanChart from '../../components/charts/ManhattanChart';
 import Avatar from '../../components/Avatar';
+import PlayerAvatar from '../../components/PlayerAvatar';
 import StepIndicator from '../../components/StepIndicator';
 import Skeleton from '../../components/Skeleton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -714,7 +716,7 @@ const MatchDetailScreen = ({ navigation, route }) => {
           const pName = p.full_name || p.player_name || p.name || 'Unknown';
           return (
             <TouchableOpacity key={`${p.player_id}-${i}`} style={st.squadRow} onPress={() => goToPlayer(p.player_id)}>
-              <Avatar name={pName} size={36} color={color} type="player" />
+              <PlayerAvatar player={p} size={36} color={color} />
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Text style={st.squadName}>{pName}</Text>
@@ -765,16 +767,26 @@ const MatchDetailScreen = ({ navigation, route }) => {
               {getTeamShort(match.team_a_id)} vs {getTeamShort(match.team_b_id)}
             </Text>
           </View>
+          {match.name ? (
+            <Text style={st.headerName} numberOfLines={1}>{match.name}</Text>
+          ) : null}
           {(match.tournament_name || match.match_code) && (
             <Text style={st.headerSubtitle} numberOfLines={1}>
               {match.tournament_name || ''}{match.match_number ? ` \u2022 Match ${match.match_number}` : ''}{match.match_code ? ` \u2022 ${match.match_code}` : ''}
             </Text>
           )}
         </View>
+        <FavoriteButton entityType="match" entityId={match.id} variant="header" size={20} />
         <TouchableOpacity onPress={handleShare} style={st.headerBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Icon name="share" size={18} color={COLORS.TEXT} />
         </TouchableOpacity>
       </View>
+      {match.is_favorite && (
+        <View style={st.inFavRow}>
+          <MaterialCommunityIcons name="heart" size={12} color={COLORS.ACCENT_LIGHT} />
+          <Text style={st.inFavText}>In your favorites</Text>
+        </View>
+      )}
 
       {/* ── TAB BAR with animated indicator ── */}
       <View style={st.tabBarWrap}>
@@ -1364,7 +1376,7 @@ const MatchDetailScreen = ({ navigation, route }) => {
                       activeOpacity={0.75}
                     >
                       <Text style={[st.segmentCompact, activeInnings === i && st.segmentCompactActive]}>
-                        {getTeamShort(inn.batting_team_id)} {inn.total_runs}/{inn.total_wickets}
+                        {getTeamShort(inn.batting_team_id)} {inn.total_runs}/{inn.total_wickets}{inn.declared ? 'd' : ''}
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -1382,6 +1394,7 @@ const MatchDetailScreen = ({ navigation, route }) => {
                 <View style={st.sHeroRight}>
                   <Text style={st.sHeroScore}>
                     {currentInn.total_runs}<Text style={st.sHeroWkts}>/{currentInn.total_wickets}</Text>
+                    {currentInn.declared ? <Text style={st.sHeroDeclared}>{' d'}</Text> : null}
                   </Text>
                   {currentInn.total_overs > 0 && (
                     <Text style={st.sHeroRR}>RR {(currentInn.total_runs / currentInn.total_overs).toFixed(2)}</Text>
@@ -1425,7 +1438,8 @@ const MatchDetailScreen = ({ navigation, route }) => {
                   {(() => {
                     const teamTotal = Math.max(1, currentInn.total_runs || 1);
                     return currentInn.batting.map((b, i) => {
-                      const isNotOut = !b.is_out;
+                      const isRetired = !b.is_out && /retired/i.test(b.how_out || '');
+                      const isStillBatting = !b.is_out && !b.how_out;
                       const sharePct = Math.min(100, Math.round(((b.runs || 0) / teamTotal) * 100));
                       return (
                         <TouchableOpacity
@@ -1441,15 +1455,17 @@ const MatchDetailScreen = ({ navigation, route }) => {
                             <Text
                               style={[
                                 st.howOut,
-                                isNotOut
+                                isStillBatting
                                   ? { color: PRIMARY, fontStyle: 'italic' }
+                                  : isRetired
+                                  ? { color: COLORS.ACCENT_LIGHT, fontWeight: '700' }
                                   : /run out/i.test(b.how_out || '')
                                   ? { color: COLORS.WARNING }
                                   : { color: COLORS.TEXT_MUTED },
                               ]}
                               numberOfLines={1}
                             >
-                              {b.is_out ? b.how_out : 'not out'}
+                              {b.how_out || 'not out'}
                             </Text>
                           </View>
                           <Text style={[st.tdCell, st.tdBold]}>{b.runs}</Text>
@@ -1751,7 +1767,7 @@ const MatchDetailScreen = ({ navigation, route }) => {
                       activeOpacity={0.75}
                     >
                       <Text style={[st.segmentCompact, activeInnings === i && st.segmentCompactActive]}>
-                        {getTeamShort(inn.batting_team_id)} {inn.total_runs}/{inn.total_wickets}
+                        {getTeamShort(inn.batting_team_id)} {inn.total_runs}/{inn.total_wickets}{inn.declared ? 'd' : ''}
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -2143,6 +2159,13 @@ const st = StyleSheet.create({
     backgroundColor: COLORS.BG,
   },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  inFavRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 4, paddingVertical: 5, paddingHorizontal: 12,
+    backgroundColor: 'rgba(30,136,229,0.10)',
+    borderBottomWidth: 1, borderBottomColor: 'rgba(30,136,229,0.22)',
+  },
+  inFavText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '800', color: COLORS.ACCENT_LIGHT, letterSpacing: 0.4 },
   backArrow: { fontFamily: FONTS.family, fontSize: 22, color: COLORS.TEXT, fontWeight: '600' },
   headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.LIVE },
@@ -2152,6 +2175,7 @@ const st = StyleSheet.create({
   // ── Header center & subtitle
   headerCenter: { flex: 1, alignItems: 'center' },
   headerSubtitle: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_MUTED, fontWeight: '500', marginTop: 2 },
+  headerName: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.ACCENT_LIGHT, fontWeight: '800', letterSpacing: 0.3, marginTop: 2 },
 
   // ── Tab bar
   tabBarWrap: { backgroundColor: COLORS.BG, position: 'relative' },
@@ -2432,6 +2456,7 @@ const st = StyleSheet.create({
   sHeroRight: { alignItems: 'flex-end' },
   sHeroScore: { fontFamily: FONTS.family, fontSize: 24, fontWeight: '900', color: COLORS.TEXT, fontVariant: ['tabular-nums'], lineHeight: 26 },
   sHeroWkts: { fontFamily: FONTS.family, color: COLORS.TEXT_SECONDARY, fontWeight: '700', fontSize: 18 },
+  sHeroDeclared: { fontFamily: FONTS.family, color: COLORS.SUCCESS_LIGHT, fontWeight: '800', fontSize: 14, fontStyle: 'italic' },
   sHeroRR: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '800', color: PRIMARY, marginTop: 2, letterSpacing: 0.4 },
 
   // ── Redesigned batting rows

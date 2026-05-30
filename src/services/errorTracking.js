@@ -44,18 +44,6 @@ export const trackError = (error, context = {}) => {
   }
 };
 
-export const trackEvent = (name, data = {}) => {
-  const entry = {
-    type: 'event',
-    name,
-    data,
-    platform: Platform.OS,
-    version: APP_VERSION,
-    timestamp: new Date().toISOString(),
-  };
-  errorQueue.push(entry);
-  scheduleFlush();
-};
 
 if (!__DEV__) {
   const originalHandler = ErrorUtils.getGlobalHandler();

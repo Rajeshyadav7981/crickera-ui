@@ -13,7 +13,6 @@ import Icon from '../../components/Icon';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import CelebrationOverlay from '../../components/CelebrationOverlay';
 import ShotZonePicker from '../../components/ShotZonePicker';
-import OfflineBanner from '../../components/OfflineBanner';
 import InningsEndDialog from '../../components/InningsEndDialog';
 import ConfirmModal from '../../components/ConfirmModal';
 import { setCurrentMatch, clearCurrentMatch } from '../../services/notifications';
@@ -104,6 +103,14 @@ const LiveScoringScreen = ({ navigation, route }) => {
   const [showWide, setShowWide] = useState(false);
   const [showNoBall, setShowNoBall] = useState(false);
   const [showWicket, setShowWicket] = useState(false);
+  const [showRetiredHurt, setShowRetiredHurt] = useState(false);
+  const [showDeclare, setShowDeclare] = useState(false);
+  const [declaring, setDeclaring] = useState(false);
+  const [showCustomRuns, setShowCustomRuns] = useState(false);
+  const [customRunsInput, setCustomRunsInput] = useState('');
+  const [retiredEnd, setRetiredEnd] = useState('striker');
+  const [retiredReplacement, setRetiredReplacement] = useState(null);
+  const [retiredSubmitting, setRetiredSubmitting] = useState(false);
   const [showEndOver, setShowEndOver] = useState(false);
   const [wicketType, setWicketType] = useState('bowled');
   const [fielderId, setFielderId] = useState(null);
@@ -730,6 +737,51 @@ const LiveScoringScreen = ({ navigation, route }) => {
     }
   };
 
+  const openRetiredHurt = () => {
+    setRetiredEnd('striker');
+    setRetiredReplacement(null);
+    loadSquads();
+    setShowRetiredHurt(true);
+  };
+
+  const submitRetiredHurt = async () => {
+    const retiredPlayerId = retiredEnd === 'striker'
+      ? state?.striker?.player_id
+      : state?.non_striker?.player_id;
+    if (!retiredPlayerId) {
+      Alert.alert('Error', 'No batter to retire');
+      return;
+    }
+    if (!retiredReplacement) {
+      Alert.alert('Pick replacement', 'Select the batter coming in');
+      return;
+    }
+    setRetiredSubmitting(true);
+    try {
+      await scoringAPI.retireHurt(matchId, retiredPlayerId, retiredReplacement);
+      setShowRetiredHurt(false);
+      setRetiredReplacement(null);
+      await loadState();
+    } catch (e) {
+      Alert.alert('Error', e.response?.data?.detail || 'Failed to retire batter');
+    } finally {
+      setRetiredSubmitting(false);
+    }
+  };
+
+  const confirmDeclareInnings = async () => {
+    setDeclaring(true);
+    try {
+      await scoringAPI.declareInnings(matchId);
+      setShowDeclare(false);
+      await loadState();
+    } catch (e) {
+      Alert.alert('Error', e.response?.data?.detail || 'Failed to declare innings');
+    } finally {
+      setDeclaring(false);
+    }
+  };
+
   // Reusable: the themed undo confirm modal — included in EVERY early-return
   // branch below so the user can always trigger Undo Last Ball, even when the
   // main scoring view is unmounted (innings break, super over prompt, etc.).
@@ -745,6 +797,22 @@ const LiveScoringScreen = ({ navigation, route }) => {
       loading={undoLoading}
       onConfirm={confirmUndo}
       onCancel={() => setShowUndoConfirm(false)}
+    />
+  );
+
+  const declareConfirmModal = (
+    <ConfirmModal
+      visible={showDeclare}
+      icon="flag-checkered"
+      title="Declare Innings?"
+      message={`Close ${battingTeamName}'s innings at ${state?.total_runs ?? 0}/${state?.total_wickets ?? 0}? ${state?.innings_number === 1 ? `${bowlingTeamName} will then start their chase.` : 'The match will be decided after.'}`}
+      confirmText="Declare"
+      cancelText="Cancel"
+      destructive
+      confirmPhrase="declare"
+      loading={declaring}
+      onConfirm={confirmDeclareInnings}
+      onCancel={() => { if (!declaring) setShowDeclare(false); }}
     />
   );
 
@@ -825,9 +893,6 @@ const LiveScoringScreen = ({ navigation, route }) => {
 
   return (
     <View style={s.container}>
-      {/* Offline indicator banner */}
-      <OfflineBanner />
-
       {/* Celebration overlay for boundaries/wickets/milestones */}
       <CelebrationOverlay
         type={celebration}
@@ -1060,6 +1125,17 @@ const LiveScoringScreen = ({ navigation, route }) => {
               ))}
             </View>
 
+            {/* Custom Runs — rare scores (5, 7, overthrows etc.) */}
+            <TouchableOpacity
+              style={s.customRunsRowBtn}
+              activeOpacity={0.7}
+              disabled={scoring}
+              onPress={() => { setCustomRunsInput(''); setShowCustomRuns(true); }}
+            >
+              <MaterialCommunityIcons name="pencil-outline" size={14} color={COLORS.TEXT_SECONDARY} />
+              <Text style={s.customRunsRowBtnText}>Custom Runs</Text>
+            </TouchableOpacity>
+
             {/* Row 2: 4, 6 — 2-column with colored tints */}
             <View style={s.boundaryRow}>
               <AnimatedPressButton
@@ -1118,8 +1194,13 @@ const LiveScoringScreen = ({ navigation, route }) => {
               <Text style={s.undoBtnText}>UNDO LAST BALL</Text>
             </TouchableOpacity>
 
-            {/* Admin action row: Broadcast + No Result */}
-            <View style={s.adminActionsRow}>
+            {/* Admin action row: horizontal scroll so labels stay legible */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.adminActionsScroll}
+              style={s.adminActionsRow}
+            >
               <TouchableOpacity
                 style={s.broadcastBtn}
                 activeOpacity={0.7}
@@ -1130,6 +1211,26 @@ const LiveScoringScreen = ({ navigation, route }) => {
               </TouchableOpacity>
 
               <TouchableOpacity
+                style={s.retiredBtn}
+                activeOpacity={0.7}
+                disabled={!state?.striker || !state?.non_striker}
+                onPress={openRetiredHurt}
+              >
+                <MaterialCommunityIcons name="bandage" size={16} color={COLORS.ACCENT_LIGHT} />
+                <Text style={s.retiredBtnText}>RETIRED HURT</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={s.declareBtn}
+                activeOpacity={0.7}
+                disabled={!state?.innings_number || state?.innings_number > 2}
+                onPress={() => setShowDeclare(true)}
+              >
+                <MaterialCommunityIcons name="flag-checkered" size={16} color={COLORS.SUCCESS_LIGHT} />
+                <Text style={s.declareBtnText}>DECLARE</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 style={s.noResultBtn}
                 activeOpacity={0.7}
                 onPress={handleEndMatchNoResult}
@@ -1137,7 +1238,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
                 <MaterialCommunityIcons name="weather-pouring" size={16} color={COLORS.DANGER} />
                 <Text style={s.noResultBtnText}>NO RESULT</Text>
               </TouchableOpacity>
-            </View>
+            </ScrollView>
 
             {/* Active broadcast banner */}
             {activeBroadcast && (
@@ -1534,6 +1635,66 @@ const LiveScoringScreen = ({ navigation, route }) => {
 
       {/* ===== UNDO LAST BALL CONFIRM ===== */}
       {undoConfirmModal}
+      {declareConfirmModal}
+
+      <Modal visible={showCustomRuns} transparent animationType="slide">
+        <View style={s.modalOverlay}>
+          <View style={s.modalContent}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <MaterialCommunityIcons name="pencil-outline" size={20} color={COLORS.ACCENT_LIGHT} />
+              <Text style={s.modalTitle}>Custom Runs</Text>
+            </View>
+            <Text style={{ fontSize: 12, color: COLORS.TEXT_MUTED, marginBottom: 14, lineHeight: 18 }}>
+              Enter any value from 0 to 19. Useful for overthrows, no-ball + run combos, or unusual scoring.
+            </Text>
+
+            <TextInput
+              style={s.customRunsInput}
+              value={customRunsInput}
+              onChangeText={(t) => {
+                const digits = t.replace(/\D/g, '').slice(0, 2);
+                if (digits === '' || (parseInt(digits, 10) <= 19)) {
+                  setCustomRunsInput(digits);
+                }
+              }}
+              placeholder="0-19"
+              placeholderTextColor={COLORS.TEXT_MUTED}
+              keyboardType="number-pad"
+              maxLength={2}
+              autoFocus
+            />
+
+            <View style={s.customRunsChipRow}>
+              {[5, 7, 8, 9, 10, 11, 12].map((n) => (
+                <TouchableOpacity
+                  key={n}
+                  style={[s.customRunsChip, customRunsInput === String(n) && s.customRunsChipActive]}
+                  onPress={() => setCustomRunsInput(String(n))}
+                >
+                  <Text style={[s.customRunsChipText, customRunsInput === String(n) && s.customRunsChipTextActive]}>{n}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={[s.confirmBtn, !customRunsInput && { opacity: 0.4 }]}
+              disabled={!customRunsInput}
+              onPress={() => {
+                const n = parseInt(customRunsInput, 10);
+                if (!Number.isInteger(n) || n < 0 || n > 19) return;
+                setShowCustomRuns(false);
+                setCustomRunsInput('');
+                scoreDelivery({ batsman_runs: n });
+              }}
+            >
+              <Text style={s.confirmBtnText}>Confirm {customRunsInput && `(${customRunsInput} run${customRunsInput === '1' ? '' : 's'})`}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={{ marginTop: 12, alignSelf: 'center' }} onPress={() => setShowCustomRuns(false)}>
+              <Text style={{ fontSize: 14, color: COLORS.TEXT_MUTED, fontWeight: '600' }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* ===== BROADCAST MESSAGE MODAL ===== */}
       <Modal visible={showBroadcast} transparent animationType="slide">
@@ -1579,6 +1740,94 @@ const LiveScoringScreen = ({ navigation, route }) => {
               <Text style={s.confirmBtnText}>Send Broadcast</Text>
             </TouchableOpacity>
             <TouchableOpacity style={{ marginTop: 12, alignSelf: 'center' }} onPress={() => setShowBroadcast(false)}>
+              <Text style={{ fontSize: 14, color: COLORS.TEXT_MUTED, fontWeight: '600' }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showRetiredHurt} transparent animationType="slide">
+        <View style={s.modalOverlay}>
+          <View style={s.modalContent}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+              <MaterialCommunityIcons name="bandage" size={22} color={COLORS.ACCENT_LIGHT} />
+              <Text style={s.modalTitle}>Retired Hurt</Text>
+            </View>
+            <Text style={{ fontSize: 12, color: COLORS.TEXT_MUTED, marginBottom: 14, lineHeight: 18 }}>
+              The injured batter is replaced by the next player. This does not count as a wicket.
+            </Text>
+
+            <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.TEXT_SECONDARY, marginBottom: 8 }}>
+              Who is retiring?
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+              {state?.striker && (
+                <TouchableOpacity
+                  style={[s.retiredEndOption, retiredEnd === 'striker' && s.retiredEndOptionActive]}
+                  onPress={() => setRetiredEnd('striker')}
+                >
+                  <Text style={[s.retiredEndLabel, retiredEnd === 'striker' && s.retiredEndLabelActive]}>STRIKER</Text>
+                  <Text style={s.retiredEndName} numberOfLines={1}>{state.striker.name}</Text>
+                  <Text style={s.retiredEndScore}>{state.striker.runs} ({state.striker.balls})</Text>
+                </TouchableOpacity>
+              )}
+              {state?.non_striker && (
+                <TouchableOpacity
+                  style={[s.retiredEndOption, retiredEnd === 'non_striker' && s.retiredEndOptionActive]}
+                  onPress={() => setRetiredEnd('non_striker')}
+                >
+                  <Text style={[s.retiredEndLabel, retiredEnd === 'non_striker' && s.retiredEndLabelActive]}>NON-STRIKER</Text>
+                  <Text style={s.retiredEndName} numberOfLines={1}>{state.non_striker.name}</Text>
+                  <Text style={s.retiredEndScore}>{state.non_striker.runs} ({state.non_striker.balls})</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.TEXT_SECONDARY, marginBottom: 8 }}>
+              Replacement batter
+            </Text>
+            <ScrollView style={{ maxHeight: 240, marginBottom: 16 }}>
+              {availableBatsmen.length === 0 ? (
+                <Text style={{ fontSize: 13, color: COLORS.TEXT_MUTED, padding: 12, textAlign: 'center' }}>
+                  No available batters left in the squad.
+                </Text>
+              ) : (
+                availableBatsmen.map((p) => {
+                  const pid = p.player_id || p.id;
+                  const initials = (p.full_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+                  return (
+                    <TouchableOpacity
+                      key={pid}
+                      style={[s.retiredReplaceOption, retiredReplacement === pid && s.retiredReplaceOptionActive]}
+                      onPress={() => setRetiredReplacement(pid)}
+                    >
+                      <View style={[s.retiredAvatar, retiredReplacement === pid && s.retiredAvatarActive]}>
+                        <Text style={s.retiredAvatarText}>{initials}</Text>
+                      </View>
+                      <Text style={[s.retiredReplaceText, retiredReplacement === pid && { fontWeight: '800' }]} numberOfLines={1}>
+                        {p.full_name}
+                      </Text>
+                      {retiredReplacement === pid && (
+                        <MaterialCommunityIcons name="check" size={18} color={COLORS.SUCCESS} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[s.confirmBtn, (!retiredReplacement || retiredSubmitting) && { opacity: 0.4 }]}
+              disabled={!retiredReplacement || retiredSubmitting}
+              onPress={submitRetiredHurt}
+            >
+              {retiredSubmitting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={s.confirmBtnText}>Confirm Retire</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={{ marginTop: 12, alignSelf: 'center' }} onPress={() => !retiredSubmitting && setShowRetiredHurt(false)}>
               <Text style={{ fontSize: 14, color: COLORS.TEXT_MUTED, fontWeight: '600' }}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -1999,22 +2248,104 @@ const s = StyleSheet.create({
   undoBtnIcon: { fontFamily: FONTS.family, fontSize: 16, color: COLORS.TEXT, marginRight: 8 },
   undoBtnText: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '700', color: COLORS.TEXT, letterSpacing: 0.5 },
 
-  /* ---- Broadcast ---- */
-  adminActionsRow: {
-    flexDirection: 'row', gap: 8, marginTop: 10,
-  },
+  /* ---- Admin actions: horizontal scroll so labels stay legible ---- */
+  adminActionsRow: { marginTop: 10 },
+  adminActionsScroll: { gap: 8, paddingRight: 8 },
   broadcastBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 12, borderRadius: 12,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12,
     borderWidth: 1, borderColor: COLORS.WARNING + '40', backgroundColor: COLORS.WARNING + '10',
   },
   broadcastBtnText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.WARNING, letterSpacing: 0.3 },
   noResultBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 12, borderRadius: 12,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12,
     borderWidth: 1, borderColor: COLORS.DANGER + '40', backgroundColor: COLORS.DANGER + '10',
   },
   noResultBtnText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.DANGER, letterSpacing: 0.3 },
+  retiredBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12,
+    borderWidth: 1, borderColor: COLORS.ACCENT_LIGHT + '40', backgroundColor: COLORS.ACCENT_LIGHT + '10',
+  },
+  retiredBtnText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.ACCENT_LIGHT, letterSpacing: 0.3 },
+  declareBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12,
+    borderWidth: 1, borderColor: COLORS.SUCCESS_LIGHT + '40', backgroundColor: COLORS.SUCCESS_LIGHT + '10',
+  },
+  declareBtnText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.SUCCESS_LIGHT, letterSpacing: 0.3 },
+
+  customRunsRowBtn: {
+    flexDirection: 'row', gap: 6, marginTop: 8,
+    height: 38, borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1, borderColor: COLORS.BORDER,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  customRunsRowBtnText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '700', color: COLORS.TEXT_SECONDARY, letterSpacing: 0.4 },
+
+  customRunsInput: {
+    height: 56,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderWidth: 1.5, borderColor: COLORS.BORDER,
+    borderRadius: 12, paddingHorizontal: 16,
+    fontFamily: FONTS.family, fontSize: 28, fontWeight: '900',
+    color: COLORS.TEXT, textAlign: 'center', letterSpacing: 2,
+    fontVariant: ['tabular-nums'], marginBottom: 14,
+  },
+  customRunsChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  customRunsChip: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999,
+    borderWidth: 1, borderColor: COLORS.BORDER,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    minWidth: 44, alignItems: 'center',
+  },
+  customRunsChipActive: { borderColor: COLORS.ACCENT, backgroundColor: COLORS.ACCENT_SOFT },
+  customRunsChipText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '800', color: COLORS.TEXT_SECONDARY, fontVariant: ['tabular-nums'] },
+  customRunsChipTextActive: { color: COLORS.ACCENT_LIGHT },
+  retiredEndOption: {
+    flex: 1, padding: 12, borderRadius: 10,
+    borderWidth: 1, borderColor: COLORS.BORDER,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  retiredEndOptionActive: {
+    borderColor: COLORS.ACCENT, backgroundColor: COLORS.ACCENT_SOFT,
+  },
+  retiredEndLabel: {
+    fontFamily: FONTS.family, fontSize: 10, fontWeight: '900',
+    color: COLORS.TEXT_MUTED, letterSpacing: 0.8, marginBottom: 4,
+  },
+  retiredEndLabelActive: { color: COLORS.ACCENT_LIGHT },
+  retiredEndName: {
+    fontFamily: FONTS.family, fontSize: 13, fontWeight: '800', color: COLORS.TEXT, marginBottom: 2,
+  },
+  retiredEndScore: {
+    fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.TEXT_SECONDARY,
+    fontVariant: ['tabular-nums'],
+  },
+  retiredReplaceOption: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 10, paddingHorizontal: 12,
+    borderRadius: 10, borderWidth: 1, borderColor: COLORS.BORDER,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    marginBottom: 6,
+  },
+  retiredReplaceOptionActive: {
+    borderColor: COLORS.SUCCESS, backgroundColor: COLORS.SUCCESS_BG,
+  },
+  retiredAvatar: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: COLORS.SURFACE,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  retiredAvatarActive: { backgroundColor: COLORS.ACCENT },
+  retiredAvatarText: {
+    fontFamily: FONTS.family, fontSize: 12, fontWeight: '900', color: COLORS.TEXT,
+  },
+  retiredReplaceText: {
+    flex: 1, fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.TEXT,
+  },
   broadcastBlockOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: COLORS.BG + 'F0', zIndex: 10,

@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Animated,
   InteractionManager,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { playersAPI, usersAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -109,10 +110,16 @@ const PlayerProfileScreen = ({ navigation, route }) => {
   const slideAnim = useRef(new Animated.Value(30)).current;
   const formatFadeAnim = useRef(new Animated.Value(1)).current;
 
-  useEffect(() => {
-    const task = InteractionManager.runAfterInteractions(() => { loadStats(); });
+  // Refetch on every focus so follower/following counts are never stale when
+  // returning to the screen (e.g. after following from a list). Reset the
+  // optimistic delta — the refetched body already reflects the new count.
+  useFocusEffect(useCallback(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      setLocalFollowerDelta(0);
+      loadStats();
+    });
     return () => task.cancel();
-  }, []);
+  }, [playerId]));
 
   const loadStats = async () => {
     try {

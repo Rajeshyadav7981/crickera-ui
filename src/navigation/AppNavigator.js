@@ -16,6 +16,7 @@ import { useUpdateCheck } from '../hooks/useUpdateCheck';
 enableFreeze(true);
 
 import SplashScreen from '../screens/SplashScreen';
+import OfflineBanner from '../components/OfflineBanner';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
@@ -58,6 +59,7 @@ import MatchDetailScreen from '../screens/match/MatchDetailScreen';
 import QuickMatchScreen from '../screens/match/QuickMatchScreen';
 import MyMatchesScreen from '../screens/match/MyMatchesScreen';
 import MyTournamentsScreen from '../screens/tournament/MyTournamentsScreen';
+import FavoritesScreen from '../screens/FavoritesScreen';
 import PlayerProfileScreen from '../screens/player/PlayerProfileScreen';
 import EditProfileScreen from '../screens/profile/EditProfileScreen';
 import UsernameSetupScreen from '../screens/profile/UsernameSetupScreen';
@@ -142,7 +144,8 @@ const MainTabs = () => (
   >
     <Tab.Screen name="Home" component={HomeTabSafe} />
     <Tab.Screen name="Tournaments" component={TournamentsTabSafe} />
-    <Tab.Screen name="Community" component={CommunityTabSafe} />
+    {/* Community/posts tab hidden for now — focusing on cricket. Re-enable later. */}
+    {/* <Tab.Screen name="Community" component={CommunityTabSafe} /> */}
     <Tab.Screen name="Profile" component={ProfileTabSafe} />
   </Tab.Navigator>
 );
@@ -150,6 +153,7 @@ const MainTabs = () => (
 const AppNavigator = () => {
   const { user, loading } = useAuth();
   const { isDark, colors: C } = useThemeContext();
+  const insets = useSafeAreaInsets();
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
@@ -183,6 +187,16 @@ const AppNavigator = () => {
       },
     }}>
       <SignInPromptProvider>
+      <OfflineBanner
+        style={{
+          position: 'absolute',
+          top: insets.top,
+          left: 0,
+          right: 0,
+          zIndex: 9999,
+          elevation: 9999,
+        }}
+      />
       <Stack.Navigator screenOptions={{
         headerShown: false,
         animation: 'slide_from_right',
@@ -210,6 +224,7 @@ const AppNavigator = () => {
         <Stack.Screen name="QuickMatch" component={QuickMatchScreen} options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="MyMatches" component={MyMatchesScreen} />
         <Stack.Screen name="MyTournaments" component={MyTournamentsScreen} />
+        <Stack.Screen name="Favorites" component={FavoritesScreen} />
         <Stack.Screen name="Toss" component={TossScreen} options={{ animation: 'fade' }} />
         <Stack.Screen name="SelectSquad" component={SelectSquadScreen} />
         <Stack.Screen name="SelectOpeners" component={SelectOpenersScreen} />

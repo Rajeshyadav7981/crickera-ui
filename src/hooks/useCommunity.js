@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { communityAPI } from '../services/api';
 
 export const COMMUNITY_KEYS = {
@@ -48,43 +48,3 @@ export const usePolls = (limit = 5) => {
   });
 };
 
-export const useComments = (postId, options = {}) => {
-  return useQuery({
-    queryKey: COMMUNITY_KEYS.comments(postId),
-    queryFn: async () => {
-      const res = await communityAPI.getComments(postId, 200, 0, 10);
-      return res.data || [];
-    },
-    enabled: !!postId,
-    staleTime: 10_000,
-    ...options,
-  });
-};
-
-export const useCreatePost = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ text, title, tag, image_url }) =>
-      communityAPI.createPost(text, title, tag, image_url),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: COMMUNITY_KEYS.all });
-    },
-  });
-};
-
-export const useToggleLike = () => {
-  return useMutation({
-    mutationFn: (postId) => communityAPI.toggleLike(postId),
-    // No invalidation — frontend handles optimistic update in PostCard state
-  });
-};
-
-export const useVotePoll = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ pollId, optionId }) => communityAPI.votePoll(pollId, optionId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: COMMUNITY_KEYS.polls });
-    },
-  });
-};

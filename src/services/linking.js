@@ -67,5 +67,3 @@ export const linkingConfig = {
 export const getMatchLink = (matchId) => `${SHARE_BASE}/share/match/${matchId}`;
 export const getScorecardLink = (matchId) => `${SHARE_BASE}/share/match/${matchId}/scorecard`;
 export const getTournamentLink = (tournamentId) => `${SHARE_BASE}/share/tournament/${tournamentId}`;
-export const getTeamLink = (teamId) => `${SHARE_BASE}/share/team/${teamId}`;
-export const getPlayerLink = (playerId) => `${SHARE_BASE}/share/player/${playerId}`;

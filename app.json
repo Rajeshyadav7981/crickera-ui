@@ -44,7 +44,7 @@
           "data": [
             {
               "scheme": "https",
-              "host": "*.creckstars.com",
+              "host": "creckstars.duckdns.org",
               "pathPrefix": "/share"
             }
           ],
@@ -59,7 +59,6 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "@react-native-community/datetimepicker",
       "expo-secure-store"
     ],
     "extra": {

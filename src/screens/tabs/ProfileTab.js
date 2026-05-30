@@ -52,14 +52,16 @@ const ProfileTab = () => {
 
   const statsLoadedRef = useRef(false);
   useFocusEffect(useCallback(() => {
-    // Reload when user changes (sign-in/out)
-    if (statsLoadedRef.current && user) return;
     const task = InteractionManager.runAfterInteractions(() => {
-      loadStats();
-      // Pull fresh user too so counts / profile photo reflect any changes
-      // that happened while the user was elsewhere in the app.
+      // Always pull fresh user so follower/following counts + profile photo
+      // reflect changes made elsewhere (e.g. following someone from another
+      // screen). This is cheap — a single /me round-trip.
       refreshUser?.().catch(() => {});
-      statsLoadedRef.current = true;
+      // Heavy stats only need to load once per mount.
+      if (!statsLoadedRef.current) {
+        loadStats();
+        statsLoadedRef.current = true;
+      }
     });
     return () => task.cancel();
   }, [user?.id]));

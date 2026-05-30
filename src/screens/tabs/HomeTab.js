@@ -16,6 +16,9 @@ import { COLORS, GRADIENTS, STATUS_CONFIG, FONTS } from '../../theme';
 import Icon from '../../components/Icon';
 import Avatar from '../../components/Avatar';
 import Skeleton, { MatchCardSkeleton, HorizontalSkeleton } from '../../components/Skeleton';
+import ConfirmModal from '../../components/ConfirmModal';
+import MatchCard from '../../components/MatchCard';
+import TournamentCard from '../../components/TournamentCard';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CARD_W = SCREEN_W * 0.75;
@@ -25,13 +28,13 @@ const HomeTab = () => {
   const { user } = useAuth();
   const navigation = useNavigation();
   const requireAuth = useRequireAuth();
-  const { location: userLocation, permissionDenied, requestLocation } = useLocation(true);
+  const { location: userLocation, permissionDenied, denialReason, requestLocation, refreshLocation, openLocationSettings } = useLocation(true);
+  const [locModalOpen, setLocModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [myMatches, setMyMatches] = useState([]);
   const [myTournaments, setMyTournaments] = useState([]);
   const [myTeams, setMyTeams] = useState([]);
-  const [nearbyMatches, setNearbyMatches] = useState([]);
   const [nearbyVenues, setNearbyVenues] = useState([]);
   const [nearbyTournaments, setNearbyTournaments] = useState([]);
   const searchRef = useRef(null);
@@ -72,36 +75,18 @@ const HomeTab = () => {
     navigation.navigate(nav, params);
   }, [navigation, requireAuth]);
 
+  const handleEnableLocation = useCallback(async () => {
+    const coords = await requestLocation();
+    if (!coords) setLocModalOpen(true);
+  }, [requestLocation]);
+
   const fetchNearby = async (coords) => {
     if (!coords) return;
     try {
-      // All three are real geo queries now (tournaments.nearby joins through
-      // the venue's lat/lng using the earthdistance GIST index — same path
-      // matches.nearby uses).
-      const [mRes, vRes, tRes] = await Promise.all([
-        matchesAPI.nearby(coords.latitude, coords.longitude, 50).catch(() => ({ data: [] })),
+      const [vRes, tRes] = await Promise.all([
         venuesAPI.nearby(coords.latitude, coords.longitude, 50).catch(() => ({ data: [] })),
         tournamentsAPI.nearby(coords.latitude, coords.longitude, 50, 20).catch(() => ({ data: [] })),
       ]);
-
-      // Live first, then upcoming, then completed (most-recent completed when
-      // no live exist). Top 10 is sliced AFTER the priority sort so a live
-      // match at the far end of the radius still beats a close completed one.
-      const matchBucket = (m) => {
-        const s = (m.status || '').toLowerCase();
-        if (s === 'live' || s === 'in_progress') return 0;
-        if (s === 'toss' || s === 'upcoming') return 1;
-        return 2;
-      };
-      const sortedMatches = (mRes.data || [])
-        .slice()
-        .sort((a, b) => {
-          const pa = matchBucket(a), pb = matchBucket(b);
-          if (pa !== pb) return pa - pb;
-          if (pa === 2) return new Date(b.match_date || 0) - new Date(a.match_date || 0);
-          return (a.distance_km || 0) - (b.distance_km || 0);
-        })
-        .slice(0, 10);
 
       const tourBucket = (t) => {
         const s = (t.status || '').toLowerCase();
@@ -114,13 +99,11 @@ const HomeTab = () => {
         .sort((a, b) => {
           const pa = tourBucket(a), pb = tourBucket(b);
           if (pa !== pb) return pa - pb;
-          // Within a bucket: closest first; for completed prefer most recent.
           if (pa === 2) return new Date(b.start_date || 0) - new Date(a.start_date || 0);
           return (a.distance_km || 0) - (b.distance_km || 0);
         })
         .slice(0, 10);
 
-      setNearbyMatches(sortedMatches);
       setNearbyVenues(vRes.data || []);
       setNearbyTournaments(sortedTournaments);
     } catch {}
@@ -229,15 +212,25 @@ const HomeTab = () => {
     if (userLocation) fetchNearby(userLocation);
   }, [userLocation]);
 
+  // Reload when the logged-in user changes (login / logout / account switch) so
+  // the home screen reflects the new auth state immediately — no manual pull-to-
+  // refresh. The focus effect alone misses this when Home is already the focused
+  // tab during the auth change (e.g. navigation.reset back to the same tab).
+  const prevUserIdRef = useRef(user?.id);
+  useEffect(() => {
+    if (prevUserIdRef.current === user?.id) return; // initial mount handled by focus effect
+    prevUserIdRef.current = user?.id;
+    setLoading(true);
+    fetchData(true);
+  }, [user?.id, fetchData]);
+
   useFocusEffect(useCallback(() => {
-    // Always force-refresh on focus so returning from LiveScoring / Scorecard /
-    // CreateMatch reflects the latest state. The backend has its own short
-    // cache (~30s) which dedupes hammering, so this is safe.
     const task = InteractionManager.runAfterInteractions(() => {
+      refreshLocation();
       fetchData(true);
     });
     return () => task.cancel();
-  }, [fetchData]));
+  }, [fetchData, refreshLocation]));
 
   const getStatusColors = useCallback((status) => {
     const cfg = STATUS_CONFIG[status];
@@ -271,7 +264,7 @@ const HomeTab = () => {
   }, []));
 
   // Memoized refresh handler
-  const onRefresh = useCallback(() => { setRefreshing(true); fetchData(true); }, [fetchData]);
+  const onRefresh = useCallback(() => { setRefreshing(true); refreshLocation(); fetchData(true); }, [fetchData, refreshLocation]);
 
   // Live matches count
   const liveCount = myMatches.filter(m => m.status === 'in_progress' || m.status === 'live').length;
@@ -363,7 +356,7 @@ const HomeTab = () => {
               { iconName: 'cricket', label: 'Quick\nMatch', nav: 'QuickMatch', authLabel: 'create a match' },
               { iconName: 'trophy', label: 'Create\nTournament', nav: 'CreateTournament', authLabel: 'create a tournament' },
               { iconName: 'team', label: 'New\nTeam', nav: 'CreateTeam', params: {}, authLabel: 'create a team' },
-              { iconName: 'stats', label: 'My\nStats', nav: 'MyStats', authLabel: 'view your stats' },
+              { iconName: 'heart', label: 'Favorites', nav: 'Favorites', authLabel: 'view your favorites' },
             ].map((a, i) => (
               <TouchableOpacity
                 key={i}
@@ -432,7 +425,7 @@ const HomeTab = () => {
 
           {/* ── Location Banner ── */}
           {permissionDenied && (
-            <TouchableOpacity style={s.locBanner} activeOpacity={0.8} onPress={requestLocation}>
+            <TouchableOpacity style={s.locBanner} activeOpacity={0.8} onPress={handleEnableLocation}>
               <Icon name="location" size={20} color={COLORS.ACCENT} style={{ marginRight: 12 }} />
               <View style={{ flex: 1 }}>
                 <Text style={s.locTitle}>Enable Location</Text>
@@ -442,113 +435,51 @@ const HomeTab = () => {
             </TouchableOpacity>
           )}
 
-          {/* ── Nearby Matches ── */}
-          {nearbyMatches.length > 0 && renderSection(
-            'Nearby Matches', null,
-            nearbyMatches.map(m => {
-              const sc = getStatusColors(m.status);
-              return (
-                <TouchableOpacity key={m.id} style={s.matchCard} activeOpacity={0.7}
-                  onPress={() => navigateToMatchDetail(m.id)}>
-                  <LinearGradient colors={GRADIENTS.SLATE_CARD} style={s.matchCardInner}>
-                    <View style={s.matchTopRow}>
-                      <View style={[s.statusBadge, { backgroundColor: sc.bg }]}>
-                        <Text style={[s.statusText, { color: sc.text }]}>{sc.label || (m.status || '').toUpperCase()}</Text>
-                      </View>
-                      <Text style={s.distBadge}>{m.distance_km} km</Text>
-                    </View>
-                    <View style={s.matchTeams}>
-                      <View style={s.matchScoreRow}>
-                        <Text style={s.teamName} numberOfLines={1}>{m.team_a_name || 'Team A'}</Text>
-                        {m.team_a_runs != null && (
-                          <Text style={s.scoreText}>{m.team_a_runs}/{m.team_a_wickets ?? 0}</Text>
-                        )}
-                      </View>
-                      <Text style={s.vsText}>VS</Text>
-                      <View style={s.matchScoreRow}>
-                        <Text style={s.teamName} numberOfLines={1}>{m.team_b_name || 'Team B'}</Text>
-                        {m.team_b_runs != null && (
-                          <Text style={s.scoreText}>{m.team_b_runs}/{m.team_b_wickets ?? 0}</Text>
-                        )}
-                      </View>
-                    </View>
-                    <View style={s.matchBottom}>
-                      <Text style={s.matchMeta}>{m.overs} overs</Text>
-                      {m.match_date && <Text style={s.matchMeta}>{formatDate(m.match_date)}</Text>}
-                      {m.venue_name && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><Icon name="venue" size={11} color={COLORS.TEXT_SECONDARY} /><Text style={s.matchMeta} numberOfLines={1}>{m.venue_name}</Text></View>}
-                    </View>
-                  </LinearGradient>
-                </TouchableOpacity>
-              );
-            })
-          )}
+          <ConfirmModal
+            visible={locModalOpen && permissionDenied}
+            icon={denialReason === 'services' ? 'crosshairs-off' : 'map-marker-alert-outline'}
+            title={
+              denialReason === 'services' ? 'Location Services are off'
+              : denialReason === 'gps' ? "Couldn't get your location"
+              : 'Enable location'
+            }
+            message={
+              denialReason === 'services'
+                ? 'Turn on Location Services in your device settings to discover nearby matches and tournaments.'
+                : denialReason === 'gps'
+                  ? "We couldn't read your location. Make sure Location is on and try again."
+                  : 'Allow location access so we can show nearby matches and tournaments around you.'
+            }
+            confirmText="Open Settings"
+            cancelText="Not now"
+            onConfirm={() => { setLocModalOpen(false); openLocationSettings(); }}
+            onCancel={() => setLocModalOpen(false)}
+          />
 
-          {/* ── Nearby Tournaments ── */}
           {nearbyTournaments.length > 0 && renderSection(
             'Nearby Tournaments', null,
-            nearbyTournaments.map(t => {
-              const sc = getStatusColors(t.status);
-              return (
-                <TouchableOpacity key={t.id} style={s.tournCard} activeOpacity={0.7}
-                  onPress={() => navigateToTournamentDetail(t.id)}>
-                  <LinearGradient colors={GRADIENTS.SLATE_CARD} style={s.tournCardInner}>
-                    <View style={s.matchTopRow}>
-                      <View style={[s.statusBadge, { backgroundColor: sc.bg }]}>
-                        <Text style={[s.statusText, { color: sc.text }]}>{sc.label || (t.status || 'draft').toUpperCase()}</Text>
-                      </View>
-                      {t.tournament_code && <Text style={s.codeBadge}>{t.tournament_code}</Text>}
-                    </View>
-                    <Text style={s.tournName} numberOfLines={2}>{t.name}</Text>
-                    <View style={s.matchBottom}>
-                      {t.location && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><Icon name="venue" size={11} color={COLORS.TEXT_SECONDARY} /><Text style={s.matchMeta} numberOfLines={1}>{t.location}</Text></View>}
-                      {t.start_date && <Text style={s.matchMeta}>{formatDate(t.start_date)}</Text>}
-                    </View>
-                  </LinearGradient>
-                </TouchableOpacity>
-              );
-            })
+            nearbyTournaments.map(t => (
+              <TournamentCard
+                key={t.id}
+                tournament={t}
+                width={320}
+                monochrome
+                onPress={() => navigateToTournamentDetail(t.id)}
+              />
+            ))
           )}
 
-          {/* ── My Matches ── */}
           {myMatches.length > 0 && renderSection(
             'My Matches', navigateToMyMatches,
-            myMatches.map(m => {
-              const sc = getStatusColors(m.status);
-              return (
-                <TouchableOpacity key={m.id} style={s.matchCard} activeOpacity={0.7}
-                  onPress={() => navigateToMatchDetail(m.id)}>
-                  <LinearGradient colors={GRADIENTS.SLATE_CARD} style={s.matchCardInner}>
-                    <View style={s.matchTopRow}>
-                      <View style={[s.statusBadge, { backgroundColor: sc.bg }]}>
-                        <Text style={[s.statusText, { color: sc.text }]}>{sc.label || m.status?.replace('_', ' ').toUpperCase()}</Text>
-                      </View>
-                      {m.match_code && <Text style={s.codeBadge}>{m.match_code}</Text>}
-                    </View>
-                    <View style={s.matchTeams}>
-                      <View style={s.matchScoreRow}>
-                        <Text style={s.teamName} numberOfLines={1}>{m.team_a_name || 'Team A'}</Text>
-                        {m.team_a_runs != null && (
-                          <Text style={s.scoreText}>{m.team_a_runs}/{m.team_a_wickets ?? 0}{m.team_a_overs != null ? ` (${m.team_a_overs})` : ''}</Text>
-                        )}
-                      </View>
-                      <Text style={s.vsText}>VS</Text>
-                      <View style={s.matchScoreRow}>
-                        <Text style={s.teamName} numberOfLines={1}>{m.team_b_name || 'Team B'}</Text>
-                        {m.team_b_runs != null && (
-                          <Text style={s.scoreText}>{m.team_b_runs}/{m.team_b_wickets ?? 0}{m.team_b_overs != null ? ` (${m.team_b_overs})` : ''}</Text>
-                        )}
-                      </View>
-                    </View>
-                    <View style={s.matchBottom}>
-                      <Text style={s.matchMeta}>{m.overs} overs</Text>
-                      {m.match_date && <Text style={s.matchMeta}>{formatDate(m.match_date)}</Text>}
-                      {m.venue_name && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><Icon name="venue" size={11} color={COLORS.TEXT_SECONDARY} /><Text style={s.matchMeta} numberOfLines={1}>{m.venue_name}</Text></View>}
-                    </View>
-                    {m.result_summary && <Text style={s.resultText} numberOfLines={1}>{m.result_summary}</Text>}
-                  </LinearGradient>
-                </TouchableOpacity>
-              );
-            })
+            myMatches.map(m => (
+              <MatchCard
+                key={m.id}
+                match={m}
+                width={300}
+                monochrome
+                onPress={() => navigateToMatchDetail(m.id)}
+              />
+            ))
           )}
 
           {/* ── My Teams ── */}
@@ -568,29 +499,17 @@ const HomeTab = () => {
             ))
           )}
 
-          {/* ── My Tournaments ── */}
           {myTournaments.length > 0 && renderSection(
             'My Tournaments', navigateToMyTournaments,
-            myTournaments.map(t => {
-              const sc = getStatusColors(t.status);
-              return (
-                <TouchableOpacity key={t.id} style={s.tournCard} activeOpacity={0.7}
-                  onPress={() => navigateToTournamentDetail(t.id)}>
-                  <LinearGradient colors={GRADIENTS.SLATE_CARD} style={s.tournCardInner}>
-                    <View style={s.matchTopRow}>
-                      <View style={[s.statusBadge, { backgroundColor: sc.bg }]}>
-                        <Text style={[s.statusText, { color: sc.text }]}>{sc.label || (t.status || 'draft').toUpperCase()}</Text>
-                      </View>
-                      {t.tournament_code && <Text style={s.codeBadge}>{t.tournament_code}</Text>}
-                    </View>
-                    <Text style={s.tournName} numberOfLines={2}>{t.name}</Text>
-                    <View style={s.matchBottom}>
-                      {t.start_date && <Text style={s.matchMeta}>{formatDate(t.start_date)}</Text>}
-                    </View>
-                  </LinearGradient>
-                </TouchableOpacity>
-              );
-            })
+            myTournaments.map(t => (
+              <TournamentCard
+                key={t.id}
+                tournament={t}
+                width={320}
+                monochrome
+                onPress={() => navigateToTournamentDetail(t.id)}
+              />
+            ))
           )}
 
           {/* ── Empty State ── */}

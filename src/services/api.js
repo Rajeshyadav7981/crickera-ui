@@ -326,7 +326,13 @@ export const scoringAPI = {
   noResult: (matchId, reason) => api.post(`/api/matches/${matchId}/no-result`, { reason }),
   endOver: (matchId, nextBowlerId) => api.post(`/api/matches/${matchId}/end-over`, { next_bowler_id: nextBowlerId }),
   endInnings: (matchId) => api.post(`/api/matches/${matchId}/end-innings`),
+  declareInnings: (matchId) => api.post(`/api/matches/${matchId}/declare-innings`),
   swapBatters: (matchId) => api.post(`/api/matches/${matchId}/swap-batters`),
+  retireHurt: (matchId, retiredPlayerId, newBatsmanId) =>
+    api.post(`/api/matches/${matchId}/retired-hurt`, {
+      retired_player_id: retiredPlayerId,
+      new_batsman_id: newBatsmanId,
+    }),
   endMatch: (matchId) => api.post(`/api/matches/${matchId}/end-match`),
   endMatchAsTie: (matchId) => api.post(`/api/matches/${matchId}/end-match?force_tie=true`),
   revert: (matchId) => api.post(`/api/matches/${matchId}/revert`),
@@ -382,17 +388,19 @@ export const communityAPI = {
   getMentions: (limit = 20, offset = 0) => api.get('/api/community/mentions', { params: { limit, offset } }),
 };
 
-export const notificationsAPI = {
-  registerToken: (token, device_type) => api.post('/api/notifications/push-token', { token, device_type }),
-  removeToken: (token) => api.delete('/api/notifications/push-token', { data: { token } }),
-  subscribe: (matchId) => api.post(`/api/notifications/subscribe/${matchId}`),
-  unsubscribe: (matchId) => api.delete(`/api/notifications/subscribe/${matchId}`),
-  getSubscriptions: () => api.get('/api/notifications/subscriptions'),
-};
-
 export const appAPI = {
   checkVersion: (currentVersion) =>
     api.get('/api/app/version', { params: { current: currentVersion } }),
+};
+
+export const favoritesAPI = {
+  ids: () => api.get('/api/favorites/ids'),
+  addMatch: (matchId) => api.post(`/api/favorites/matches/${matchId}`),
+  removeMatch: (matchId) => api.delete(`/api/favorites/matches/${matchId}`),
+  listMatches: () => api.get('/api/favorites/matches'),
+  addTournament: (tournamentId) => api.post(`/api/favorites/tournaments/${tournamentId}`),
+  removeTournament: (tournamentId) => api.delete(`/api/favorites/tournaments/${tournamentId}`),
+  listTournaments: () => api.get('/api/favorites/tournaments'),
 };
 
 export const WS_BASE_URL = API_BASE_URL.replace('http', 'ws');

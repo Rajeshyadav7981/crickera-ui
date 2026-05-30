@@ -10,6 +10,7 @@ import { teamsAPI } from '../../services/api';
 import { COLORS, FONTS } from '../../theme';
 import BackButton from '../../components/BackButton';
 import Skeleton from '../../components/Skeleton';
+import PlayerAvatar from '../../components/PlayerAvatar';
 
 const TeamDetailScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
@@ -178,9 +179,7 @@ const TeamDetailScreen = ({ navigation, route }) => {
             onPress={() => navigation.navigate('PlayerProfile', { playerId: p.player_id })}
             activeOpacity={0.7}
           >
-            <View style={[styles.playerAvatar, { backgroundColor: teamColor + '25' }]}>
-              <Text style={[styles.playerInitial, { color: teamColor }]}>{p.first_name?.charAt(0)}</Text>
-            </View>
+            <PlayerAvatar player={p} size={44} color={teamColor} />
             <View style={styles.playerInfo}>
               <Text style={styles.playerName} numberOfLines={1}>{p.full_name}</Text>
               <View style={styles.playerMeta}>

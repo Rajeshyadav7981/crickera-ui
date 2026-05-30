@@ -6,6 +6,7 @@ import { ThemeProvider, useThemeContext } from './src/context/ThemeContext';
 import { AuthProvider } from './src/context/AuthContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { ToastProvider } from './src/components/Toast';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import NetworkBar from './src/components/NetworkBar';
 import AppNavigator from './src/navigation/AppNavigator';
 
@@ -17,17 +18,19 @@ const StatusBarWithTheme = () => {
 export default function App() {
   const appContent = (
     <ErrorBoundary>
-      <ThemeProvider>
-        <QueryClientProvider client={queryClient}>
-          <AuthProvider>
-            <ToastProvider>
-              <StatusBarWithTheme />
-              <NetworkBar />
-              <AppNavigator />
-            </ToastProvider>
-          </AuthProvider>
-        </QueryClientProvider>
-      </ThemeProvider>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <QueryClientProvider client={queryClient}>
+            <AuthProvider>
+              <ToastProvider>
+                <StatusBarWithTheme />
+                <NetworkBar />
+                <AppNavigator />
+              </ToastProvider>
+            </AuthProvider>
+          </QueryClientProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
     </ErrorBoundary>
   );
 

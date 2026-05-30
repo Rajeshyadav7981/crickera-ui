@@ -54,6 +54,7 @@ const QuickMatchScreen = ({ navigation }) => {
   const [selectingFor, setSelectingFor] = useState(null); // 'A' or 'B'
 
   // Step 2: Match details
+  const [matchName, setMatchName] = useState('');
   const [overs, setOvers] = useState(20);
   const [ballType, setBallType] = useState('Tennis');
   const [pitchType, setPitchType] = useState(null);
@@ -145,6 +146,7 @@ const QuickMatchScreen = ({ navigation }) => {
 
     setCreating(true);
     try {
+      const cleanName = matchName.trim();
       const res = await matchesAPI.create({
         team_a_id: teamA.id,
         team_b_id: teamB.id,
@@ -152,6 +154,7 @@ const QuickMatchScreen = ({ navigation }) => {
         match_type: matchCategory,
         ...(venue && { venue_id: venue.id }),
         ...(matchDate && { match_date: matchDate }),
+        ...(cleanName && { name: cleanName }),
       });
       const match = res.data;
       // Navigate to toss screen
@@ -476,6 +479,19 @@ const QuickMatchScreen = ({ navigation }) => {
           <MaterialCommunityIcons name="map-marker" size={14} color={COLORS.TEXT_MUTED} />
         </TouchableOpacity>
       )}
+
+      {/* Match Name — optional */}
+      <Text style={styles.fieldLabel}>Match Name (optional)</Text>
+      <TextInput
+        style={styles.matchNameInput}
+        value={matchName}
+        onChangeText={setMatchName}
+        placeholder="e.g. Sunday Friendlies"
+        placeholderTextColor={MUTED}
+        maxLength={200}
+        returnKeyType="done"
+      />
+      <Text style={styles.matchNameHelper}>Leave blank to use team names</Text>
 
       {/* Date — REQUIRED */}
       <Text style={styles.fieldLabel}>
@@ -946,6 +962,12 @@ const styles = StyleSheet.create({
 
   /* Details */
   fieldLabel: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '600', color: DARK, marginBottom: 10, marginTop: 18 },
+  matchNameInput: {
+    height: 48, backgroundColor: COLORS.SURFACE, borderRadius: 10,
+    borderWidth: 1, borderColor: BORDER, paddingHorizontal: 14,
+    fontFamily: FONTS.family, fontSize: 15, color: DARK,
+  },
+  matchNameHelper: { fontFamily: FONTS.family, fontSize: 12, color: MUTED, marginTop: 6 },
   toggleRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   toggleBtn: {
     flex: 1, minWidth: 70, height: 42, borderRadius: 10,

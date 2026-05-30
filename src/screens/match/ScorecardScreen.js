@@ -11,6 +11,7 @@ import Icon from '../../components/Icon';
 import Avatar from '../../components/Avatar';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Skeleton from '../../components/Skeleton';
+import ConfirmModal from '../../components/ConfirmModal';
 import ManhattanChart from '../../components/charts/ManhattanChart';
 import WormChart from '../../components/charts/WormChart';
 import FallOfWicketsChart from '../../components/charts/FallOfWicketsChart';
@@ -55,6 +56,7 @@ const ScorecardScreen = ({ navigation, route }) => {
   const [loading, setLoading] = useState(true);
   const [activeInnings, setActiveInnings] = useState(0);
   const [reverting, setReverting] = useState(false);
+  const [showRevertConfirm, setShowRevertConfirm] = useState(false);
 
   useEffect(() => {
     const task = InteractionManager.runAfterInteractions(() => {
@@ -83,31 +85,19 @@ const ScorecardScreen = ({ navigation, route }) => {
   const resultType = matchInfo?.result_type || null;
   const isInterrupted = isCompleted && resultType && resultType !== 'normal';
 
-  const handleRevertMatch = () => {
-    const isAbandoned = resultType === 'no_result' || resultType === 'abandoned';
-    const title = isAbandoned ? 'Revert Abandoned Match' : 'Revert Match';
-    const message = isAbandoned
-      ? 'This will reopen the match so you can resume scoring. The "No Result" status will be removed.'
-      : 'This will reopen the match and set it back to live.';
+  const handleRevertMatch = () => setShowRevertConfirm(true);
 
-    Alert.alert(title, message, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Revert & Resume',
-        style: 'destructive',
-        onPress: async () => {
-          setReverting(true);
-          try {
-            await scoringAPI.revert(matchId);
-            navigation.replace('LiveScoring', { matchId });
-          } catch (e) {
-            Alert.alert('Error', e.response?.data?.detail || 'Failed to revert match');
-          } finally {
-            setReverting(false);
-          }
-        },
-      },
-    ]);
+  const confirmRevertMatch = async () => {
+    setReverting(true);
+    try {
+      await scoringAPI.revert(matchId);
+      setShowRevertConfirm(false);
+      navigation.replace('LiveScoring', { matchId });
+    } catch (e) {
+      Alert.alert('Error', e.response?.data?.detail || 'Failed to revert match');
+    } finally {
+      setReverting(false);
+    }
   };
 
   const onInningsChange = useCallback((i) => {
@@ -344,6 +334,7 @@ const ScorecardScreen = ({ navigation, route }) => {
             <View style={styles.pomContent}>
               <View style={styles.pomAvatarContainer}>
                 <Avatar
+                  uri={pom.profile}
                   name={pom.player_name}
                   size={64}
                   color={GOLD}
@@ -481,7 +472,7 @@ const ScorecardScreen = ({ navigation, route }) => {
                 <TouchableOpacity key={i} style={styles.tableDataRow} onPress={() => goToPlayer(b.player_id)} activeOpacity={0.6}>
                   <View style={[styles.cellName]}>
                     <Text style={styles.batsmanName}>{b.player_name}</Text>
-                    <Text style={styles.dismissalText}>{b.is_out ? b.how_out : 'not out'}</Text>
+                    <Text style={styles.dismissalText}>{b.how_out || 'not out'}</Text>
                   </View>
                   <Text style={[styles.tdCell, styles.cellStat, styles.runsBold]}>{b.runs}</Text>
                   <Text style={[styles.tdCell, styles.cellStat]}>{b.balls_faced}</Text>
@@ -496,7 +487,10 @@ const ScorecardScreen = ({ navigation, route }) => {
               </View>
               <View style={styles.totalRow}>
                 <Text style={styles.totalLabel}>Total</Text>
-                <Text style={styles.totalValue}>{innings.total_runs}/{innings.total_wickets} ({innings.total_overs} ov)</Text>
+                <Text style={styles.totalValue}>
+                  {innings.total_runs}/{innings.total_wickets} ({innings.total_overs} ov)
+                  {innings.declared ? <Text style={styles.declaredTag}>{' declared'}</Text> : null}
+                </Text>
               </View>
             </View>
 
@@ -584,7 +578,7 @@ const ScorecardScreen = ({ navigation, route }) => {
                   <TouchableOpacity key={i} style={styles.tableDataRow} onPress={() => goToPlayer(b.player_id)} activeOpacity={0.6}>
                     <View style={[styles.cellName]}>
                       <Text style={styles.batsmanName}>{b.player_name}</Text>
-                      <Text style={styles.dismissalText}>{b.is_out ? b.how_out : 'not out'}</Text>
+                      <Text style={styles.dismissalText}>{b.how_out || 'not out'}</Text>
                     </View>
                     <Text style={[styles.tdCell, styles.cellStat, styles.runsBold]}>{b.runs}</Text>
                     <Text style={[styles.tdCell, styles.cellStat]}>{b.balls_faced}</Text>
@@ -595,7 +589,10 @@ const ScorecardScreen = ({ navigation, route }) => {
                 ))}
                 <View style={styles.totalRow}>
                   <Text style={styles.totalLabel}>Total</Text>
-                  <Text style={styles.totalValue}>{si.total_runs}/{si.total_wickets} ({si.total_overs} ov)</Text>
+                  <Text style={styles.totalValue}>
+                    {si.total_runs}/{si.total_wickets} ({si.total_overs} ov)
+                    {si.declared ? <Text style={styles.declaredTag}>{' declared'}</Text> : null}
+                  </Text>
                 </View>
 
                 {/* SO Bowling */}
@@ -622,6 +619,27 @@ const ScorecardScreen = ({ navigation, route }) => {
           </View>
         )}
       </ScrollView>
+
+      <ConfirmModal
+        visible={showRevertConfirm}
+        icon="restart"
+        title={
+          resultType === 'no_result' || resultType === 'abandoned'
+            ? 'Revert Abandoned Match'
+            : 'Revert Match'
+        }
+        message={
+          resultType === 'no_result' || resultType === 'abandoned'
+            ? 'This will reopen the match so you can resume scoring. The "No Result" status will be removed.'
+            : 'This will reopen the match and set it back to live so you can keep scoring.'
+        }
+        confirmText="Revert & Resume"
+        cancelText="Cancel"
+        destructive
+        loading={reverting}
+        onConfirm={confirmRevertMatch}
+        onCancel={() => { if (!reverting) setShowRevertConfirm(false); }}
+      />
     </View>
   );
 };
@@ -970,6 +988,10 @@ const styles = StyleSheet.create({
   },
   totalLabel: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '800', color: DARK },
   totalValue: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '800', color: DARK },
+  declaredTag: {
+    fontFamily: FONTS.family, fontSize: 12, fontWeight: '700',
+    color: COLORS.SUCCESS_LIGHT, fontStyle: 'italic',
+  },
 
   /* Fall of Wickets */
   fowContainer: {

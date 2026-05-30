@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usersAPI } from '../services/api';
 
@@ -59,32 +59,6 @@ export const useUserProfile = (username, options = {}) => {
     staleTime: 5 * 60_000,
     gcTime: 10 * 60_000,
     ...options,
-  });
-};
-
-// Follow Mutations
-
-export const useFollowUser = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (userId) => usersAPI.follow(userId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users', 'profile'] });
-      queryClient.invalidateQueries({ queryKey: ['users', 'followers'] });
-      queryClient.invalidateQueries({ queryKey: ['users', 'following'] });
-    },
-  });
-};
-
-export const useUnfollowUser = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (userId) => usersAPI.unfollow(userId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users', 'profile'] });
-      queryClient.invalidateQueries({ queryKey: ['users', 'followers'] });
-      queryClient.invalidateQueries({ queryKey: ['users', 'following'] });
-    },
   });
 };
 

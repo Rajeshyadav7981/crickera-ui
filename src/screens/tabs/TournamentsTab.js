@@ -9,6 +9,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tournamentsAPI, matchesAPI, teamsAPI } from '../../services/api';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
+import { useLocation } from '../../hooks/useLocation';
 import { COLORS, getStatusInfo as themeGetStatusInfo, FONTS } from '../../theme';
 import Icon from '../../components/Icon';
 import MatchCard from '../../components/MatchCard';
@@ -78,6 +79,7 @@ const TournamentsTab = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const requireAuth = useRequireAuth();
+  const { location: userLocation } = useLocation(true);
 
   // Tab state
   const [activeTab, setActiveTab] = useState('tournaments');
@@ -158,7 +160,9 @@ const TournamentsTab = () => {
   const fetchTournaments = useCallback(async (reset = false) => {
     if (!reset && !tournHasMoreRef.current) return;
 
+    const useNearby = !tournSearch.trim() && tournFilter === 'All' && !!userLocation;
     const offset = reset ? 0 : tournOffsetRef.current;
+    if (useNearby && !reset) return;
     if (reset) {
       setTournLoading(true);
     } else {
@@ -166,12 +170,19 @@ const TournamentsTab = () => {
     }
 
     try {
-      const params = { limit: PAGE_SIZE, offset };
-      if (tournFilter !== 'All') params.status = STATUS_MAP_TOURN[tournFilter];
-      if (tournSearch.trim()) params.search = tournSearch.trim();
-
-      const res = await tournamentsAPI.list(params);
-      const data = res.data || [];
+      let data = [];
+      if (useNearby) {
+        const res = await tournamentsAPI.nearby(
+          userLocation.latitude, userLocation.longitude, 50, 50,
+        );
+        data = res.data || [];
+      } else {
+        const params = { limit: PAGE_SIZE, offset };
+        if (tournFilter !== 'All') params.status = STATUS_MAP_TOURN[tournFilter];
+        if (tournSearch.trim()) params.search = tournSearch.trim();
+        const res = await tournamentsAPI.list(params);
+        data = res.data || [];
+      }
 
       if (reset) {
         setTournaments(data);
@@ -188,8 +199,13 @@ const TournamentsTab = () => {
         });
       }
 
-      tournOffsetRef.current = offset + data.length;
-      tournHasMoreRef.current = data.length >= PAGE_SIZE;
+      if (useNearby) {
+        tournOffsetRef.current = data.length;
+        tournHasMoreRef.current = false;
+      } else {
+        tournOffsetRef.current = offset + data.length;
+        tournHasMoreRef.current = data.length >= PAGE_SIZE;
+      }
     } catch {
       if (reset) setTournaments([]);
     } finally {
@@ -197,13 +213,15 @@ const TournamentsTab = () => {
       setTournLoadingMore(false);
       setTournRefreshing(false);
     }
-  }, [tournFilter, tournSearch]);
+  }, [tournFilter, tournSearch, userLocation]);
 
   /* ── Fetch Matches (paginated) ── */
   const fetchMatches = useCallback(async (reset = false) => {
     if (!reset && !matchHasMoreRef.current) return;
 
+    const useNearby = !matchSearch.trim() && matchFilter === 'All' && !!userLocation;
     const offset = reset ? 0 : matchOffsetRef.current;
+    if (useNearby && !reset) return;
     if (reset) {
       setMatchLoading(true);
     } else {
@@ -211,12 +229,19 @@ const TournamentsTab = () => {
     }
 
     try {
-      const params = { limit: PAGE_SIZE, offset };
-      if (matchFilter !== 'All') params.status = STATUS_MAP_MATCH[matchFilter];
-      if (matchSearch.trim()) params.search = matchSearch.trim();
-
-      const res = await matchesAPI.list(params);
-      const data = res.data || [];
+      let data = [];
+      if (useNearby) {
+        const res = await matchesAPI.nearby(
+          userLocation.latitude, userLocation.longitude, 50,
+        );
+        data = res.data || [];
+      } else {
+        const params = { limit: PAGE_SIZE, offset };
+        if (matchFilter !== 'All') params.status = STATUS_MAP_MATCH[matchFilter];
+        if (matchSearch.trim()) params.search = matchSearch.trim();
+        const res = await matchesAPI.list(params);
+        data = res.data || [];
+      }
 
       if (reset) {
         setMatches(data);
@@ -224,8 +249,13 @@ const TournamentsTab = () => {
         setMatches(prev => [...prev, ...data]);
       }
 
-      matchOffsetRef.current = offset + data.length;
-      matchHasMoreRef.current = data.length >= PAGE_SIZE;
+      if (useNearby) {
+        matchOffsetRef.current = data.length;
+        matchHasMoreRef.current = false;
+      } else {
+        matchOffsetRef.current = offset + data.length;
+        matchHasMoreRef.current = data.length >= PAGE_SIZE;
+      }
     } catch {
       if (reset) setMatches([]);
     } finally {
@@ -233,7 +263,7 @@ const TournamentsTab = () => {
       setMatchLoadingMore(false);
       setMatchRefreshing(false);
     }
-  }, [matchFilter, matchSearch]);
+  }, [matchFilter, matchSearch, userLocation]);
 
   /* ── Initial load on focus — only refetch if stale (>60s) ── */
   const lastFetchRef = useRef(0);
@@ -275,6 +305,22 @@ const TournamentsTab = () => {
     matchHasMoreRef.current = true;
     fetchMatches(true);
   }, [matchFilter]);
+
+  const hasLocationOnceRef = useRef(false);
+  useEffect(() => {
+    if (!userLocation || hasLocationOnceRef.current) return;
+    hasLocationOnceRef.current = true;
+    if (!tournSearch.trim() && tournFilter === 'All') {
+      tournOffsetRef.current = 0;
+      tournHasMoreRef.current = true;
+      fetchTournaments(true);
+    }
+    if (!matchSearch.trim() && matchFilter === 'All') {
+      matchOffsetRef.current = 0;
+      matchHasMoreRef.current = true;
+      fetchMatches(true);
+    }
+  }, [userLocation, tournSearch, tournFilter, matchSearch, matchFilter, fetchTournaments, fetchMatches]);
 
   /* ── Debounced search ── */
   // Use refs to always call the latest fetch function (avoids stale closure in setTimeout)
@@ -418,7 +464,6 @@ const TournamentsTab = () => {
   const renderMatchItem = useCallback(({ item: m }) => (
     <MatchCard
       match={m}
-      width="100%"
       style={{ marginBottom: 10 }}
       onPress={() => {
         if (m.status === 'live' || m.status === 'in_progress') {
@@ -490,6 +535,7 @@ const TournamentsTab = () => {
               <MatchCard
                 key={m.id}
                 match={m}
+                width={310}
                 onPress={() => navigation.navigate('LiveScoring', { matchId: m.id })}
               />
             ))}

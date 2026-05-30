@@ -14,6 +14,8 @@ import Skeleton, { MatchCardSkeleton, ListSkeleton } from '../../components/Skel
 import TabContentSkeleton from '../../components/TabContentSkeleton';
 import MatchCard from '../../components/MatchCard';
 import Avatar from '../../components/Avatar';
+import ConfirmModal from '../../components/ConfirmModal';
+import FavoriteButton from '../../components/FavoriteButton';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PRIMARY = COLORS.ACCENT;
@@ -63,7 +65,13 @@ const getShortName = (team) => {
   if (!team) return 'TBD';
   return team.short_name || team.name?.substring(0, 3).toUpperCase() || team.name || 'TBD';
 };
-const stagePrettyName = (s) => (s || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+const stagePrettyName = (s) => {
+  if (s && typeof s === 'object') {
+    if (s.stage_label) return s.stage_label;
+    return (s.stage_name || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+  return (s || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
 const formatOversLabel = (overs) => {
   if (!overs) return '';
   if (overs === 50) return 'ODI';
@@ -104,6 +112,8 @@ const TournamentDetailScreen = ({ navigation, route }) => {
   const [editForm, setEditForm] = useState({});
   const [editSaving, setEditSaving] = useState(false);
   const [editShowStartPicker, setEditShowStartPicker] = useState(false);
+  const [adminPrompt, setAdminPrompt] = useState(null);
+  const [adminBusy, setAdminBusy] = useState(false);
 
   const activeTabIdx = TABS.indexOf(activeTab);
 
@@ -315,15 +325,18 @@ const TournamentDetailScreen = ({ navigation, route }) => {
   const toMatchCardData = useCallback((match) => {
     const teamA = (teams || []).find((t) => t.id === match.team_a_id);
     const teamB = (teams || []).find((t) => t.id === match.team_b_id);
+    const stage = (stages || []).find((s) => s.stage_id === match.stage_id);
     return {
       ...match,
-      team_a_name: teamA?.short_name || teamA?.name || 'TBD',
-      team_b_name: teamB?.short_name || teamB?.name || 'TBD',
+      team_a_name: teamA?.name || teamA?.short_name || 'TBD',
+      team_b_name: teamB?.name || teamB?.short_name || 'TBD',
       team_a_color: teamA?.color,
       team_b_color: teamB?.color,
       overs: match.overs || tournament?.overs_per_match,
+      stage_label: stage?.stage_label || stage?.label || null,
+      tournament_name: tournament?.name,
     };
-  }, [teams, tournament?.overs_per_match]);
+  }, [teams, stages, tournament?.overs_per_match, tournament?.name]);
 
   const handleMatchCardPress = useCallback((match) => {
     if (match.status === 'live' || match.status === 'in_progress') {
@@ -493,7 +506,7 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                       )}
                     </View>
                     <Text style={styles.progressionLabel} numberOfLines={1}>
-                      {stagePrettyName(s.stage_name)}
+                      {stagePrettyName(s)}
                     </Text>
                     <Text style={styles.progressionSub}>
                       {stageCompleted}/{stageTotal}
@@ -549,7 +562,7 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                       </View>
                       <View style={styles.timelineContent}>
                         <Text style={[styles.timelineStageName, isActive && { color: DARK, fontWeight: '700' }]}>
-                          {stagePrettyName(s.stage_name)}
+                          {stagePrettyName(s)}
                         </Text>
                         {stageTotal > 0 && (
                           <View style={styles.timelineProgress}>
@@ -678,7 +691,6 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                 <MatchCard
                   key={m.id}
                   match={toMatchCardData(m)}
-                  width="100%"
                   onPress={() => handleMatchCardPress(m)}
                 />
               ))}
@@ -700,7 +712,6 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                 <MatchCard
                   key={m.id}
                   match={toMatchCardData(m)}
-                  width="100%"
                   onPress={() => handleMatchCardPress(m)}
                 />
               ))}
@@ -708,48 +719,70 @@ const TournamentDetailScreen = ({ navigation, route }) => {
           </View>
         )}
 
-        {/* Quick Actions for Creator */}
-        {isCreator && tournament?.status !== 'completed' && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Quick Actions</Text>
-            <View style={styles.actionsGrid}>
-              {matches.length === 0 && (
-                <TouchableOpacity
-                  style={styles.actionCard}
-                  onPress={() => navigation.navigate('TournamentSetup', {
-                    tournamentId, tournamentName: tournament.name, existingTeams: teams,
-                  })}
-                >
-                  <Text style={styles.actionCardIcon}>⚙️</Text>
-                  <Text style={styles.actionCardText}>Setup Tournament</Text>
-                </TouchableOpacity>
-              )}
-              {teams.length >= 2 && (
-                <TouchableOpacity
-                  style={styles.actionCard}
-                  onPress={() => navigation.navigate('CreateMatch', { tournamentId, teams })}
-                >
-                  <Text style={styles.actionCardIcon}>🏏</Text>
-                  <Text style={styles.actionCardText}>Add Match</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                style={styles.actionCard}
-                onPress={() => {
-                  switchToTab(TABS.indexOf('Standings'));
-                  if (stages.length > 0) {
-                    loadStageStandings(stages[0]?.stage_id);
-                  } else {
-                    loadStandings();
-                  }
-                }}
-              >
-                <Text style={styles.actionCardIcon}>📊</Text>
-                <Text style={styles.actionCardText}>Points Table</Text>
-              </TouchableOpacity>
+        {isCreator && tournament?.status !== 'completed' && (() => {
+          const cards = [];
+          if (matches.length === 0) {
+            cards.push({
+              key: 'setup',
+              icon: 'cog-outline',
+              tint: COLORS.ACCENT,
+              label: 'Setup Tournament',
+              hint: 'Stages & fixtures',
+              onPress: () => navigation.navigate('TournamentSetup', {
+                tournamentId, tournamentName: tournament.name, existingTeams: teams,
+              }),
+            });
+          }
+          if (teams.length >= 2) {
+            cards.push({
+              key: 'add',
+              icon: 'cricket',
+              tint: COLORS.SUCCESS_LIGHT,
+              label: 'Add Match',
+              hint: 'One-off fixture',
+              onPress: () => navigation.navigate('CreateMatch', { tournamentId, teams }),
+            });
+          }
+          cards.push({
+            key: 'points',
+            icon: 'trophy-outline',
+            tint: COLORS.WARNING_LIGHT,
+            label: 'Points Table',
+            hint: 'Standings & NRR',
+            onPress: () => {
+              switchToTab(TABS.indexOf('Standings'));
+              if (stages.length > 0) loadStageStandings(stages[0]?.stage_id);
+              else loadStandings();
+            },
+          });
+          if (cards.length === 0) return null;
+          const cardWidth = cards.length >= 3
+            ? (SCREEN_WIDTH - 56) / 3
+            : cards.length === 2
+              ? (SCREEN_WIDTH - 50) / 2
+              : (SCREEN_WIDTH - 50) / 2;
+          return (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Quick Actions</Text>
+              <View style={styles.actionsGrid}>
+                {cards.map((card) => (
+                  <TouchableOpacity
+                    key={card.key}
+                    style={[styles.actionCardV2, { width: cardWidth, borderColor: card.tint + '40' }]}
+                    onPress={card.onPress}
+                    activeOpacity={0.85}
+                  >
+                    <View style={[styles.actionCardIconWrap, { backgroundColor: card.tint + '1A' }]}>
+                      <MaterialCommunityIcons name={card.icon} size={22} color={card.tint} />
+                    </View>
+                    <Text style={styles.actionCardLabel} numberOfLines={1}>{card.label}</Text>
+                    <Text style={styles.actionCardHint} numberOfLines={1}>{card.hint}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
-          </View>
-        )}
+          );
+        })()}
 
         {/* Recent Results */}
         {completedMatches.length > 0 && (
@@ -765,7 +798,6 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                 <MatchCard
                   key={m.id}
                   match={toMatchCardData(m)}
-                  width="100%"
                   onPress={() => handleMatchCardPress(m)}
                 />
               ))}
@@ -773,20 +805,25 @@ const TournamentDetailScreen = ({ navigation, route }) => {
           </View>
         )}
 
-        {/* Empty state for brand new tournament */}
         {matches.length === 0 && teams.length === 0 && (
-          <View style={styles.emptyState}>
-            <Text style={{ fontSize: 48, marginBottom: 12 }}>🏏</Text>
-            <Text style={styles.emptyTitle}>Get Started</Text>
-            <Text style={styles.emptyText}>Add teams and set up your tournament to start scheduling matches</Text>
+          <View style={styles.heroEmpty}>
+            <View style={styles.heroEmptyIconWrap}>
+              <MaterialCommunityIcons name="cricket" size={36} color={COLORS.ACCENT} />
+            </View>
+            <Text style={styles.heroEmptyTitle}>Let's get the first match going</Text>
+            <Text style={styles.heroEmptyText}>
+              Add at least two teams, pick a format, and the fixtures will generate themselves.
+            </Text>
             {isCreator && (
               <TouchableOpacity
-                style={[styles.createMatchBtn, { marginTop: 20, paddingHorizontal: 40 }]}
+                style={styles.primaryCta}
                 onPress={() => navigation.navigate('TournamentSetup', {
                   tournamentId, tournamentName: tournament.name, existingTeams: [],
                 })}
+                activeOpacity={0.85}
               >
-                <Text style={styles.createMatchBtnText}>Setup Tournament</Text>
+                <MaterialCommunityIcons name="cog-play-outline" size={18} color="#fff" />
+                <Text style={styles.primaryCtaText}>Setup Tournament</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -809,49 +846,20 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                 {stages.map((s) => (
                   <View key={s.stage_id} style={styles.adminStageRow}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.adminStageName}>{stagePrettyName(s.stage_name)}</Text>
+                      <Text style={styles.adminStageName}>{stagePrettyName(s)}</Text>
                       <Text style={styles.adminStageMeta}>
                         {s.status} • {s.completed_matches || 0}/{s.total_matches || 0} matches
                       </Text>
                     </View>
                     <TouchableOpacity
                       style={styles.adminBtnWarn}
-                      onPress={() => {
-                        Alert.alert(
-                          'Reset Stage',
-                          `Delete all matches in "${stagePrettyName(s.stage_name)}" and reset? Groups and teams will be kept.`,
-                          [
-                            { text: 'Cancel', style: 'cancel' },
-                            { text: 'Reset', style: 'destructive', onPress: async () => {
-                              try {
-                                await api.post(`/api/tournaments/${tournament.id}/stages/${s.stage_id}/reset`);
-                                load();
-                                Alert.alert('Done', 'Stage reset. You can regenerate fixtures.');
-                              } catch (e) { Alert.alert('Error', e.response?.data?.detail || 'Failed'); }
-                            }},
-                          ]
-                        );
-                      }}
+                      onPress={() => setAdminPrompt({ kind: 'reset', stage: s })}
                     >
                       <Text style={styles.adminBtnWarnText}>Reset</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.adminBtnDanger}
-                      onPress={() => {
-                        Alert.alert(
-                          'Delete Stage',
-                          `Permanently delete "${stagePrettyName(s.stage_name)}" and ALL its matches?`,
-                          [
-                            { text: 'Cancel', style: 'cancel' },
-                            { text: 'Delete', style: 'destructive', onPress: async () => {
-                              try {
-                                await api.delete(`/api/tournaments/${tournament.id}/stages/${s.stage_id}`);
-                                load();
-                              } catch (e) { Alert.alert('Error', e.response?.data?.detail || 'Failed'); }
-                            }},
-                          ]
-                        );
-                      }}
+                      onPress={() => setAdminPrompt({ kind: 'delete', stage: s })}
                     >
                       <Text style={styles.adminBtnDangerText}>Delete</Text>
                     </TouchableOpacity>
@@ -861,17 +869,7 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                 {tournament.status === 'completed' && (
                   <TouchableOpacity
                     style={[styles.stageActionBtn, { borderColor: COLORS.WARNING, marginTop: 8 }]}
-                    onPress={() => {
-                      Alert.alert('Reopen Tournament', 'Set tournament back to in-progress?', [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Reopen', onPress: async () => {
-                          try {
-                            await api.put(`/api/tournaments/${tournament.id}`, { status: 'in_progress' });
-                            load();
-                          } catch (e) { Alert.alert('Error', e.response?.data?.detail || 'Failed'); }
-                        }},
-                      ]);
-                    }}
+                    onPress={() => setAdminPrompt({ kind: 'reopen' })}
                   >
                     <MaterialCommunityIcons name="restart" size={16} color={COLORS.WARNING} />
                     <Text style={[styles.stageActionBtnText, { color: COLORS.WARNING }]}>Reopen Tournament</Text>
@@ -915,7 +913,7 @@ const TournamentDetailScreen = ({ navigation, route }) => {
       ...stages
         .filter(s => visibleStageIds.has(String(s.stage_id)))
         .map(s => ({
-          key: String(s.stage_id), label: stagePrettyName(s.stage_name), status: s.status,
+          key: String(s.stage_id), label: stagePrettyName(s), status: s.status,
         })),
     ];
 
@@ -982,7 +980,6 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                 <MatchCard
                   key={m.id}
                   match={toMatchCardData(m)}
-                  width="100%"
                   onPress={() => handleMatchCardPress(m)}
                 />
               ))}
@@ -1001,7 +998,6 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                 <MatchCard
                   key={m.id}
                   match={toMatchCardData(m)}
-                  width="100%"
                   onPress={() => handleSwapOrPress(m)}
                   style={swapFirstMatch?.id === m.id ? { borderColor: COLORS.WARNING, borderWidth: 2 } : undefined}
                 />
@@ -1021,7 +1017,6 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                 <MatchCard
                   key={m.id}
                   match={toMatchCardData(m)}
-                  width="100%"
                   onPress={() => handleMatchCardPress(m)}
                 />
               ))}
@@ -1043,28 +1038,59 @@ const TournamentDetailScreen = ({ navigation, route }) => {
           </TouchableOpacity>
         )}
 
-        {/* Creator actions */}
-        {isCreator && tournament?.status !== 'completed' && teams.length >= 2 && (
+        {isCreator && tournament?.status !== 'completed' && teams.length >= 2 && filteredMatches.length > 0 && (
           <TouchableOpacity
-            style={styles.createMatchBtn}
+            style={styles.primaryCta}
             onPress={() => navigation.navigate('CreateMatch', { tournamentId, teams })}
+            activeOpacity={0.85}
           >
-            <Text style={styles.createMatchBtnText}>+ Create Match</Text>
+            <MaterialCommunityIcons name="plus" size={18} color="#fff" />
+            <Text style={styles.primaryCtaText}>Create Match</Text>
           </TouchableOpacity>
         )}
 
         {filteredMatches.length === 0 && (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No matches in this stage yet</Text>
+          <View style={styles.heroEmpty}>
+            <View style={styles.heroEmptyIconWrap}>
+              <MaterialCommunityIcons
+                name={matches.length === 0 ? 'cog-outline' : 'calendar-blank-outline'}
+                size={32}
+                color={COLORS.ACCENT}
+              />
+            </View>
+            <Text style={styles.heroEmptyTitle}>
+              {matches.length === 0 ? 'No matches yet' : 'Nothing in this stage'}
+            </Text>
+            <Text style={styles.heroEmptyText}>
+              {matches.length === 0
+                ? (teams.length >= 2
+                    ? 'Run the setup wizard to pick a format and auto-generate fixtures — or add a one-off match.'
+                    : 'Add at least two teams first, then run the setup wizard to generate the bracket.')
+                : 'Switch the stage filter above, or generate fixtures for this stage.'}
+            </Text>
             {isCreator && matches.length === 0 && (
-              <TouchableOpacity
-                style={[styles.createMatchBtn, { marginTop: 16 }]}
-                onPress={() => navigation.navigate('TournamentSetup', {
-                  tournamentId, tournamentName: tournament.name, existingTeams: teams,
-                })}
-              >
-                <Text style={styles.createMatchBtnText}>Setup Tournament</Text>
-              </TouchableOpacity>
+              <View style={styles.ctaRow}>
+                <TouchableOpacity
+                  style={styles.primaryCta}
+                  onPress={() => navigation.navigate('TournamentSetup', {
+                    tournamentId, tournamentName: tournament.name, existingTeams: teams,
+                  })}
+                  activeOpacity={0.85}
+                >
+                  <MaterialCommunityIcons name="cog-play-outline" size={18} color="#fff" />
+                  <Text style={styles.primaryCtaText}>Setup Tournament</Text>
+                </TouchableOpacity>
+                {teams.length >= 2 && (
+                  <TouchableOpacity
+                    style={styles.secondaryCta}
+                    onPress={() => navigation.navigate('CreateMatch', { tournamentId, teams })}
+                    activeOpacity={0.85}
+                  >
+                    <MaterialCommunityIcons name="plus" size={18} color={COLORS.ACCENT} />
+                    <Text style={styles.secondaryCtaText}>Add Match</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             )}
           </View>
         )}
@@ -1241,7 +1267,7 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                   }}
                 >
                   <Text style={[styles.stagePillText, active && styles.stagePillTextActive]}>
-                    {stagePrettyName(s.stage_name)}
+                    {stagePrettyName(s)}
                   </Text>
                   <View style={[styles.stageBadge, { backgroundColor: badge.bg }]}>
                     <Text style={styles.stageBadgeText}>{badge.text}</Text>
@@ -1292,7 +1318,7 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                     <Text style={styles.stageNodeText}>{i + 1}</Text>
                   </View>
                   <View style={{ marginLeft: 8, flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: DARK }}>{stagePrettyName(s.stage_name)}</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: DARK }}>{stagePrettyName(s)}</Text>
                     <Text style={{ fontSize: 11, color: TAB_INACTIVE }}>
                       {s.groups?.length || 0} group{(s.groups?.length || 0) !== 1 ? 's' : ''} •{' '}
                       {s.groups?.reduce((a, g) => a + (g.completed_matches || 0), 0) || 0}/
@@ -1716,10 +1742,17 @@ const TournamentDetailScreen = ({ navigation, route }) => {
           <MaterialCommunityIcons name="chevron-left" size={24} color={COLORS.TEXT} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{tournament.name}</Text>
+        <FavoriteButton entityType="tournament" entityId={tournament.id} variant="header" size={20} />
         <TouchableOpacity onPress={handleShare} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
           <Text style={styles.headerIcon}>{'\u2934'}</Text>
         </TouchableOpacity>
       </View>
+      {data?.is_favorite && (
+        <View style={styles.inFavRow}>
+          <MaterialCommunityIcons name="heart" size={12} color={COLORS.ACCENT_LIGHT} />
+          <Text style={styles.inFavText}>In your favorites</Text>
+        </View>
+      )}
 
       {/* Tab Bar with animated indicator */}
       <View style={styles.tabBarWrap}>
@@ -2022,6 +2055,54 @@ const TournamentDetailScreen = ({ navigation, route }) => {
           </KeyboardAvoidingView>
         </View>
       </Modal>
+
+      <ConfirmModal
+        visible={!!adminPrompt}
+        icon={adminPrompt?.kind === 'delete' ? 'trash-can-outline'
+          : adminPrompt?.kind === 'reset' ? 'restart-alert'
+          : 'restart'}
+        title={adminPrompt?.kind === 'delete' ? 'Delete Stage'
+          : adminPrompt?.kind === 'reset' ? 'Reset Stage'
+          : 'Reopen Tournament'}
+        message={
+          adminPrompt?.kind === 'delete'
+            ? `Permanently delete "${adminPrompt?.stage ? stagePrettyName(adminPrompt.stage) : ''}" and ALL its matches, scorecards, and ball-by-ball data. This cannot be undone.`
+            : adminPrompt?.kind === 'reset'
+            ? `Wipe every match in "${adminPrompt?.stage ? stagePrettyName(adminPrompt.stage) : ''}" so you can regenerate the fixtures. Teams and groups are kept.`
+            : 'Set the tournament back to in-progress so you can add new stages or override results.'
+        }
+        confirmText={adminPrompt?.kind === 'delete' ? 'Delete Forever'
+          : adminPrompt?.kind === 'reset' ? 'Reset Stage'
+          : 'Reopen'}
+        cancelText="Cancel"
+        destructive={adminPrompt?.kind === 'delete' || adminPrompt?.kind === 'reset'}
+        confirmPhrase={
+          adminPrompt?.kind === 'delete' ? 'delete'
+            : adminPrompt?.kind === 'reset' ? 'reset'
+            : null
+        }
+        loading={adminBusy}
+        onCancel={() => { if (!adminBusy) setAdminPrompt(null); }}
+        onConfirm={async () => {
+          if (!adminPrompt) return;
+          setAdminBusy(true);
+          try {
+            if (adminPrompt.kind === 'reset') {
+              await api.post(`/api/tournaments/${tournament.id}/stages/${adminPrompt.stage.stage_id}/reset`);
+            } else if (adminPrompt.kind === 'delete') {
+              await api.delete(`/api/tournaments/${tournament.id}/stages/${adminPrompt.stage.stage_id}`);
+            } else if (adminPrompt.kind === 'reopen') {
+              await api.put(`/api/tournaments/${tournament.id}`, { status: 'in_progress' });
+            }
+            setAdminPrompt(null);
+            await load();
+          } catch (e) {
+            Alert.alert('Error', e.response?.data?.detail || 'Action failed');
+          } finally {
+            setAdminBusy(false);
+          }
+        }}
+      />
     </View>
   );
 };
@@ -2041,6 +2122,13 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: FONTS.family,    flex: 1, fontSize: 17, fontWeight: '700', color: DARK, textAlign: 'center', marginHorizontal: 8,
   },
+  inFavRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 4, paddingVertical: 5, paddingHorizontal: 12,
+    backgroundColor: 'rgba(30,136,229,0.10)',
+    borderBottomWidth: 1, borderBottomColor: 'rgba(30,136,229,0.22)',
+  },
+  inFavText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '800', color: COLORS.ACCENT_LIGHT, letterSpacing: 0.4 },
 
   /* ── tab bar ── */
   tabBarWrap: { backgroundColor: BG, position: 'relative' },
@@ -2175,13 +2263,83 @@ const styles = StyleSheet.create({
   adminBtnDangerText: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '700', color: COLORS.DANGER },
 
   /* ── actions grid ── */
-  actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  actionCard: {
-    width: (SCREEN_WIDTH - 58) / 2, backgroundColor: COLORS.BG, borderRadius: 12,
-    padding: 16, alignItems: 'center', borderWidth: 1, borderColor: CARD_BORDER,
+  actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  actionCardV2: {
+    backgroundColor: COLORS.CARD,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8 },
+      android: { elevation: 3 },
+    }),
   },
-  actionCardIcon: { fontFamily: FONTS.family, fontSize: 28, marginBottom: 8 },
-  actionCardText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: DARK },
+  actionCardIconWrap: {
+    width: 42, height: 42, borderRadius: 21,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 8,
+  },
+  actionCardLabel: {
+    fontFamily: FONTS.family, fontSize: 13, fontWeight: '800', color: COLORS.TEXT, textAlign: 'center',
+  },
+  actionCardHint: {
+    fontFamily: FONTS.family, fontSize: 11, fontWeight: '500',
+    color: COLORS.TEXT_MUTED, textAlign: 'center', marginTop: 2,
+  },
+
+  /* ── hero empty + CTAs ── */
+  heroEmpty: {
+    alignItems: 'center',
+    paddingVertical: 36,
+    paddingHorizontal: 24,
+    marginVertical: 12,
+    backgroundColor: COLORS.CARD,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: CARD_BORDER,
+  },
+  heroEmptyIconWrap: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: 'rgba(30,136,229,0.14)',
+    borderWidth: 1, borderColor: 'rgba(30,136,229,0.35)',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 16,
+  },
+  heroEmptyTitle: {
+    fontFamily: FONTS.family, fontSize: 17, fontWeight: '800',
+    color: COLORS.TEXT, textAlign: 'center', marginBottom: 6,
+    letterSpacing: -0.2,
+  },
+  heroEmptyText: {
+    fontFamily: FONTS.family, fontSize: 13, fontWeight: '500',
+    color: COLORS.TEXT_SECONDARY, textAlign: 'center', lineHeight: 19,
+    marginBottom: 18, maxWidth: 320,
+  },
+  ctaRow: {
+    flexDirection: 'row', gap: 10, flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center',
+  },
+  primaryCta: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: PRIMARY, paddingHorizontal: 22, paddingVertical: 13,
+    borderRadius: 12, alignSelf: 'center', marginBottom: 12,
+    ...Platform.select({
+      ios: { shadowColor: PRIMARY, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.4, shadowRadius: 10 },
+      android: { elevation: 6 },
+    }),
+  },
+  primaryCtaText: {
+    fontFamily: FONTS.family, color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.2,
+  },
+  secondaryCta: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'transparent', paddingHorizontal: 18, paddingVertical: 12,
+    borderRadius: 12, borderWidth: 1.2, borderColor: COLORS.ACCENT,
+    marginBottom: 12,
+  },
+  secondaryCtaText: {
+    fontFamily: FONTS.family, color: COLORS.ACCENT, fontSize: 14, fontWeight: '700',
+  },
 
   /* ── filter pills ── */
   filterPill: {
@@ -2559,11 +2717,6 @@ const styles = StyleSheet.create({
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
   emptyTitle: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '700', color: DARK, marginBottom: 8 },
   emptyText: { fontFamily: FONTS.family, color: TAB_INACTIVE, fontSize: 14, fontWeight: '500', textAlign: 'center', paddingHorizontal: 20 },
-  createMatchBtn: {
-    backgroundColor: PRIMARY, paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginBottom: 16,
-  },
-  createMatchBtnText: { fontFamily: FONTS.family, color: '#fff', fontSize: 15, fontWeight: '700' },
-
   /* ── Edit info button ── */
   editInfoBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,

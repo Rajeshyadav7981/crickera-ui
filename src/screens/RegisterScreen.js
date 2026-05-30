@@ -19,6 +19,7 @@ import { COLORS, GRADIENTS, FONTS } from '../theme';
 import Icon from '../components/Icon';
 import CalendarPicker from '../components/CalendarPicker';
 import OTPInput from '../components/OTPInput';
+import useOtpCountdown, { formatCountdown } from '../hooks/useOtpCountdown';
 import { useToast } from '../components/Toast';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -55,16 +56,8 @@ const RegisterScreen = ({ navigation }) => {
   const [otpStep, setOtpStep] = useState(false);
   const [otp, setOtp] = useState('');
   const [otpSending, setOtpSending] = useState(false);
-  const [otpTimer, setOtpTimer] = useState(0);
-  const otpTimerRef = useRef(null);
-
-  // Countdown timer for resend
-  useEffect(() => {
-    if (otpTimer > 0) {
-      otpTimerRef.current = setTimeout(() => setOtpTimer(otpTimer - 1), 1000);
-    }
-    return () => clearTimeout(otpTimerRef.current);
-  }, [otpTimer]);
+  // Drives both the validity countdown and the resend cooldown.
+  const otpTimer = useOtpCountdown(30);
 
   const fadeIn = useRef(new Animated.Value(0)).current;
   const slideUp = useRef(new Animated.Value(30)).current;
@@ -190,27 +183,33 @@ const RegisterScreen = ({ navigation }) => {
     // Send OTP first
     setOtpSending(true);
     try {
-      await authAPI.sendOTP(m, 'register');
+      const res = await authAPI.sendOTP(m, 'register');
       toast.success('OTP Sent', 'Check your phone for the verification code');
       setOtpStep(true);
-      setOtpTimer(60);
+      otpTimer.start(res.data?.expires_in);
     } catch (err) {
-      toast.error('OTP Failed', err.response?.data?.detail || 'Could not send OTP. Try again.');
+      const detail = err.response?.status === 429
+        ? (err.response?.data?.detail || 'Too many requests. Please wait a moment and try again.')
+        : (err.response?.data?.detail || 'Could not send OTP. Try again.');
+      toast.error('OTP Failed', detail);
     } finally {
       setOtpSending(false);
     }
   };
 
   const handleResendOTP = async () => {
-    if (otpTimer > 0) return;
+    if (!otpTimer.canResend) return;
     setOtpSending(true);
     try {
-      await authAPI.sendOTP(mobile.trim(), 'register');
+      const res = await authAPI.sendOTP(mobile.trim(), 'register');
       toast.success('OTP Resent', 'New code sent to your phone');
-      setOtpTimer(60);
+      otpTimer.start(res.data?.expires_in);
       setOtp('');
     } catch (err) {
-      toast.error('Failed', err.response?.data?.detail || 'Could not resend OTP');
+      const detail = err.response?.status === 429
+        ? (err.response?.data?.detail || 'Too many requests. Please wait before resending.')
+        : (err.response?.data?.detail || 'Could not resend OTP');
+      toast.error('Failed', detail);
     } finally {
       setOtpSending(false);
     }
@@ -221,11 +220,14 @@ const RegisterScreen = ({ navigation }) => {
       toast.warning('Enter the 6-digit OTP');
       return;
     }
+    if (otpTimer.expired) {
+      toast.warning('Code expired', 'Tap Resend OTP to get a new code.');
+      return;
+    }
     setLoading(true);
     try {
-      // OTP validation is skipped on the client until DLT SMS delivery is
-      // live; the register call below is the source of truth for whether
-      // the account can be created.
+      // Verify the OTP with the backend before creating the account.
+      await authAPI.verifyOTP(mobile.trim(), otp, 'register');
       const cricketProfile = {
         bio: bio.trim() || undefined,
         city: city.trim() || undefined,
@@ -256,7 +258,7 @@ const RegisterScreen = ({ navigation }) => {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         enableOnAndroid
-        extraScrollHeight={40}>
+        extraScrollHeight={120}>
 
           {/* Cricket icon */}
           <View style={{ alignItems: 'center', marginBottom: 8 }}>
@@ -580,11 +582,16 @@ const RegisterScreen = ({ navigation }) => {
                   <Text style={styles.otpTitle}>Verify your number</Text>
                 </View>
                 <Text style={styles.otpSubtitle}>Enter the 6-digit code sent to {mobile}</Text>
-                <OTPInput value={otp} onChange={setOtp} />
+                <OTPInput value={otp} onChange={setOtp} error={otpTimer.expired} />
+                <Text style={[styles.otpExpiryText, otpTimer.expired && styles.otpExpiryExpired]}>
+                  {otpTimer.expired
+                    ? 'Code expired — tap Resend to get a new one'
+                    : `Code expires in ${formatCountdown(otpTimer.expiresIn)}`}
+                </Text>
                 <TouchableOpacity
-                  style={[styles.button, loading && styles.buttonDisabled]}
+                  style={[styles.button, (loading || otpTimer.expired) && styles.buttonDisabled]}
                   onPress={handleVerifyAndRegister}
-                  disabled={loading}
+                  disabled={loading || otpTimer.expired}
                   activeOpacity={0.8}>
                   <LinearGradient
                     colors={GRADIENTS.BUTTON}
@@ -599,8 +606,8 @@ const RegisterScreen = ({ navigation }) => {
                   </LinearGradient>
                 </TouchableOpacity>
                 <View style={styles.otpResendRow}>
-                  {otpTimer > 0 ? (
-                    <Text style={styles.otpTimerText}>Resend in {otpTimer}s</Text>
+                  {!otpTimer.canResend ? (
+                    <Text style={styles.otpTimerText}>Resend in {otpTimer.resendIn}s</Text>
                   ) : (
                     <TouchableOpacity onPress={handleResendOTP} disabled={otpSending}>
                       <Text style={styles.otpResendText}>{otpSending ? 'Sending...' : 'Resend OTP'}</Text>
@@ -825,6 +832,18 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.family,    fontSize: 13,
     color: COLORS.TEXT_SECONDARY,
     marginBottom: 14,
+  },
+  otpExpiryText: {
+    fontFamily: FONTS.family,
+    fontSize: 12,
+    color: COLORS.TEXT_SECONDARY,
+    textAlign: 'center',
+    fontWeight: '600',
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  otpExpiryExpired: {
+    color: COLORS.LIVE,
   },
   otpResendRow: {
     flexDirection: 'row',

@@ -29,7 +29,13 @@ const TIME_SLOTS = [
 
 const MATCH_TYPES = ['Group', 'Quarter', 'Semi', 'Final'];
 
-const stagePrettyName = (s) => (s || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+const stagePrettyName = (s) => {
+  if (s && typeof s === 'object') {
+    if (s.stage_label) return s.stage_label;
+    return (s.stage_name || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+  return (s || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
 
 /* reusable dropdown with optional search */
 const DropdownSelect = ({ label, value, displayText, options, keyExtractor, labelExtractor, onSelect, searchable = false }) => {
@@ -394,6 +400,7 @@ const CreateMatchScreen = ({ navigation, route }) => {
   const [venueNameInput, setVenueNameInput] = useState('');
   const [matchType, setMatchType] = useState('Group');
   const [overs, setOvers] = useState(20);
+  const [matchName, setMatchName] = useState('');
 
   // Derive match type from stage name
   const stageToMatchType = (stageName) => {
@@ -572,6 +579,7 @@ const CreateMatchScreen = ({ navigation, route }) => {
     if (teamA.id === teamB.id) return Alert.alert('Error', 'Teams must be different');
     setSaving(true);
     try {
+      const cleanName = matchName.trim();
       const payload = {
         tournament_id: tournamentId,
         team_a_id: teamA.id,
@@ -583,11 +591,13 @@ const CreateMatchScreen = ({ navigation, route }) => {
         ...(venue && { venue_id: venue.id, venue_name: venue.name }),
         ...(selectedStage && { stage_id: selectedStage.stage_id }),
         ...(selectedGroup && { group_id: selectedGroup.group_id }),
+        ...(cleanName && { name: cleanName }),
       };
       await matchesAPI.create(payload);
       Alert.alert('Success', 'Match created!');
       setSelectedStage(null); setSelectedGroup(null);
       setTeamA(null); setTeamB(null); setMatchDate(''); setTimeSlot(''); setVenue(null); setMatchType('Group'); setOvers(20);
+      setMatchName('');
       loadData();
     } catch (e) {
       Alert.alert('Error', e.response?.data?.detail || 'Failed to create match');
@@ -764,7 +774,7 @@ const CreateMatchScreen = ({ navigation, route }) => {
                     <View style={styles.stageHeader}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.stageName}>
-                          {stageInfo ? stagePrettyName(stageInfo.stage_name) : 'Individual Matches'}
+                          {stageInfo ? stagePrettyName(stageInfo) : 'Individual Matches'}
                         </Text>
                         <Text style={styles.stageCount}>
                           {stageMatches.length} matches
@@ -809,10 +819,10 @@ const CreateMatchScreen = ({ navigation, route }) => {
                 <DropdownSelect
                   label="Stage"
                   value={selectedStage}
-                  displayText={selectedStage ? stagePrettyName(selectedStage.stage_name) : null}
+                  displayText={selectedStage ? stagePrettyName(selectedStage) : null}
                   options={stages}
                   keyExtractor={(s) => String(s.stage_id)}
-                  labelExtractor={(s) => stagePrettyName(s.stage_name)}
+                  labelExtractor={(s) => stagePrettyName(s)}
                   onSelect={(s) => {
                     setSelectedStage(s);
                     setSelectedGroup(null);
@@ -864,6 +874,19 @@ const CreateMatchScreen = ({ navigation, route }) => {
               />
               <DateInput label="Match Date" value={matchDate} onChange={setMatchDate} />
               <OversInput label="Overs" value={overs} onChange={setOvers} />
+              <View style={styles.fieldWrap}>
+                <Text style={styles.label}>Match Name (optional)</Text>
+                <TextInput
+                  style={styles.nameInput}
+                  value={matchName}
+                  onChangeText={setMatchName}
+                  placeholder="e.g. Sunday Friendlies, Grudge Match"
+                  placeholderTextColor={TEXT_LIGHT}
+                  maxLength={200}
+                  returnKeyType="done"
+                />
+                <Text style={styles.nameHelper}>Leave blank to use team names</Text>
+              </View>
               <StringDropdown
                 label="Time Slot"
                 value={timeSlot}
@@ -1204,6 +1227,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   selectText: { fontFamily: FONTS.family, fontSize: 15, color: TEXT_DARK, flex: 1 },
+  nameInput: {
+    height: 48, backgroundColor: COLORS.SURFACE, borderRadius: 8,
+    borderWidth: 1, borderColor: BORDER, paddingHorizontal: 14,
+    fontFamily: FONTS.family, fontSize: 15, color: TEXT_DARK,
+  },
+  nameHelper: { fontFamily: FONTS.family, fontSize: 11, color: TEXT_LIGHT, marginTop: 4 },
   chevron: { fontFamily: FONTS.family, fontSize: 14, color: TEXT_LIGHT, marginLeft: 8 },
   toggleRow: { flexDirection: 'row', gap: 10 },
   toggleBtn: {

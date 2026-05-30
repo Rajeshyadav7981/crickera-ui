@@ -186,39 +186,12 @@ export const FONTS = {
   heavy:      { fontFamily: FONT_FAMILY, fontWeight: '900' },
 };
 
-// ══════ TYPOGRAPHY PRESETS ══════
-// size + weight bundles. Drop into any style: `...TYPO.h2` or `style={TYPO.body}`.
-// Matches the flat Match-Detail hierarchy so every screen reads the same.
-export const TYPO = {
-  hero:       { fontFamily: FONT_FAMILY, fontSize: 26, fontWeight: '900', letterSpacing: -0.3 },
-  h1:         { fontFamily: FONT_FAMILY, fontSize: 20, fontWeight: '800' },
-  h2:         { fontFamily: FONT_FAMILY, fontSize: 17, fontWeight: '800' },
-  h3:         { fontFamily: FONT_FAMILY, fontSize: 15, fontWeight: '700' },
-  sectionTitle: { fontFamily: FONT_FAMILY, fontSize: 13, fontWeight: '800', letterSpacing: 0.3 },
-  body:       { fontFamily: FONT_FAMILY, fontSize: 13, fontWeight: '500' },
-  bodyBold:   { fontFamily: FONT_FAMILY, fontSize: 13, fontWeight: '700' },
-  caption:    { fontFamily: FONT_FAMILY, fontSize: 12, fontWeight: '500' },
-  label:      { fontFamily: FONT_FAMILY, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
-  tiny:       { fontFamily: FONT_FAMILY, fontSize: 9,  fontWeight: '600' },
-  statBig:    { fontFamily: FONT_FAMILY, fontSize: 24, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  statMed:    { fontFamily: FONT_FAMILY, fontSize: 16, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  num:        { fontFamily: FONT_FAMILY, fontVariant: ['tabular-nums'] },
-};
-
 // Button preset gradients
 export const BUTTON_GRADIENTS = {
-  primary: ['#1E88E5', '#1565C0'],         // blue (matches ACCENT → ACCENT_DARK)
-  warning: ['#FFA726', '#F57C00'],         // amber
-  danger:  ['#EF4444', '#B91C1C'],         // red
-  success: ['#22C55E', '#16A34A'],         // green
-};
-
-// Soft glow gradients (for hero icon rings, score boxes etc.)
-export const GLOW_GRADIENTS = {
-  primary: ['rgba(30,136,229,0.32)', 'rgba(30,136,229,0.04)'],
-  warning: ['rgba(255,152,0,0.32)', 'rgba(255,152,0,0.04)'],
-  danger:  ['rgba(229,57,53,0.32)', 'rgba(229,57,53,0.04)'],
-  success: ['rgba(34,197,94,0.32)', 'rgba(34,197,94,0.04)'],
+  primary: ['#1E88E5', '#1565C0'],
+  warning: ['#FFA726', '#F57C00'],
+  danger:  ['#EF4444', '#B91C1C'],
+  success: ['#22C55E', '#16A34A'],
 };
 
 // Shared shadow
@@ -228,14 +201,6 @@ export const CARD_SHADOW = {
   shadowOpacity: 0.3,
   shadowRadius: 8,
   elevation: 6,
-};
-
-export const CARD_SHADOW_LIGHT = {
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.2,
-  shadowRadius: 4,
-  elevation: 3,
 };
 
 // Expose palettes for ThemeContext and design reference

@@ -15,9 +15,9 @@
  *     onCancel={...}
  *   />
  */
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, Modal, StyleSheet,
+  View, Text, TouchableOpacity, Modal, StyleSheet, TextInput,
   Animated, Platform, ActivityIndicator, TouchableWithoutFeedback,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,24 +28,26 @@ import { COLORS, GRADIENTS, FONTS } from '../theme';
 const ConfirmModal = ({
   visible,
   icon = 'help-circle-outline',
-  iconColor,                  // override; defaults based on destructive
+  iconColor,
   title = 'Confirm',
   message = '',
   confirmText = 'Confirm',
   cancelText = 'Cancel',
   destructive = false,
   loading = false,
+  confirmPhrase = null,
   onConfirm,
   onCancel,
 }) => {
   const insets = useSafeAreaInsets();
+  const [typed, setTyped] = useState('');
 
-  // Entrance animation — fade + spring scale, mirrors InningsEndDialog
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.92)).current;
 
   useEffect(() => {
     if (visible) {
+      setTyped('');
       Animated.parallel([
         Animated.timing(fadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
         Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, tension: 80, friction: 9 }),
@@ -55,6 +57,10 @@ const ConfirmModal = ({
       scaleAnim.setValue(0.92);
     }
   }, [visible]);
+
+  const phraseMatched = !confirmPhrase
+    || typed.trim().toLowerCase() === String(confirmPhrase).toLowerCase();
+  const confirmDisabled = loading || !phraseMatched;
 
   const heroIconColor = iconColor
     || (destructive ? COLORS.DANGER_LIGHT : COLORS.ACCENT_LIGHT);
@@ -106,9 +112,29 @@ const ConfirmModal = ({
                 </LinearGradient>
               </View>
 
-              {/* Title + message */}
               <Text style={styles.title}>{title}</Text>
               {!!message && <Text style={styles.message}>{message}</Text>}
+
+              {confirmPhrase && (
+                <View style={styles.phraseWrap}>
+                  <Text style={styles.phraseLabel}>
+                    Type <Text style={styles.phraseWord}>{confirmPhrase}</Text> to confirm
+                  </Text>
+                  <TextInput
+                    value={typed}
+                    onChangeText={setTyped}
+                    placeholder={confirmPhrase}
+                    placeholderTextColor={COLORS.TEXT_MUTED}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={!loading}
+                    style={[
+                      styles.phraseInput,
+                      phraseMatched && styles.phraseInputOk,
+                    ]}
+                  />
+                </View>
+              )}
 
               {/* Actions */}
               <View style={styles.actions}>
@@ -130,10 +156,10 @@ const ConfirmModal = ({
                       shadowOpacity: 0.35,
                       shadowRadius: 14,
                     },
-                    loading && { opacity: 0.7 },
+                    confirmDisabled && { opacity: 0.45 },
                   ]}
                   onPress={onConfirm}
-                  disabled={loading}
+                  disabled={confirmDisabled}
                   activeOpacity={0.85}
                 >
                   <LinearGradient
@@ -276,6 +302,41 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#fff',
     letterSpacing: 0.3,
+  },
+
+  phraseWrap: {
+    width: '100%',
+    marginBottom: 18,
+  },
+  phraseLabel: {
+    fontFamily: FONTS.family,
+    fontSize: 12,
+    color: COLORS.TEXT_SECONDARY,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  phraseWord: {
+    color: COLORS.DANGER_LIGHT,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  phraseInput: {
+    fontFamily: FONTS.family,
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.TEXT,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
+    textAlign: 'center',
+    letterSpacing: 1,
+  },
+  phraseInputOk: {
+    borderColor: COLORS.SUCCESS_LIGHT,
+    backgroundColor: 'rgba(34,197,94,0.08)',
   },
 });
 

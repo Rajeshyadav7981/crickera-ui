@@ -120,20 +120,3 @@ export async function unsubscribeFromMatch(matchId) {
     await api.delete(`/api/notifications/subscribe/${matchId}`);
   } catch {}
 }
-
-/**
- * Set up notification tap handler — navigates to match.
- * Call this once in your root component with a navigation ref.
- */
-export function setupNotificationTapHandler(navigationRef) {
-  _initNotifications();
-  if (!Notifications) return () => {};
-
-  const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-    const data = response.notification.request.content.data;
-    if (data?.match_id && navigationRef?.current) {
-      navigationRef.current.navigate('MatchDetail', { matchId: data.match_id });
-    }
-  });
-  return () => subscription.remove();
-}

@@ -18,6 +18,7 @@ import {
 import {
   TOURNAMENT_FORMATS,
   formatByKey,
+  knockoutRoundForTeams,
 } from './tournamentFormats';
 
 const PRIMARY = COLORS.ACCENT;
@@ -100,6 +101,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
   // The round the admin has chosen to create. Defaults to the auto-pick from
   // the registry but the admin can override on the round picker below.
   const [chosenRoundName, setChosenRoundName] = useState(null);
+  const [roundLabel, setRoundLabel] = useState('');
   // Local draft of (teamA, teamB) pairs the admin can edit before submitting.
   // (Only used when the chosen round is a knockout — league-kind rounds use
   // the shared group config block instead.)
@@ -178,8 +180,6 @@ const TournamentSetupScreen = ({ navigation, route }) => {
     if (topNPerGroup > minGroupSize) setTopNPerGroup(minGroupSize);
   }, [groupAssignments, topNPerGroup]);
 
-  // For add-next-stage: seed the chosen round from the registry's auto-pick
-  // whenever the team count changes (only if user hasn't already picked one).
   useEffect(() => {
     if (!isAddNextStage) return;
     if (chosenRoundName) return;
@@ -187,23 +187,30 @@ const TournamentSetupScreen = ({ navigation, route }) => {
     if (auto) setChosenRoundName(auto.name);
   }, [tournamentTeams.length, isAddNextStage, chosenRoundName]);
 
-  // Build the pairs draft from the currently-chosen round (knockout only).
-  // For league-kind rounds we don't draft pairs — the round-robin generator
-  // creates every pairing on the backend.
   useEffect(() => {
-    if (!isAddNextStage) return;
+    if (isAddNextStage) return;
+    if (formatKey !== 'knockout') return;
+    const auto = knockoutRoundForTeams(tournamentTeams.length);
+    if (auto && chosenRoundName !== auto.name) setChosenRoundName(auto.name);
+  }, [tournamentTeams.length, formatKey, isAddNextStage, chosenRoundName]);
+
+  useEffect(() => {
+    const r = chosenRoundName ? roundByName(chosenRoundName) : null;
+    if (r) setRoundLabel(r.label);
+  }, [chosenRoundName]);
+
+  useEffect(() => {
+    const allowed = isAddNextStage || formatKey === 'knockout';
+    if (!allowed) return;
     const round = chosenRoundName ? roundByName(chosenRoundName) : nextRoundFor(tournamentTeams.length);
     if (!round || round.kind !== 'knockout') {
       setPairsDraft([]);
       return;
     }
-    // Cap teams to the round's max (e.g. 6 teams chosen for QF — backend
-    // bye logic will fill in seeds, but for the preview we just take the
-    // first N where N = min(teamCount, round.maxTeams or teamCount)).
     const cap = round.maxTeams || tournamentTeams.length;
     const ids = tournamentTeams.slice(0, cap).map((t) => t.id);
     setPairsDraft(pairTeams(round.pairStrategy, ids));
-  }, [tournamentTeams, chosenRoundName, isAddNextStage]);
+  }, [tournamentTeams, chosenRoundName, isAddNextStage, formatKey]);
 
 
   const loadTeams = async () => {
@@ -282,6 +289,36 @@ const TournamentSetupScreen = ({ navigation, route }) => {
     });
   };
 
+  const createKnockoutRound = async () => {
+    const round = knockoutRoundForTeams(tournamentTeams.length);
+    if (!round) {
+      return Alert.alert(
+        'Unsupported team count',
+        `Knockout needs 2 (Final), 3–4 (Semi Final), 5–8 (Quarter Final), or 16 (Round of 16) teams. You have ${tournamentTeams.length}.`,
+      );
+    }
+    setLoading(true);
+    try {
+      const stageRes = await tournamentsAPI.setupStages(tournamentId, [{ name: round.name, label: (roundLabel && roundLabel !== round.label) ? roundLabel : null }]);
+      const stages = stageRes.data?.stages || [];
+      if (!stages.length) throw new Error('Stage creation failed');
+      const stageId = stages[0].id;
+      await tournamentsAPI.setupGroups(tournamentId, stageId, [{
+        name: round.label,
+        team_ids: tournamentTeams.map((t) => t.id),
+      }]);
+      await tournamentsAPI.generateMatches(tournamentId, stageId);
+      navigation.replace('TournamentDetail', { tournamentId });
+    } catch (e) {
+      Alert.alert(
+        'Setup failed',
+        e.response?.data?.detail || e.message || 'Could not create the knockout round',
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // ===== Initial flow: create the league round =====
   const createLeagueRound = async () => {
     if (tournamentTeams.length < 2) {
@@ -311,9 +348,9 @@ const TournamentSetupScreen = ({ navigation, route }) => {
           .replace(/\s+/g, '_')
           .toLowerCase() || 'league_matches';
 
-      // 1. Create the league stage with qualification rule (top N per group)
       const stageRes = await tournamentsAPI.setupStages(tournamentId, [{
         name: cleanName,
+        label: (roundName && roundName !== 'League Matches') ? roundName : null,
         qualification_rule: { top_n: topNPerGroup, from: 'each_group' },
       }]);
       const stages = stageRes.data?.stages || [];
@@ -395,6 +432,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
       try {
         const stageRes = await tournamentsAPI.setupStages(tournamentId, [{
           name: round.name,
+          label: (roundLabel && roundLabel !== round.label) ? roundLabel : null,
           qualification_rule: { top_n: topNPerGroup, from: 'each_group' },
         }]);
         const stages = stageRes.data?.stages || [];
@@ -442,7 +480,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
       const orderedIds = [...top, ...bot];
 
       // 1. Create the stage
-      const stageRes = await tournamentsAPI.setupStages(tournamentId, [{ name: round.name }]);
+      const stageRes = await tournamentsAPI.setupStages(tournamentId, [{ name: round.name, label: (roundLabel && roundLabel !== round.label) ? roundLabel : null }]);
       const stages = stageRes.data?.stages || [];
       if (!stages.length) throw new Error('Stage creation failed');
       const stageId = stages[0].id;
@@ -588,119 +626,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
           </>
         )}
 
-        {/* Pairs preview & swap UI (knockout only) */}
-        {round && round.kind === 'knockout' && pairsDraft.length > 0 && (
-          <>
-            <Text style={[styles.subHeading, { marginTop: 16 }]}>Matchups</Text>
-            <Text style={styles.helperText}>
-              Tap any team to move it to a different match. The team it gets
-              swapped with takes its place in the original match.
-            </Text>
-            {pairsDraft.map((pair, pairIdx) => {
-              const a = teamById(pair[0]);
-              const b = teamById(pair[1]);
-              const isSelectedA =
-                swapPickerFor && swapPickerFor.pairIdx === pairIdx && swapPickerFor.slot === 0;
-              const isSelectedB =
-                swapPickerFor && swapPickerFor.pairIdx === pairIdx && swapPickerFor.slot === 1;
-              return (
-                <View key={pairIdx} style={styles.pairRow}>
-                  <Text style={styles.pairLabel}>
-                    {round.label.split(' ').map((w) => w[0]).join('')}
-                    {pairsDraft.length > 1 ? ` ${pairIdx + 1}` : ''}
-                  </Text>
-                  <TouchableOpacity
-                    style={[styles.pairTeam, isSelectedA && styles.pairTeamSelected]}
-                    onPress={() =>
-                      setSwapPickerFor(
-                        isSelectedA ? null : { pairIdx, slot: 0 },
-                      )
-                    }
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.teamChipDot, { backgroundColor: a?.color || PRIMARY }]} />
-                    <Text style={styles.pairTeamName} numberOfLines={1}>
-                      {a?.short_name || a?.name || '—'}
-                    </Text>
-                    <MaterialCommunityIcons
-                      name="swap-horizontal"
-                      size={14}
-                      color={isSelectedA ? COLORS.TEXT : MUTED}
-                    />
-                  </TouchableOpacity>
-                  <Text style={styles.pairVs}>vs</Text>
-                  <TouchableOpacity
-                    style={[styles.pairTeam, isSelectedB && styles.pairTeamSelected]}
-                    onPress={() =>
-                      setSwapPickerFor(
-                        isSelectedB ? null : { pairIdx, slot: 1 },
-                      )
-                    }
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.teamChipDot, { backgroundColor: b?.color || PRIMARY }]} />
-                    <Text style={styles.pairTeamName} numberOfLines={1}>
-                      {b?.short_name || b?.name || '—'}
-                    </Text>
-                    <MaterialCommunityIcons
-                      name="swap-horizontal"
-                      size={14}
-                      color={isSelectedB ? COLORS.TEXT : MUTED}
-                    />
-                  </TouchableOpacity>
-                </View>
-              );
-            })}
-
-            {/* Swap-with picker — appears under the pair list once a team is selected */}
-            {swapPickerFor && (() => {
-              const sel = teamById(pairsDraft[swapPickerFor.pairIdx][swapPickerFor.slot]);
-              return (
-                <View style={styles.swapPicker}>
-                  <Text style={styles.swapPickerTitle}>
-                    Move{' '}
-                    <Text style={{ color: PRIMARY }}>{sel?.short_name || sel?.name}</Text>
-                    {' '}— swap with…
-                  </Text>
-                  {pairsDraft.flatMap((pair, pIdx) =>
-                    pair.map((tid, sIdx) => {
-                      if (pIdx === swapPickerFor.pairIdx && sIdx === swapPickerFor.slot) return null;
-                      const t = teamById(tid);
-                      // Compute the resulting matchup for clarity
-                      const otherInTargetPair = teamById(pair[1 - sIdx]);
-                      const otherInSourcePair = teamById(
-                        pairsDraft[swapPickerFor.pairIdx][1 - swapPickerFor.slot],
-                      );
-                      return (
-                        <TouchableOpacity
-                          key={`${pIdx}-${sIdx}`}
-                          style={styles.swapPickerOption}
-                          onPress={() => swapTeams(swapPickerFor.pairIdx, swapPickerFor.slot, pIdx, sIdx)}
-                        >
-                          <View style={[styles.teamChipDot, { backgroundColor: t?.color || PRIMARY }]} />
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.swapPickerOptionText}>
-                              {t?.short_name || t?.name || '—'}
-                            </Text>
-                            <Text style={styles.swapPickerOptionMeta}>
-                              currently in{' '}
-                              {round.label}{pairsDraft.length > 1 ? ` ${pIdx + 1}` : ''} vs{' '}
-                              {otherInTargetPair?.short_name || otherInTargetPair?.name || '—'}
-                            </Text>
-                          </View>
-                          <MaterialCommunityIcons name="arrow-right" size={16} color={PRIMARY} />
-                        </TouchableOpacity>
-                      );
-                    }),
-                  )}
-                  <TouchableOpacity style={styles.swapPickerCancel} onPress={() => setSwapPickerFor(null)}>
-                    <Text style={styles.swapPickerCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              );
-            })()}
-          </>
-        )}
+        {round && round.kind === 'knockout' && pairsDraft.length > 0 && renderKnockoutPairsBlock(round)}
 
         {/* Add more teams (rare, but allowed) */}
         <Text style={[styles.subHeading, { marginTop: 20 }]}>Add Team</Text>
@@ -1032,12 +958,92 @@ const TournamentSetupScreen = ({ navigation, route }) => {
     );
   };
 
+  const renderKnockoutPairsBlock = (round) => (
+    <>
+      <Text style={[styles.subHeading, { marginTop: 16 }]}>Matchups</Text>
+      <Text style={styles.helperText}>
+        Tap any team to move it to a different match. The team it gets
+        swapped with takes its place in the original match.
+      </Text>
+      {pairsDraft.map((pair, pairIdx) => {
+        const a = teamById(pair[0]);
+        const b = teamById(pair[1]);
+        const isSelectedA = swapPickerFor && swapPickerFor.pairIdx === pairIdx && swapPickerFor.slot === 0;
+        const isSelectedB = swapPickerFor && swapPickerFor.pairIdx === pairIdx && swapPickerFor.slot === 1;
+        return (
+          <View key={pairIdx} style={styles.pairRow}>
+            <Text style={styles.pairLabel}>
+              {round.label.split(' ').map((w) => w[0]).join('')}
+              {pairsDraft.length > 1 ? ` ${pairIdx + 1}` : ''}
+            </Text>
+            <TouchableOpacity
+              style={[styles.pairTeam, isSelectedA && styles.pairTeamSelected]}
+              onPress={() => setSwapPickerFor(isSelectedA ? null : { pairIdx, slot: 0 })}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.teamChipDot, { backgroundColor: a?.color || PRIMARY }]} />
+              <Text style={styles.pairTeamName} numberOfLines={1}>{a?.short_name || a?.name || '—'}</Text>
+              <MaterialCommunityIcons name="swap-horizontal" size={14} color={isSelectedA ? COLORS.TEXT : MUTED} />
+            </TouchableOpacity>
+            <Text style={styles.pairVs}>vs</Text>
+            <TouchableOpacity
+              style={[styles.pairTeam, isSelectedB && styles.pairTeamSelected]}
+              onPress={() => setSwapPickerFor(isSelectedB ? null : { pairIdx, slot: 1 })}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.teamChipDot, { backgroundColor: b?.color || PRIMARY }]} />
+              <Text style={styles.pairTeamName} numberOfLines={1}>{b?.short_name || b?.name || '—'}</Text>
+              <MaterialCommunityIcons name="swap-horizontal" size={14} color={isSelectedB ? COLORS.TEXT : MUTED} />
+            </TouchableOpacity>
+          </View>
+        );
+      })}
+      {swapPickerFor && (() => {
+        const sel = teamById(pairsDraft[swapPickerFor.pairIdx][swapPickerFor.slot]);
+        return (
+          <View style={styles.swapPicker}>
+            <Text style={styles.swapPickerTitle}>
+              Move <Text style={{ color: PRIMARY }}>{sel?.short_name || sel?.name}</Text> — swap with…
+            </Text>
+            {pairsDraft.flatMap((pair, pIdx) =>
+              pair.map((tid, sIdx) => {
+                if (pIdx === swapPickerFor.pairIdx && sIdx === swapPickerFor.slot) return null;
+                const t = teamById(tid);
+                const otherInTargetPair = teamById(pair[1 - sIdx]);
+                return (
+                  <TouchableOpacity
+                    key={`${pIdx}-${sIdx}`}
+                    style={styles.swapPickerOption}
+                    onPress={() => swapTeams(swapPickerFor.pairIdx, swapPickerFor.slot, pIdx, sIdx)}
+                  >
+                    <View style={[styles.teamChipDot, { backgroundColor: t?.color || PRIMARY }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.swapPickerOptionText}>{t?.short_name || t?.name || '—'}</Text>
+                      <Text style={styles.swapPickerOptionMeta}>
+                        currently in {round.label}{pairsDraft.length > 1 ? ` ${pIdx + 1}` : ''} vs {otherInTargetPair?.short_name || otherInTargetPair?.name || '—'}
+                      </Text>
+                    </View>
+                    <MaterialCommunityIcons name="arrow-right" size={16} color={PRIMARY} />
+                  </TouchableOpacity>
+                );
+              }),
+            )}
+            <TouchableOpacity style={styles.swapPickerCancel} onPress={() => setSwapPickerFor(null)}>
+              <Text style={styles.swapPickerCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      })()}
+    </>
+  );
+
   // RENDER — Initial flow: League Round step (multi-group capable)
   const renderLeagueRoundStep = () => {
     const fmt = formatByKey(formatKey);
+    const isKnockoutOnly = fmt?.key === 'knockout';
+    const koRound = isKnockoutOnly ? knockoutRoundForTeams(tournamentTeams.length) : null;
     return (
       <KeyboardAwareScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }} enableOnAndroid extraScrollHeight={40} keyboardShouldPersistTaps="handled">
-        {/* Format header — reflects the picker choice */}
         <View style={styles.formatHeader}>
           <View style={styles.formatHeaderIcon}>
             <MaterialCommunityIcons name={fmt?.icon || 'trophy-outline'} size={20} color={PRIMARY} />
@@ -1048,33 +1054,75 @@ const TournamentSetupScreen = ({ navigation, route }) => {
           </View>
         </View>
 
-        <Text style={styles.subHeading}>Round Name</Text>
-        <Text style={styles.helperText}>
-          Default is "League Matches". Customize if you like — e.g. "Pool Games".
-        </Text>
-        <View style={styles.inputBox}>
-          <MaterialCommunityIcons name="format-title" size={16} color={MUTED} />
-          <TextInput
-            style={styles.inputText}
-            value={roundName}
-            onChangeText={setRoundName}
-            placeholder="League Matches"
-            placeholderTextColor={MUTED}
-            maxLength={40}
-          />
-        </View>
+        {isKnockoutOnly ? (
+          <>
+            <Text style={styles.subHeading}>Starting Round</Text>
+            {koRound ? (
+              <>
+                <View style={styles.infoCard}>
+                  <MaterialCommunityIcons name="lightning-bolt" size={14} color={COLORS.ACCENT_LIGHT} />
+                  <Text style={styles.infoText}>
+                    {tournamentTeams.length} teams →{' '}
+                    <Text style={{ fontWeight: '700' }}>{koRound.label}</Text>.
+                    Review and swap matchups below, then tap Create.
+                  </Text>
+                </View>
+                <Text style={[styles.subHeading, { marginTop: 14 }]}>Stage display name</Text>
+                <Text style={styles.helperText}>
+                  Shown across the app. Defaults to "{koRound.label}" — customize if you like (e.g. "Grand Final", "Championship").
+                </Text>
+                <View style={styles.inputBox}>
+                  <MaterialCommunityIcons name="format-title" size={16} color={MUTED} />
+                  <TextInput
+                    style={styles.inputText}
+                    value={roundLabel}
+                    onChangeText={setRoundLabel}
+                    placeholder={koRound.label}
+                    placeholderTextColor={MUTED}
+                    maxLength={80}
+                  />
+                </View>
+                {pairsDraft.length > 0 && renderKnockoutPairsBlock(roundByName(chosenRoundName) || koRound)}
+              </>
+            ) : (
+              <View style={styles.infoCard}>
+                <MaterialCommunityIcons name="alert-circle-outline" size={14} color={COLORS.LIVE} />
+                <Text style={[styles.infoText, { color: COLORS.LIVE }]}>
+                  Knockout needs at least 2 teams. You currently have {tournamentTeams.length}.
+                </Text>
+              </View>
+            )}
+          </>
+        ) : (
+          <>
+            <Text style={styles.subHeading}>Round Name</Text>
+            <Text style={styles.helperText}>
+              Default is "League Matches". Customize if you like — e.g. "Pool Games".
+            </Text>
+            <View style={styles.inputBox}>
+              <MaterialCommunityIcons name="format-title" size={16} color={MUTED} />
+              <TextInput
+                style={styles.inputText}
+                value={roundName}
+                onChangeText={setRoundName}
+                placeholder="League Matches"
+                placeholderTextColor={MUTED}
+                maxLength={40}
+              />
+            </View>
 
-        {renderLeagueConfig({ roundLabelForGroups: roundName || 'League' })}
+            {renderLeagueConfig({ roundLabelForGroups: roundName || 'League' })}
 
-        <View style={styles.infoCard}>
-          <MaterialCommunityIcons name="information-outline" size={14} color={COLORS.ACCENT_LIGHT} />
-          <Text style={styles.infoText}>
-            Only the league round is created now. After all league matches finish,
-            you'll see a <Text style={{ fontWeight: '700' }}>Create Next Stage</Text> button on the
-            tournament page where you can add the next knockout round and pick which
-            teams advance.
-          </Text>
-        </View>
+            <View style={styles.infoCard}>
+              <MaterialCommunityIcons name="information-outline" size={14} color={COLORS.ACCENT_LIGHT} />
+              <Text style={styles.infoText}>
+                {fmt?.key === 'league'
+                  ? 'Only the league round is created. Every team plays every other team in its group; there is no knockout phase afterward.'
+                  : <>Only the league round is created now. After all league matches finish, you'll see a <Text style={{ fontWeight: '700' }}>Create Next Stage</Text> button on the tournament page where you can add the next knockout round and pick which teams advance.</>}
+              </Text>
+            </View>
+          </>
+        )}
       </KeyboardAwareScrollView>
     );
   };
@@ -1133,19 +1181,27 @@ const TournamentSetupScreen = ({ navigation, route }) => {
             <Text style={styles.nextBtnText}>Next →</Text>
           </TouchableOpacity>
         )}
-        {step === 2 && (
-          <TouchableOpacity
-            style={[styles.nextBtn, (loading || tournamentTeams.length < 2) && { opacity: 0.5 }]}
-            onPress={createLeagueRound}
-            disabled={loading || tournamentTeams.length < 2}
-          >
-            {loading ? (
-              <ActivityIndicator color={COLORS.TEXT} />
-            ) : (
-              <Text style={styles.nextBtnText}>Create League Round</Text>
-            )}
-          </TouchableOpacity>
-        )}
+        {step === 2 && (() => {
+          const isKnockoutOnly = formatByKey(formatKey)?.key === 'knockout';
+          const koRound = isKnockoutOnly ? knockoutRoundForTeams(tournamentTeams.length) : null;
+          const disabled = loading || tournamentTeams.length < 2 || (isKnockoutOnly && !koRound);
+          const label = isKnockoutOnly
+            ? (koRound ? `Create ${koRound.label}` : 'Create')
+            : 'Create League Round';
+          return (
+            <TouchableOpacity
+              style={[styles.nextBtn, disabled && { opacity: 0.5 }]}
+              onPress={isKnockoutOnly ? createNextRound : createLeagueRound}
+              disabled={disabled}
+            >
+              {loading ? (
+                <ActivityIndicator color={COLORS.TEXT} />
+              ) : (
+                <Text style={styles.nextBtnText}>{label}</Text>
+              )}
+            </TouchableOpacity>
+          );
+        })()}
       </View>
     );
   };

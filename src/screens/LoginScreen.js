@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../services/api';
 import { useToast } from '../components/Toast';
 import OTPInput from '../components/OTPInput';
+import useOtpCountdown, { formatCountdown } from '../hooks/useOtpCountdown';
 import { COLORS, GRADIENTS, FONTS } from '../theme';
 import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 
@@ -24,8 +25,8 @@ const LoginScreen = ({ navigation }) => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [secureText, setSecureText] = useState(true);
-  const [otpTimer, setOtpTimer] = useState(0);
-  const otpTimerRef = useRef(null);
+  // Drives both the validity countdown and the resend cooldown.
+  const otpTimer = useOtpCountdown(30);
 
   const fadeIn = useRef(new Animated.Value(0)).current;
   const slideUp = useRef(new Animated.Value(30)).current;
@@ -36,13 +37,6 @@ const LoginScreen = ({ navigation }) => {
       Animated.timing(slideUp, { toValue: 0, duration: 500, useNativeDriver: true }),
     ]).start();
   }, []);
-
-  useEffect(() => {
-    if (otpTimer > 0) {
-      otpTimerRef.current = setTimeout(() => setOtpTimer((t) => t - 1), 1000);
-    }
-    return () => clearTimeout(otpTimerRef.current);
-  }, [otpTimer]);
 
   const handleMobileChange = (text) => setMobile(text.replace(/[^0-9]/g, ''));
 
@@ -55,43 +49,57 @@ const LoginScreen = ({ navigation }) => {
     }
     setLoading(true);
     try {
-      await authAPI.sendOTP(m, 'login');
+      const res = await authAPI.sendOTP(m, 'login');
       toast.success('OTP Sent', 'Check your phone for the verification code');
       setStep(2);
-      setOtpTimer(60);
+      otpTimer.start(res.data?.expires_in);
     } catch (err) {
-      toast.error('Failed', err.response?.data?.detail || 'Could not send OTP');
+      const detail = err.response?.status === 429
+        ? (err.response?.data?.detail || 'Too many requests. Please wait a moment and try again.')
+        : (err.response?.data?.detail || 'Could not send OTP');
+      toast.error('Failed', detail);
     } finally {
       setLoading(false);
     }
   };
 
   const handleResendOtp = async () => {
-    if (otpTimer > 0 || loading) return;
+    if (!otpTimer.canResend || loading) return;
     setLoading(true);
     try {
-      await authAPI.sendOTP(mobile.trim(), 'login');
+      const res = await authAPI.sendOTP(mobile.trim(), 'login');
       toast.success('OTP Resent', 'New code sent');
-      setOtpTimer(60);
+      otpTimer.start(res.data?.expires_in);
       setOtp('');
     } catch (err) {
-      toast.error('Failed', err.response?.data?.detail || 'Could not resend OTP');
+      const detail = err.response?.status === 429
+        ? (err.response?.data?.detail || 'Too many requests. Please wait before resending.')
+        : (err.response?.data?.detail || 'Could not resend OTP');
+      toast.error('Failed', detail);
     } finally {
       setLoading(false);
     }
   };
 
-  // Step 2 → Step 3: advance to password.
-  // OTP validation is intentionally skipped on the client until DLT-based
-  // SMS delivery is wired up. Any 6-digit value advances the flow; the
-  // actual login on step 3 still requires the real password, so this only
-  // bypasses the SMS gate, not authentication itself.
+  // Step 2 → Step 3: verify the OTP with the backend, then advance to password.
   const handleVerifyOtp = async () => {
     if (otp.length !== 6) {
       toast.warning('Enter the 6-digit OTP');
       return;
     }
-    setStep(3);
+    if (otpTimer.expired) {
+      toast.warning('Code expired', 'Tap Resend OTP to get a new code.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await authAPI.verifyOTP(mobile.trim(), otp, 'login');
+      setStep(3);
+    } catch (err) {
+      toast.error('Verification Failed', err.response?.data?.detail || 'Invalid or expired OTP');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Step 3: login with password
@@ -157,7 +165,7 @@ const LoginScreen = ({ navigation }) => {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           enableOnAndroid
-          extraScrollHeight={40}
+          extraScrollHeight={120}
         >
             <Animated.View style={[s.content, { opacity: fadeIn, transform: [{ translateY: slideUp }] }]}>
               <View style={s.headerSection}>
@@ -219,12 +227,18 @@ const LoginScreen = ({ navigation }) => {
 
                 {step === 2 && (
                   <>
-                    <OTPInput value={otp} onChange={setOtp} />
+                    <OTPInput value={otp} onChange={setOtp} error={otpTimer.expired} />
+
+                    <Text style={[s.expiryText, otpTimer.expired && s.expiryExpired]}>
+                      {otpTimer.expired
+                        ? 'Code expired — tap Resend to get a new one'
+                        : `Code expires in ${formatCountdown(otpTimer.expiresIn)}`}
+                    </Text>
 
                     <TouchableOpacity
-                      style={[s.primaryBtn, loading && s.btnDisabled]}
+                      style={[s.primaryBtn, (loading || otpTimer.expired) && s.btnDisabled]}
                       onPress={handleVerifyOtp}
-                      disabled={loading}
+                      disabled={loading || otpTimer.expired}
                       activeOpacity={0.8}
                     >
                       <LinearGradient colors={GRADIENTS.BUTTON} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.primaryBtnGradient}>
@@ -233,8 +247,8 @@ const LoginScreen = ({ navigation }) => {
                     </TouchableOpacity>
 
                     <View style={s.otpActions}>
-                      {otpTimer > 0 ? (
-                        <Text style={s.timerText}>Resend in {otpTimer}s</Text>
+                      {!otpTimer.canResend ? (
+                        <Text style={s.timerText}>Resend in {otpTimer.resendIn}s</Text>
                       ) : (
                         <TouchableOpacity onPress={handleResendOtp} disabled={loading}>
                           <Text style={s.resendText}>{loading ? 'Sending...' : 'Resend OTP'}</Text>
@@ -381,6 +395,8 @@ const s = StyleSheet.create({
   },
   timerText: { fontFamily: FONTS.family, fontSize: 13, color: COLORS.TEXT_MUTED, fontWeight: '500' },
   resendText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.ACCENT },
+  expiryText: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_SECONDARY, fontWeight: '600', textAlign: 'center', marginTop: 10 },
+  expiryExpired: { color: COLORS.LIVE },
   changeNumText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '600', color: COLORS.TEXT_SECONDARY },
 
 

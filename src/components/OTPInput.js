@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, TextInput, Text, StyleSheet, Animated, Keyboard, Platform, Dimensions } from 'react-native';
+import { View, TextInput, Text, StyleSheet, Animated, Platform, Dimensions } from 'react-native';
 import { COLORS, FONTS } from '../theme';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -44,17 +44,11 @@ const OTPInput = ({ value = '', onChange, autoFocus = true, error = false }) => 
   }, []);
 
   const handleChange = (text) => {
-    // Only digits, max 6
+    // Only digits, max 6. We intentionally do NOT dismiss the keyboard on the
+    // 6th digit — auto-dismiss left the user unable to backspace/edit without
+    // reopening (and reopening dropped the cursor at position 0).
     const clean = text.replace(/[^0-9]/g, '').slice(0, DIGITS);
     onChange(clean);
-    // Auto-dismiss keyboard when all digits entered
-    if (clean.length === DIGITS) {
-      Keyboard.dismiss();
-    }
-  };
-
-  const handlePress = () => {
-    inputRef.current?.focus();
   };
 
   const digits = value.split('');
@@ -80,7 +74,6 @@ const OTPInput = ({ value = '', onChange, autoFocus = true, error = false }) => 
                 isActive && s.boxActive,
                 isError && s.boxError,
               ]}
-              onTouchEnd={handlePress}
             >
               {filled ? (
                 <Text style={[s.digit, isError && s.digitError]}>{digits[i]}</Text>
@@ -93,19 +86,31 @@ const OTPInput = ({ value = '', onChange, autoFocus = true, error = false }) => 
           );
         })}
 
-        {/* Hidden actual TextInput for keyboard */}
+        {/* Transparent full-size input overlay. Sits on top of the boxes and
+            captures taps natively, so the keyboard opens AND reliably RE-opens
+            after being dismissed (the old 1x1 hidden input + onTouchEnd forward
+            failed to reopen). The boxes show through and render the digits. */}
         <TextInput
           ref={inputRef}
-          style={s.hiddenInput}
+          style={s.overlayInput}
           value={value}
+          // Pin the cursor to the end so backspace always deletes the last
+          // digit (otherwise a re-focus can place the caret at position 0).
+          selection={{ start: value.length, end: value.length }}
           onChangeText={handleChange}
           keyboardType="number-pad"
           maxLength={DIGITS}
           autoComplete={Platform.OS === 'android' ? 'sms-otp' : 'one-time-code'}
           textContentType="oneTimeCode"
+          importantForAutofill="yes"
+          autoCapitalize="none"
+          autoCorrect={false}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           caretHidden
+          contextMenuHidden
+          selectionColor="transparent"
+          cursorColor="transparent"
         />
       </Animated.View>
 
@@ -183,10 +188,15 @@ const s = StyleSheet.create({
     backgroundColor: COLORS.ACCENT,
     borderRadius: 1,
   },
-  hiddenInput: {
+  overlayInput: {
+    // Cover the whole boxes row; opacity:0 hides EVERYTHING (text, caret,
+    // selection) so no stray black caret/character shows over the styled
+    // boxes, while the input stays fully interactive (tap = open/reopen kbd).
     position: 'absolute',
-    width: 1,
-    height: 1,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     opacity: 0,
   },
   helperText: {
