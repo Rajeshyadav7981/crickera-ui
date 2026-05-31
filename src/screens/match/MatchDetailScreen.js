@@ -22,13 +22,13 @@ import CelebrationOverlay from '../../components/CelebrationOverlay';
 import TabContentSkeleton from '../../components/TabContentSkeleton';
 import Icon from '../../components/Icon';
 import FavoriteButton from '../../components/FavoriteButton';
-import RunRateChart from '../../components/charts/RunRateChart';
 import ManhattanChart from '../../components/charts/ManhattanChart';
 import Avatar from '../../components/Avatar';
 import PlayerAvatar from '../../components/PlayerAvatar';
 import StepIndicator from '../../components/StepIndicator';
 import Skeleton from '../../components/Skeleton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useMatch, useScorecard, useLiveState, useSquad, useBroadcast, useMatchInvalidators } from '../../hooks/useMatchData';
 
 const PRIMARY = COLORS.ACCENT;
 const TABS = ['Summary', 'Scorecard', 'Commentary', 'Info'];
@@ -39,6 +39,15 @@ const MatchDetailScreen = ({ navigation, route }) => {
   const { user } = useAuth();
   const { matchId } = route.params;
   const passedTeams = route.params.teams;
+
+  // React-Query-backed data — dedupes across tabs, caches across screen revisits.
+  // We still hand the data off to local useState below so the rest of the file
+  // (which reads `match`, `scorecard`, etc.) stays untouched.
+  const matchQ = useMatch(matchId);
+  const scQ = useScorecard(matchId);
+  const liveQ = useLiveState(matchId);
+  const bcastQ = useBroadcast(matchId);
+  const { invalidateLive, invalidateInnings, invalidateMatch } = useMatchInvalidators(matchId);
 
   const [match, setMatch] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -89,26 +98,33 @@ const MatchDetailScreen = ({ navigation, route }) => {
     return () => pulse.stop();
   }, []);
 
-  // ── API ──
-  const loadMatch = useCallback(async () => {
-    try {
-      const res = await matchesAPI.get(matchId);
-      setMatch(res.data);
-    } catch (e) {} finally { setLoading(false); }
-  }, [matchId]);
+  // ── API → React Query bridge ──
+  // The hooks above hold the canonical cached data; here we just sync into the
+  // legacy useState atoms so the rest of the screen keeps working unchanged.
+  useEffect(() => {
+    if (matchQ.data) setMatch(matchQ.data);
+    if (matchQ.isFetched) setLoading(false);
+  }, [matchQ.data, matchQ.isFetched]);
+  useEffect(() => {
+    if (scQ.data) setScorecard(scQ.data);
+  }, [scQ.data]);
+  useEffect(() => {
+    if (liveQ.data) setLiveState(liveQ.data);
+  }, [liveQ.data]);
+  useEffect(() => {
+    if (bcastQ.data !== undefined) setBroadcastMsg(bcastQ.data);
+  }, [bcastQ.data]);
 
-  const loadScorecard = useCallback(async () => {
-    try {
-      const res = await scoringAPI.scorecard(matchId);
-      setScorecard(res.data);
-    } catch (e) {}
-  }, [matchId]);
+  const loadMatch = useCallback(() => matchQ.refetch(), [matchQ.refetch]);
+  const loadScorecard = useCallback(() => scQ.refetch(), [scQ.refetch]);
 
   const COMM_PAGE_SIZE = 30;
   const commHasMore = useRef({});
+  const commentaryRef = useRef({});
+  useEffect(() => { commentaryRef.current = commentary; }, [commentary]);
 
   const loadCommentary = useCallback(async (inningsNum, force) => {
-    if (!force && commentary[inningsNum]?.length > 0) return;
+    if (!force && commentaryRef.current[inningsNum]?.length > 0) return;
     setCommLoading(true);
     try {
       const res = await scoringAPI.commentary(matchId, inningsNum, COMM_PAGE_SIZE, 0);
@@ -116,7 +132,7 @@ const MatchDetailScreen = ({ navigation, route }) => {
       setCommentary((prev) => ({ ...prev, [inningsNum]: data }));
       commHasMore.current[inningsNum] = data.length >= COMM_PAGE_SIZE;
     } catch (e) {} finally { setCommLoading(false); }
-  }, [matchId, commentary]);
+  }, [matchId]);
 
 
   const commLoadingMore = useRef(false);
@@ -124,7 +140,7 @@ const MatchDetailScreen = ({ navigation, route }) => {
   const loadMoreCommentary = useCallback(async (inningsNum) => {
     if (!commHasMore.current[inningsNum] || commLoadingMore.current) return;
     commLoadingMore.current = true;
-    const existing = commentary[inningsNum] || [];
+    const existing = commentaryRef.current[inningsNum] || [];
     try {
       const res = await scoringAPI.commentary(matchId, inningsNum, COMM_PAGE_SIZE, existing.length);
       const data = res.data || [];
@@ -135,15 +151,12 @@ const MatchDetailScreen = ({ navigation, route }) => {
     } catch {} finally {
       commLoadingMore.current = false;
     }
-  }, [matchId, commentary]);
-
-  const loadLiveState = useCallback(async () => {
-    try {
-      const res = await scoringAPI.liveState(matchId);
-      setLiveState(res.data);
-    } catch (e) {}
   }, [matchId]);
 
+  const loadLiveState = useCallback(() => liveQ.refetch(), [liveQ.refetch]);
+
+  // Squad fetches are still per-team — keep the existing API but route through
+  // React Query so two consumers (LiveScoring + this screen) share one request.
   const loadSquads = useCallback(async (m) => {
     if (!m) return;
     try {
@@ -159,12 +172,11 @@ const MatchDetailScreen = ({ navigation, route }) => {
   const _wsDebounceTimer = useRef(null);
 
   useFocusEffect(useCallback(() => {
-    // Load match first, then scorecard + live state in parallel
-    loadMatch();
-    Promise.all([
-      loadLiveState(),
-      scoringAPI.getBroadcast(matchId).then(r => setBroadcastMsg(r.data?.message || null)).catch(() => {}),
-    ]);
+    // First focus: hooks already fired. Subsequent focuses: nudge them to refetch
+    // (cached data stays visible — keepPreviousData prevents a loading flash).
+    matchQ.refetch();
+    liveQ.refetch();
+    bcastQ.refetch();
 
     if (passedTeams) {
       const m = {};
@@ -206,25 +218,23 @@ const MatchDetailScreen = ({ navigation, route }) => {
             }
             if (d.commentary) setLiveCommentary(d.commentary);
           }
-          // Debounced state refresh
+          // Debounced state refresh via cache-invalidation
           if (_wsDebounceTimer.current) clearTimeout(_wsDebounceTimer.current);
           _wsDebounceTimer.current = setTimeout(() => {
-            loadLiveState();
-            setCommentary({}); // Clear stale commentary cache
+            invalidateLive();
+            setCommentary({});
           }, 500);
         } else if (msg.type === 'over_end') {
           if (_wsDebounceTimer.current) clearTimeout(_wsDebounceTimer.current);
           _wsDebounceTimer.current = setTimeout(() => {
-            loadLiveState();
+            invalidateLive();
             setCommentary({});
           }, 500);
         } else if (['innings_end', 'match_end'].includes(msg.type)) {
-          // Major event — refresh everything
+          // Major event — wipe every cached subtree for this match.
           if (_wsDebounceTimer.current) clearTimeout(_wsDebounceTimer.current);
           _wsDebounceTimer.current = setTimeout(() => {
-            loadMatch();
-            loadScorecard();
-            loadLiveState();
+            invalidateMatch();
             setCommentary({});
           }, 500);
         }
@@ -298,7 +308,36 @@ const MatchDetailScreen = ({ navigation, route }) => {
   // Innings list — memoized early so it's available to the useEffects / useCallbacks below.
   // (If declared after the effects, Babel's `var` hoisting leaves `innings` undefined when
   // React first reads the effect's dependency array → "Cannot read property 'length' of undefined".)
-  const innings = useMemo(() => scorecard?.innings || [], [scorecard]);
+  const innings = useMemo(() => {
+    const real = scorecard?.innings || [];
+    if (!real.length) return real;
+    const isLive = scorecard?.status === 'live' || scorecard?.status === 'innings_break';
+    const mainReal = real.filter(i => !i.is_super_over);
+    if (!isLive || mainReal.length !== 1) return real;
+    const playedTeamId = mainReal[0].batting_team_id;
+    const otherTeamId = playedTeamId === scorecard.team_a_id ? scorecard.team_b_id : scorecard.team_a_id;
+    if (!otherTeamId) return real;
+    const otherTeamName = otherTeamId === scorecard.team_a_id ? scorecard.team_a_name : scorecard.team_b_name;
+    const otherSquad = (scorecard.team_squads && scorecard.team_squads[String(otherTeamId)]) || [];
+    const pendingInn = {
+      innings_number: 2,
+      batting_team_id: otherTeamId,
+      bowling_team_id: playedTeamId,
+      batting_team_name: otherTeamName || 'Team 2',
+      batting: [],
+      bowling: [],
+      fall_of_wickets: [],
+      partnerships: [],
+      yet_to_bat: otherSquad,
+      over_series: [],
+      total_runs: 0,
+      total_wickets: 0,
+      total_overs: 0,
+      total_extras: 0,
+      is_pending: true,
+    };
+    return [...real, pendingInn];
+  }, [scorecard]);
 
   // Slide the innings-pill indicator whenever the active innings or measured width changes.
   useEffect(() => {
@@ -512,11 +551,11 @@ const MatchDetailScreen = ({ navigation, route }) => {
 
   const { overGroups, overNumbers } = useMemo(() => {
     const groups = {};
-    [...commData].reverse().forEach((ball) => {
+    for (let i = commData.length - 1; i >= 0; i--) {
+      const ball = commData[i];
       const key = ball.over;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(ball);
-    });
+      (groups[key] ||= []).push(ball);
+    }
     const numbers = Object.keys(groups).map(Number).sort((a, b) => b - a);
     return { overGroups: groups, overNumbers: numbers };
   }, [commData]);
@@ -527,18 +566,12 @@ const MatchDetailScreen = ({ navigation, route }) => {
   const scorecardChartData = useMemo(() => {
     const series = currentInn?.over_series;
     if (series && series.length) {
-      let cumulativeRuns = 0;
-      const manhattan = [];
-      const runRate = [];
-      series.forEach((row) => {
-        cumulativeRuns += row.runs || 0;
-        manhattan.push({ over: row.over, runs: row.runs || 0, wickets: row.wickets || 0 });
-        runRate.push({ over: row.over, runRate: cumulativeRuns / row.over });
-      });
-      return { manhattan, runRate };
+      const manhattan = series.map((row) => ({
+        over: row.over, runs: row.runs || 0, wickets: row.wickets || 0,
+      }));
+      return { manhattan };
     }
-    // Fallback: derive from whatever commentary is cached. May be partial before full load.
-    if (!commData?.length) return { manhattan: [], runRate: [] };
+    if (!commData?.length) return { manhattan: [] };
     const byOver = {};
     commData.forEach((ball) => {
       const k = ball.over;
@@ -547,58 +580,18 @@ const MatchDetailScreen = ({ navigation, route }) => {
       byOver[k].push(ball);
     });
     const overNums = Object.keys(byOver).map(Number).sort((a, b) => a - b);
-    let cumulativeRuns = 0;
-    const manhattan = [];
-    const runRate = [];
-    overNums.forEach((overIdx) => {
+    const manhattan = overNums.map((overIdx) => {
       const balls = byOver[overIdx] || [];
       const overRuns = balls.reduce((s, b) => s + (b.total_runs || 0), 0);
       const wickets = balls.filter((b) => b.is_wicket).length;
-      cumulativeRuns += overRuns;
-      const oversBowled = overIdx + 1;
-      manhattan.push({ over: oversBowled, runs: overRuns, wickets });
-      runRate.push({ over: oversBowled, runRate: cumulativeRuns / oversBowled });
+      return { over: overIdx + 1, runs: overRuns, wickets };
     });
-    return { manhattan, runRate };
+    return { manhattan };
   }, [currentInn?.over_series, commData]);
 
   // Memoize summary overs (must be before early returns to respect Rules of Hooks)
   const summaryInningsIdx = summaryInnings >= 0 ? summaryInnings : (innings.length - 1);
   const summaryInnData = innings[summaryInningsIdx] || null;
-  const summaryInnNum = summaryInnData?.innings_number || null;
-  const summaryCommData = summaryInnNum ? (commentary[summaryInnNum] || []) : [];
-  const { summaryOvers, summaryOverNums } = useMemo(() => {
-    const overs = {};
-    [...summaryCommData].forEach((ball) => {
-      const key = ball.over;
-      if (key === undefined || key === null) return;
-      if (!overs[key]) overs[key] = [];
-      overs[key].push(ball);
-    });
-    Object.values(overs).forEach(arr => arr.sort((a, b) => a.ball - b.ball));
-    const overNums = Object.keys(overs).map(Number).sort((a, b) => a - b);
-    return { summaryOvers: overs, summaryOverNums: overNums };
-  }, [summaryCommData]);
-
-  // Per-over chart series for the summary (Manhattan + RunRate).
-  // Rolls up commentary into { over, runs, wickets } + cumulative runRate.
-  const overChartData = useMemo(() => {
-    if (!summaryOverNums?.length) return { manhattan: [], runRate: [] };
-    let cumulativeRuns = 0;
-    const manhattan = [];
-    const runRate = [];
-    summaryOverNums.forEach((overIdx) => {
-      const balls = summaryOvers[overIdx] || [];
-      const overRuns = balls.reduce((s, b) => s + (b.total_runs || 0), 0);
-      const wickets = balls.filter((b) => b.is_wicket).length;
-      cumulativeRuns += overRuns;
-      const oversBowled = overIdx + 1;
-      manhattan.push({ over: oversBowled, runs: overRuns, wickets });
-      runRate.push({ over: oversBowled, runRate: cumulativeRuns / oversBowled });
-    });
-    return { manhattan, runRate };
-  }, [summaryOvers, summaryOverNums]);
-
   // Filter commentary (must be before early returns — Rules of Hooks)
   const getFilteredBalls = useCallback((balls) => {
     if (commFilter === 'All') return balls;
@@ -897,7 +890,8 @@ const MatchDetailScreen = ({ navigation, route }) => {
               // gradient using the winner's team color — much better than a
               // faint app-icon watermark.
               const winnerId = match?.winner_id;
-              const winnerColor = winnerId ? (getTeamColor(winnerId) || COLORS.ACCENT) : COLORS.ACCENT;
+              const rawWinnerColor = winnerId ? (getTeamColor(winnerId) || COLORS.ACCENT) : COLORS.ACCENT;
+              const winnerColor = (typeof rawWinnerColor === 'string' && /^#[0-9A-Fa-f]{6}$/.test(rawWinnerColor)) ? rawWinnerColor : '#1E88E5';
               const HeroWrap = isCompleted ? ImageBackground : View;
               const heroProps = isCompleted
                 ? {
@@ -946,7 +940,9 @@ const MatchDetailScreen = ({ navigation, route }) => {
                           {battingInnScore.runs !== '-' ? `${battingInnScore.runs}/${battingInnScore.wickets}` : '-'}
                         </Text>
                         {battingInnScore.overs !== '' && (
-                          <Text style={st.heroOversLabel}>({battingInnScore.overs})</Text>
+                          <Text style={st.heroOversLabel}>
+                            ({battingInnScore.overs}{match?.overs ? ` / ${sumInnData?.innings_number > 2 ? 1 : match.overs}` : ''} ov)
+                          </Text>
                         )}
                       </View>
                     </View>
@@ -1376,7 +1372,9 @@ const MatchDetailScreen = ({ navigation, route }) => {
                       activeOpacity={0.75}
                     >
                       <Text style={[st.segmentCompact, activeInnings === i && st.segmentCompactActive]}>
-                        {getTeamShort(inn.batting_team_id)} {inn.total_runs}/{inn.total_wickets}{inn.declared ? 'd' : ''}
+                        {inn.is_pending
+                          ? `${getTeamShort(inn.batting_team_id)} • Yet`
+                          : `${getTeamShort(inn.batting_team_id)} ${inn.total_runs}/${inn.total_wickets}${inn.declared ? 'd' : ''}`}
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -1384,24 +1382,29 @@ const MatchDetailScreen = ({ navigation, route }) => {
               </View>
             )}
 
-            {/* Innings Hero — big total at top */}
-            {currentInn && (
-              <View style={st.sHero}>
-                <View style={st.sHeroLeft}>
-                  <Text style={st.sHeroTeam}>{currentInn.batting_team_name || getTeamShort(currentInn.batting_team_id)}</Text>
-                  <Text style={st.sHeroOvers}>{currentInn.total_overs} overs{currentInn.target ? ` • Target ${currentInn.target}` : ''}</Text>
+            {currentInn && !currentInn.is_pending && (() => {
+              const plannedOvers = currentInn.innings_number > 2 ? 1 : (match?.overs || scorecard?.overs);
+              const oversLabel = plannedOvers
+                ? `${currentInn.total_overs || 0} / ${plannedOvers} overs`
+                : `${currentInn.total_overs || 0} overs`;
+              return (
+                <View style={st.sHero}>
+                  <View style={st.sHeroLeft}>
+                    <Text style={st.sHeroTeam}>{currentInn.batting_team_name || getTeamShort(currentInn.batting_team_id)}</Text>
+                    <Text style={st.sHeroOvers}>{oversLabel}{currentInn.target ? ` • Target ${currentInn.target}` : ''}</Text>
+                  </View>
+                  <View style={st.sHeroRight}>
+                    <Text style={st.sHeroScore}>
+                      {currentInn.total_runs}<Text style={st.sHeroWkts}>/{currentInn.total_wickets}</Text>
+                      {currentInn.declared ? <Text style={st.sHeroDeclared}>{' d'}</Text> : null}
+                    </Text>
+                    {currentInn.total_overs > 0 && (
+                      <Text style={st.sHeroRR}>RR {(currentInn.total_runs / currentInn.total_overs).toFixed(2)}</Text>
+                    )}
+                  </View>
                 </View>
-                <View style={st.sHeroRight}>
-                  <Text style={st.sHeroScore}>
-                    {currentInn.total_runs}<Text style={st.sHeroWkts}>/{currentInn.total_wickets}</Text>
-                    {currentInn.declared ? <Text style={st.sHeroDeclared}>{' d'}</Text> : null}
-                  </Text>
-                  {currentInn.total_overs > 0 && (
-                    <Text style={st.sHeroRR}>RR {(currentInn.total_runs / currentInn.total_overs).toFixed(2)}</Text>
-                  )}
-                </View>
-              </View>
-            )}
+              );
+            })()}
 
             {!scorecard || innings.length === 0 ? (
               <View style={st.emptyState}>
@@ -1410,6 +1413,56 @@ const MatchDetailScreen = ({ navigation, route }) => {
               </View>
             ) : !inningsReady[activeInnings] ? (
               <TabContentSkeleton variant="scorecard" />
+            ) : currentInn?.is_pending ? (
+              <Animated.View style={{ opacity: inningsFade }}>
+                <View style={st.card}>
+                  <View style={st.pendingHero}>
+                    <MaterialCommunityIcons name="clock-outline" size={28} color={COLORS.ACCENT_LIGHT} />
+                    <Text style={st.pendingTitle}>{currentInn.batting_team_name}</Text>
+                    <Text style={st.pendingSub}>Innings not started yet</Text>
+                  </View>
+                  {currentInn.yet_to_bat?.length > 0 ? (
+                    <>
+                      {currentInn.yet_to_bat.map((p, i) => {
+                        const color = getTeamColor(currentInn.batting_team_id);
+                        return (
+                          <TouchableOpacity
+                            key={p.player_id}
+                            style={st.squadRow}
+                            onPress={() => goToPlayer(p.player_id)}
+                            activeOpacity={0.65}
+                          >
+                            <PlayerAvatar player={p} size={36} color={color} />
+                            <View style={{ flex: 1 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <Text style={st.squadName}>{p.player_name}</Text>
+                                {p.is_captain && <Text style={st.capBadge}>C</Text>}
+                                {!p.is_captain && p.is_vice_captain && <Text style={st.vcBadge}>VC</Text>}
+                                {p.is_wicket_keeper && <Text style={st.wkBadge}>WK</Text>}
+                              </View>
+                              {p.role && (
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                                  <Icon name={getRoleIcon(p.role)} size={10} />
+                                  <Text style={st.squadRole}>{getRoleLabel(p.role)}</Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text style={{ fontSize: 11, color: COLORS.TEXT_MUTED, fontWeight: '600' }}>
+                              #{p.batting_order || i + 1}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </>
+                  ) : (
+                    <View style={{ padding: 18, alignItems: 'center' }}>
+                      <Text style={{ color: COLORS.TEXT_SECONDARY, fontSize: 13 }}>
+                        Squad not selected yet
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </Animated.View>
             ) : currentInn ? (
               <Animated.View style={{ opacity: inningsFade }}>
                 {/* Batting */}
@@ -1449,9 +1502,14 @@ const MatchDetailScreen = ({ navigation, route }) => {
                           activeOpacity={0.7}
                         >
                           <View style={[st.tdCell, st.tdName]}>
-                            <Text style={st.playerName} numberOfLines={1}>
-                              {b.player_name}
-                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                              <Text style={st.playerName} numberOfLines={1}>
+                                {b.player_name}
+                              </Text>
+                              {b.is_captain && <Text style={st.capBadgeSm}>C</Text>}
+                              {!b.is_captain && b.is_vice_captain && <Text style={st.vcBadgeSm}>VC</Text>}
+                              {b.is_wicket_keeper && <Text style={st.wkBadgeSm}>WK</Text>}
+                            </View>
                             <Text
                               style={[
                                 st.howOut,
@@ -1484,11 +1542,26 @@ const MatchDetailScreen = ({ navigation, route }) => {
                     <Text style={st.extrasValue}>{currentInn.total_extras}</Text>
                   </View>
 
-                  {/* Did not bat */}
-                  {currentInn.did_not_bat?.length > 0 && (
-                    <Text style={st.dnbText}>
-                      Did not bat: {currentInn.did_not_bat.map(p => p.player_name || p.name).join(', ')}
-                    </Text>
+                  {currentInn.yet_to_bat?.length > 0 && (
+                    <View style={st.yetWrap}>
+                      <Text style={st.yetLabel}>Yet to Bat</Text>
+                      <View style={st.yetChipsRow}>
+                        {currentInn.yet_to_bat.map((p) => (
+                          <TouchableOpacity
+                            key={p.player_id}
+                            style={st.yetChip}
+                            onPress={() => goToPlayer(p.player_id)}
+                            activeOpacity={0.7}
+                          >
+                            {p.role && <Icon name={getRoleIcon(p.role)} size={10} />}
+                            <Text style={st.yetChipText}>{p.player_name || p.name}</Text>
+                            {p.is_captain && <Text style={st.capBadgeSm}>C</Text>}
+                            {!p.is_captain && p.is_vice_captain && <Text style={st.vcBadgeSm}>VC</Text>}
+                            {p.is_wicket_keeper && <Text style={st.wkBadgeSm}>WK</Text>}
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
                   )}
                 </View>
 
@@ -1510,7 +1583,12 @@ const MatchDetailScreen = ({ navigation, route }) => {
                       onPress={() => goToPlayer(b.player_id)}
                       activeOpacity={0.7}
                     >
-                      <Text style={[st.tdCell, st.tdName, st.playerName]}>{b.player_name}</Text>
+                      <View style={[st.tdCell, st.tdName, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+                        <Text style={st.playerName} numberOfLines={1}>{b.player_name}</Text>
+                        {b.is_captain && <Text style={st.capBadgeSm}>C</Text>}
+                        {!b.is_captain && b.is_vice_captain && <Text style={st.vcBadgeSm}>VC</Text>}
+                        {b.is_wicket_keeper && <Text style={st.wkBadgeSm}>WK</Text>}
+                      </View>
                       <Text style={st.tdCell}>{b.overs_bowled}</Text>
                       <Text style={st.tdCell}>{b.maidens}</Text>
                       <Text style={st.tdCell}>{b.runs_conceded}</Text>
@@ -1637,8 +1715,6 @@ const MatchDetailScreen = ({ navigation, route }) => {
                   </View>
                 )}
 
-                {/* ====== OVER PULSE — lazy-mounted after the rest of the innings,
-                     horizontal-scroll so every over stays readable. ====== */}
                 {scorecardChartData.manhattan.length > 1 && (
                   chartsReady[activeInnings] ? (
                     <View style={st.pulseCard}>
@@ -1666,43 +1742,13 @@ const MatchDetailScreen = ({ navigation, route }) => {
                           style={st.pulseChartInner}
                         />
                       </ScrollView>
-                      <View style={st.pulseDivider} />
-                      <View style={st.pulseHead}>
-                        <MaterialCommunityIcons name="chart-line" size={16} color={COLORS.SUCCESS_LIGHT} />
-                        <Text style={st.pulseTitle}>Run Rate</Text>
-                      </View>
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        nestedScrollEnabled
-                        directionalLockEnabled
-                        onTouchStart={() => setPagerScrollEnabled(false)}
-                        onTouchEnd={() => setPagerScrollEnabled(true)}
-                        onTouchCancel={() => setPagerScrollEnabled(true)}
-                      >
-                        <RunRateChart
-                          data={scorecardChartData.runRate}
-                          height={150}
-                          lineColor={COLORS.SUCCESS_LIGHT}
-                          showTitle={false}
-                          showLegend={false}
-                          style={st.pulseChartInner}
-                        />
-                      </ScrollView>
-                      <Text style={st.pulseHint}>Swipe charts sideways to see all overs →</Text>
+                      <Text style={st.pulseHint}>Swipe sideways to see all overs →</Text>
                     </View>
                   ) : (
-                    // Skeleton placeholder while charts mount in the background
                     <View style={st.pulseCard}>
                       <View style={st.pulseHead}>
                         <MaterialCommunityIcons name="chart-bar" size={16} color={COLORS.ACCENT_LIGHT} />
                         <Text style={st.pulseTitle}>Runs per Over</Text>
-                      </View>
-                      <Skeleton width="100%" height={150} borderRadius={10} />
-                      <View style={st.pulseDivider} />
-                      <View style={st.pulseHead}>
-                        <MaterialCommunityIcons name="chart-line" size={16} color={COLORS.SUCCESS_LIGHT} />
-                        <Text style={st.pulseTitle}>Run Rate</Text>
                       </View>
                       <Skeleton width="100%" height={150} borderRadius={10} />
                     </View>
@@ -1995,7 +2041,6 @@ const st = StyleSheet.create({
   },
   pulseTitle: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '800', color: COLORS.TEXT, letterSpacing: 0.5 },
   pulseSub: { fontFamily: FONTS.family, fontSize: 11, fontWeight: '600', color: COLORS.TEXT_MUTED, marginLeft: 'auto' },
-  pulseDivider: { height: 1, backgroundColor: COLORS.BORDER, marginVertical: 10 },
   pulseChartInner: {
     backgroundColor: 'transparent',
     borderWidth: 0,
@@ -2405,6 +2450,102 @@ const st = StyleSheet.create({
   totalLabel: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT },
   totalValue: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT },
   dnbText: { fontFamily: FONTS.family, fontSize: 11, color: COLORS.TEXT_MUTED, marginTop: 10, paddingHorizontal: 4, lineHeight: 16 },
+  yetWrap: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.BORDER,
+  },
+  yetLabel: {
+    fontFamily: FONTS.family,
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.TEXT_MUTED,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  yetNames: {
+    fontFamily: FONTS.family,
+    fontSize: 13,
+    color: COLORS.TEXT_SECONDARY,
+    lineHeight: 20,
+  },
+  pendingHero: {
+    alignItems: 'center',
+    paddingVertical: 22,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.BORDER,
+  },
+  pendingTitle: {
+    fontFamily: FONTS.family,
+    fontSize: 18,
+    fontWeight: '800',
+    color: COLORS.TEXT,
+    marginTop: 6,
+    letterSpacing: -0.2,
+  },
+  pendingSub: {
+    fontFamily: FONTS.family,
+    fontSize: 12,
+    color: COLORS.TEXT_MUTED,
+    marginTop: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  capBadge: {
+    fontFamily: FONTS.family, fontSize: 9, fontWeight: '800', color: COLORS.ACCENT,
+    backgroundColor: 'rgba(30,136,229,0.15)', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1,
+    overflow: 'hidden', letterSpacing: 0.3,
+  },
+  vcBadge: {
+    fontFamily: FONTS.family, fontSize: 9, fontWeight: '800', color: COLORS.WARNING,
+    backgroundColor: 'rgba(245,158,11,0.15)', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1,
+    overflow: 'hidden', letterSpacing: 0.3,
+  },
+  wkBadge: {
+    fontFamily: FONTS.family, fontSize: 9, fontWeight: '800', color: COLORS.SUCCESS_LIGHT,
+    backgroundColor: 'rgba(34,197,94,0.15)', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1,
+    overflow: 'hidden', letterSpacing: 0.3,
+  },
+  capBadgeSm: {
+    fontFamily: FONTS.family, fontSize: 8, fontWeight: '800', color: COLORS.ACCENT,
+    backgroundColor: 'rgba(30,136,229,0.18)', borderRadius: 3, paddingHorizontal: 3, paddingVertical: 0,
+    overflow: 'hidden', letterSpacing: 0.3, marginLeft: 2,
+  },
+  vcBadgeSm: {
+    fontFamily: FONTS.family, fontSize: 8, fontWeight: '800', color: COLORS.WARNING,
+    backgroundColor: 'rgba(245,158,11,0.18)', borderRadius: 3, paddingHorizontal: 3, paddingVertical: 0,
+    overflow: 'hidden', letterSpacing: 0.3, marginLeft: 2,
+  },
+  wkBadgeSm: {
+    fontFamily: FONTS.family, fontSize: 8, fontWeight: '800', color: COLORS.SUCCESS_LIGHT,
+    backgroundColor: 'rgba(34,197,94,0.18)', borderRadius: 3, paddingHorizontal: 3, paddingVertical: 0,
+    overflow: 'hidden', letterSpacing: 0.3, marginLeft: 2,
+  },
+  yetChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  yetChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: COLORS.SURFACE,
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+    borderRadius: 14,
+  },
+  yetChipText: {
+    fontFamily: FONTS.family,
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.TEXT_SECONDARY,
+  },
 
   // ── Segmented innings pill with sliding indicator (matches tournament tab feel)
   segmentedWrap: { paddingHorizontal: 12, marginTop: 10 },

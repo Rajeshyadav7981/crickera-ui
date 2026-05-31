@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert,
+  View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
   ActivityIndicator, Switch,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,11 +9,13 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { playersAPI, teamsAPI, usersAPI } from '../../services/api';
 import { COLORS, FONTS } from '../../theme';
 import Avatar from '../../components/Avatar';
+import { useToast } from '../../components/Toast';
 
 const RADIUS = 12;
 
 const AddPlayerScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
+  const toast = useToast();
   const { teamId } = route.params;
 
   // Mode: 'mobile' (default) or 'guest'
@@ -85,17 +87,16 @@ const AddPlayerScreen = ({ navigation, route }) => {
   }, [mobile, mode]);
 
   const handleAdd = async () => {
-    // Validation
     if (mode === 'mobile') {
       if (!/^\d{10}$/.test(mobile.trim())) {
-        return Alert.alert('Invalid', 'Enter a valid 10-digit mobile number.');
+        return toast.error('Enter a valid 10-digit mobile number');
       }
       if (lookup.state !== 'match' && !firstName.trim()) {
-        return Alert.alert('Required', 'Player name is required.');
+        return toast.error('Player name is required');
       }
     } else {
       if (!firstName.trim()) {
-        return Alert.alert('Required', 'Guest player name is required.');
+        return toast.error('Guest player name is required');
       }
     }
 
@@ -121,17 +122,15 @@ const AddPlayerScreen = ({ navigation, route }) => {
         is_vice_captain: isViceCaptain,
         is_wicket_keeper: isWk,
       });
-      Alert.alert(
-        'Success',
-        mode === 'guest'
-          ? 'Guest player added — no account linked.'
-          : lookup.state === 'match'
-            ? `Linked to ${lookup.user.full_name}`
-            : 'Player added — will link when they register.',
-      );
+      const msg = mode === 'guest'
+        ? 'Guest player added'
+        : lookup.state === 'match'
+          ? `Linked to ${lookup.user.full_name}`
+          : 'Will link when they register';
+      toast.success('Player added', msg);
       navigation.goBack();
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to add player');
+      toast.error(e.response?.data?.detail || 'Failed to add player');
     } finally {
       setLoading(false);
     }

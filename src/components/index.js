@@ -43,7 +43,4 @@ export { default as ShareableScorecard, ScorecardImage } from './ShareableScorec
 
 // Charts
 export { default as ManhattanChart } from './charts/ManhattanChart';
-export { default as WormChart } from './charts/WormChart';
-
-export { default as RunRateChart } from './charts/RunRateChart';
 export { default as FallOfWicketsChart } from './charts/FallOfWicketsChart';

@@ -216,7 +216,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
   const loadTeams = async () => {
     setTeamsLoading(true);
     try {
-      const params = {};
+      const params = { limit: 100 };
       if (userLocation) {
         params.lat = userLocation.latitude;
         params.lng = userLocation.longitude;
@@ -226,6 +226,32 @@ const TournamentSetupScreen = ({ navigation, route }) => {
     } catch (_) {}
     setTeamsLoading(false);
   };
+
+  // Server-side search: the initial load only fetches the first 100 teams,
+  // so for accounts with hundreds of teams we have to ask the backend whenever
+  // the user types in the search box. Debounced so we don't fire on every keystroke.
+  useEffect(() => {
+    const q = teamSearch.trim();
+    if (!q || q.length < 2) return;
+    const handle = setTimeout(async () => {
+      try {
+        const params = { limit: 100 };
+        if (searchMode === 'code') params.code = q.toUpperCase();
+        else params.search = q;
+        const res = await teamsAPI.list(params);
+        const found = res.data || [];
+        if (!found.length) return;
+        // Merge into the loaded list without duplicates so the existing filter logic finds them.
+        setAllTeams((prev) => {
+          const seen = new Set(prev.map((t) => t.id));
+          const merged = [...prev];
+          for (const t of found) if (!seen.has(t.id)) merged.push(t);
+          return merged;
+        });
+      } catch (_) {}
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [teamSearch, searchMode]);
 
   // ===== Team management =====
   const addTeamToTournament = async (team) => {
@@ -704,7 +730,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
       {teamsLoading ? (
         <ActivityIndicator size="small" color={PRIMARY} style={{ marginTop: 20 }} />
       ) : (
-        filteredAvailable.slice(0, 20).map((t) => (
+        filteredAvailable.slice(0, 50).map((t) => (
           <TouchableOpacity
             key={t.id}
             style={styles.teamRow}

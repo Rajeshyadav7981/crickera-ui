@@ -1,9 +1,10 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl, TextInput, ImageBackground,
+  ActivityIndicator, RefreshControl, TextInput,
   Dimensions, Animated, InteractionManager,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { FlashList } from '@shopify/flash-list';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -160,9 +161,7 @@ const TournamentsTab = () => {
   const fetchTournaments = useCallback(async (reset = false) => {
     if (!reset && !tournHasMoreRef.current) return;
 
-    const useNearby = !tournSearch.trim() && tournFilter === 'All' && !!userLocation;
     const offset = reset ? 0 : tournOffsetRef.current;
-    if (useNearby && !reset) return;
     if (reset) {
       setTournLoading(true);
     } else {
@@ -170,19 +169,14 @@ const TournamentsTab = () => {
     }
 
     try {
-      let data = [];
-      if (useNearby) {
-        const res = await tournamentsAPI.nearby(
-          userLocation.latitude, userLocation.longitude, 50, 50,
-        );
-        data = res.data || [];
-      } else {
-        const params = { limit: PAGE_SIZE, offset };
-        if (tournFilter !== 'All') params.status = STATUS_MAP_TOURN[tournFilter];
-        if (tournSearch.trim()) params.search = tournSearch.trim();
-        const res = await tournamentsAPI.list(params);
-        data = res.data || [];
-      }
+      // Always use the paginated list endpoint so tournaments without a venue
+      // (no lat/lng) still surface on the "All" tab. Location-based discovery
+      // is preserved via the "Live Now" strip above.
+      const params = { limit: PAGE_SIZE, offset };
+      if (tournFilter !== 'All') params.status = STATUS_MAP_TOURN[tournFilter];
+      if (tournSearch.trim()) params.search = tournSearch.trim();
+      const res = await tournamentsAPI.list(params);
+      const data = res.data || [];
 
       if (reset) {
         setTournaments(data);
@@ -199,13 +193,8 @@ const TournamentsTab = () => {
         });
       }
 
-      if (useNearby) {
-        tournOffsetRef.current = data.length;
-        tournHasMoreRef.current = false;
-      } else {
-        tournOffsetRef.current = offset + data.length;
-        tournHasMoreRef.current = data.length >= PAGE_SIZE;
-      }
+      tournOffsetRef.current = offset + data.length;
+      tournHasMoreRef.current = data.length >= PAGE_SIZE;
     } catch {
       if (reset) setTournaments([]);
     } finally {
@@ -219,9 +208,7 @@ const TournamentsTab = () => {
   const fetchMatches = useCallback(async (reset = false) => {
     if (!reset && !matchHasMoreRef.current) return;
 
-    const useNearby = !matchSearch.trim() && matchFilter === 'All' && !!userLocation;
     const offset = reset ? 0 : matchOffsetRef.current;
-    if (useNearby && !reset) return;
     if (reset) {
       setMatchLoading(true);
     } else {
@@ -229,19 +216,13 @@ const TournamentsTab = () => {
     }
 
     try {
-      let data = [];
-      if (useNearby) {
-        const res = await matchesAPI.nearby(
-          userLocation.latitude, userLocation.longitude, 50,
-        );
-        data = res.data || [];
-      } else {
-        const params = { limit: PAGE_SIZE, offset };
-        if (matchFilter !== 'All') params.status = STATUS_MAP_MATCH[matchFilter];
-        if (matchSearch.trim()) params.search = matchSearch.trim();
-        const res = await matchesAPI.list(params);
-        data = res.data || [];
-      }
+      // Same fix as tournaments — always use the list endpoint so matches
+      // without a venue still appear on the "All" tab.
+      const params = { limit: PAGE_SIZE, offset };
+      if (matchFilter !== 'All') params.status = STATUS_MAP_MATCH[matchFilter];
+      if (matchSearch.trim()) params.search = matchSearch.trim();
+      const res = await matchesAPI.list(params);
+      const data = res.data || [];
 
       if (reset) {
         setMatches(data);
@@ -249,13 +230,8 @@ const TournamentsTab = () => {
         setMatches(prev => [...prev, ...data]);
       }
 
-      if (useNearby) {
-        matchOffsetRef.current = data.length;
-        matchHasMoreRef.current = false;
-      } else {
-        matchOffsetRef.current = offset + data.length;
-        matchHasMoreRef.current = data.length >= PAGE_SIZE;
-      }
+      matchOffsetRef.current = offset + data.length;
+      matchHasMoreRef.current = data.length >= PAGE_SIZE;
     } catch {
       if (reset) setMatches([]);
     } finally {
@@ -428,8 +404,15 @@ const TournamentsTab = () => {
         activeOpacity={0.9}
         onPress={() => navigation.navigate('TournamentDetail', { tournamentId: t.id })}
       >
-        <ImageBackground source={{ uri: img }} style={styles.tournamentImage} imageStyle={styles.tournamentImageStyle}
-          defaultSource={require('../../../assets/icon.png')}>
+        <View style={styles.tournamentImage}>
+          <ExpoImage
+            source={img}
+            style={[StyleSheet.absoluteFill, styles.tournamentImageStyle]}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={150}
+            recyclingKey={img}
+          />
           <View style={styles.tournamentOverlay}>
             <View style={styles.tournamentTopRow}>
               <View style={[styles.statusChip, { backgroundColor: statusInfo.bg }]}>
@@ -453,7 +436,7 @@ const TournamentsTab = () => {
               </View>
             </View>
           </View>
-        </ImageBackground>
+        </View>
       </TouchableOpacity>
     );
   }, [navigation]);
@@ -499,7 +482,15 @@ const TournamentsTab = () => {
                   activeOpacity={0.85}
                   onPress={() => navigation.navigate('TournamentDetail', { tournamentId: t.id })}
                 >
-                  <ImageBackground source={{ uri: img }} style={styles.liveCardImage} imageStyle={{ borderRadius: 14 }}>
+                  <View style={styles.liveCardImage}>
+                    <ExpoImage
+                      source={img}
+                      style={[StyleSheet.absoluteFill, { borderRadius: 14 }]}
+                      contentFit="cover"
+                      cachePolicy="memory-disk"
+                      transition={150}
+                      recyclingKey={img}
+                    />
                     <View style={styles.liveCardOverlay}>
                       <View style={styles.liveChip}><PulsingDot /><Text style={styles.liveChipText}>LIVE</Text></View>
                       <Text style={styles.liveCardName} numberOfLines={2}>{t.name}</Text>
@@ -508,7 +499,7 @@ const TournamentsTab = () => {
                         {t.location && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><Icon name="location" size={10} /><Text style={styles.liveCardMeta}>{t.location}</Text></View>}
                       </View>
                     </View>
-                  </ImageBackground>
+                  </View>
                 </TouchableOpacity>
               );
             })}
@@ -577,7 +568,7 @@ const TournamentsTab = () => {
         <Icon name="search" size={16} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search tournaments by name, code..."
+          placeholder="Search by name, code, city, organizer…"
           placeholderTextColor={MUTED}
           value={tournSearch}
           onChangeText={handleTournSearchChange}
@@ -602,6 +593,14 @@ const TournamentsTab = () => {
           );
         })}
       </ScrollView>
+
+      {!!tournSearch.trim() && !tournLoading && (
+        <Text style={styles.resultCount}>
+          {tournaments.length === 0
+            ? `No matches for "${tournSearch.trim()}"`
+            : `${tournaments.length}${tournHasMoreRef.current ? '+' : ''} result${tournaments.length === 1 ? '' : 's'} for "${tournSearch.trim()}"`}
+        </Text>
+      )}
 
       {tournaments.length === 0 && (tournLoading || tournRefreshing) ? (
         // Skeleton only when we have nothing to show yet. Once data arrives
@@ -639,7 +638,7 @@ const TournamentsTab = () => {
         <Icon name="search" size={16} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search by team, match code..."
+          placeholder="Search by team, match code or name…"
           placeholderTextColor={MUTED}
           value={matchSearch}
           onChangeText={handleMatchSearchChange}
@@ -664,6 +663,14 @@ const TournamentsTab = () => {
           );
         })}
       </ScrollView>
+
+      {!!matchSearch.trim() && !matchLoading && (
+        <Text style={styles.resultCount}>
+          {matches.length === 0
+            ? `No matches for "${matchSearch.trim()}"`
+            : `${matches.length}${matchHasMoreRef.current ? '+' : ''} result${matches.length === 1 ? '' : 's'} for "${matchSearch.trim()}"`}
+        </Text>
+      )}
 
       {matches.length === 0 && (matchLoading || matchRefreshing) ? (
         <ListSkeleton count={3} Card={MatchCardSkeleton} />
@@ -788,6 +795,16 @@ const styles = StyleSheet.create({
   searchIcon: { fontFamily: FONTS.family, fontSize: 14, marginRight: 10, color: MUTED },
   searchInput: { fontFamily: FONTS.family, flex: 1, fontSize: 14, color: DARK, height: 44, padding: 0 },
   clearSearch: { fontFamily: FONTS.family, fontSize: 14, color: MUTED, padding: 4 },
+
+  resultCount: {
+    fontFamily: FONTS.family,
+    fontSize: 12,
+    fontWeight: '600',
+    color: MUTED,
+    paddingHorizontal: 20,
+    paddingTop: 4,
+    paddingBottom: 8,
+  },
 
   /* Filters */
   filterRow: { flexGrow: 0, marginBottom: 4, zIndex: 1 },

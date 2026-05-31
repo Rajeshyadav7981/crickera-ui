@@ -6,7 +6,7 @@ import { COLORS, FONTS } from '../theme';
 
 const TeamCard = ({ team, onPress, style }) => {
   const { name, short_name, color, player_count } = team;
-  const teamColor = color || COLORS.ACCENT;
+  const teamColor = (typeof color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(color)) ? color : COLORS.ACCENT;
 
   return (
     <TouchableOpacity style={[styles.card, style]} activeOpacity={0.7} onPress={onPress}>

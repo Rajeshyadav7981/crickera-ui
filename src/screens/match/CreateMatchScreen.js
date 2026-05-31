@@ -19,13 +19,8 @@ const TEXT_DARK = COLORS.TEXT;
 const TEXT_MID = COLORS.TEXT_SECONDARY;
 const TEXT_LIGHT = COLORS.TEXT_MUTED;
 
-const TIME_SLOTS = [
-  '09:00 AM - 11:00 AM',
-  '11:00 AM - 01:00 PM',
-  '01:00 PM - 03:00 PM',
-  '03:00 PM - 05:00 PM',
-  '05:00 PM - 07:00 PM',
-];
+const HOURS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+const MINUTES = [0, 15, 30, 45];
 
 const MATCH_TYPES = ['Group', 'Quarter', 'Semi', 'Final'];
 
@@ -887,13 +882,10 @@ const CreateMatchScreen = ({ navigation, route }) => {
                 />
                 <Text style={styles.nameHelper}>Leave blank to use team names</Text>
               </View>
-              <StringDropdown
-                label="Time Slot"
-                value={timeSlot}
-                placeholder="Select time slot"
-                options={TIME_SLOTS}
-                onSelect={setTimeSlot}
-              />
+              <View style={styles.fieldWrap}>
+                <Text style={styles.label}>Match Time</Text>
+                <TimeSlotPicker value={timeSlot} onChange={setTimeSlot} inline />
+              </View>
               {/* Venue */}
               <View style={styles.fieldWrap}>
                 <Text style={styles.label}>Venue</Text>
@@ -1074,36 +1066,109 @@ const CreateMatchScreen = ({ navigation, route }) => {
   );
 };
 
-/* ─── Time slot picker inline ─── */
-const TimeSlotPicker = ({ value, onChange }) => {
+const parseTime = (str) => {
+  const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(str || '');
+  if (!m) return { hour: 9, minute: 0, meridian: 'AM' };
+  return { hour: parseInt(m[1], 10) || 9, minute: parseInt(m[2], 10) || 0, meridian: m[3].toUpperCase() };
+};
+
+const formatTime = (hour, minute, meridian) =>
+  `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')} ${meridian}`;
+
+const TimeSlotPicker = ({ value, onChange, inline = false }) => {
   const [open, setOpen] = useState(false);
+  const [hour, setHour] = useState(9);
+  const [minute, setMinute] = useState(0);
+  const [meridian, setMeridian] = useState('AM');
+
+  const openPicker = () => {
+    const p = parseTime(value);
+    setHour(p.hour); setMinute(p.minute); setMeridian(p.meridian);
+    setOpen(true);
+  };
+
+  const confirm = () => {
+    onChange(formatTime(hour, minute, meridian));
+    setOpen(false);
+  };
+
+  const triggerStyle = inline ? styles.timeInlineTrigger : styles.scheduleField;
+  const triggerTextStyle = inline ? styles.timeInlineTriggerText : styles.scheduleFieldText;
+
   return (
     <>
-      <TouchableOpacity style={styles.scheduleField} onPress={() => setOpen(true)}>
-        <MaterialCommunityIcons name="clock-outline" size={16} color={COLORS.TEXT_MUTED} />
-        <Text style={[styles.scheduleFieldText, !value && { color: TEXT_LIGHT }]}>
+      <TouchableOpacity style={triggerStyle} onPress={openPicker} activeOpacity={0.7}>
+        <MaterialCommunityIcons name="clock-outline" size={inline ? 18 : 16} color={value ? PRIMARY : COLORS.TEXT_MUTED} />
+        <Text style={[triggerTextStyle, !value && { color: TEXT_LIGHT }]}>
           {value || 'Set Time'}
         </Text>
+        {inline && <MaterialCommunityIcons name="chevron-down" size={18} color={COLORS.TEXT_MUTED} />}
       </TouchableOpacity>
-      <Modal visible={open} transparent animationType="fade">
+
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setOpen(false)}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Time Slot</Text>
-            {TIME_SLOTS.map(slot => (
-              <TouchableOpacity
-                key={slot}
-                style={[styles.modalOption, value === slot && styles.modalOptionActive]}
-                onPress={() => { onChange(slot); setOpen(false); }}
-              >
-                <Text style={[styles.modalOptionText, value === slot && { color: PRIMARY, fontWeight: '700' }]}>
-                  {slot}
-                </Text>
+          <TouchableOpacity activeOpacity={1} style={styles.timePickerCard} onPress={() => {}}>
+            <Text style={styles.modalTitle}>Pick Time</Text>
+
+            <View style={styles.timePreviewWrap}>
+              <Text style={styles.timePreview}>{formatTime(hour, minute, meridian)}</Text>
+            </View>
+
+            <Text style={styles.timeSectionLabel}>Hour</Text>
+            <View style={styles.timeGrid}>
+              {HOURS.map(h => (
+                <TouchableOpacity
+                  key={h}
+                  style={[styles.timeChip, hour === h && styles.timeChipActive]}
+                  onPress={() => setHour(h)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.timeChipText, hour === h && styles.timeChipTextActive]}>{h}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.timeSectionLabel}>Minute</Text>
+            <View style={styles.timeRow}>
+              {MINUTES.map(m => (
+                <TouchableOpacity
+                  key={m}
+                  style={[styles.timeChipWide, minute === m && styles.timeChipActive]}
+                  onPress={() => setMinute(m)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.timeChipText, minute === m && styles.timeChipTextActive]}>
+                    :{String(m).padStart(2, '0')}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.timeSectionLabel}>AM / PM</Text>
+            <View style={styles.timeRow}>
+              {['AM', 'PM'].map(mer => (
+                <TouchableOpacity
+                  key={mer}
+                  style={[styles.timeMeridian, meridian === mer && styles.timeChipActive]}
+                  onPress={() => setMeridian(mer)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.timeMeridianText, meridian === mer && styles.timeChipTextActive]}>
+                    {mer}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.timeActions}>
+              <TouchableOpacity style={styles.timeCancelBtn} onPress={() => setOpen(false)} activeOpacity={0.7}>
+                <Text style={styles.timeCancelText}>Cancel</Text>
               </TouchableOpacity>
-            ))}
-            <TouchableOpacity style={styles.modalCancel} onPress={() => setOpen(false)}>
-              <Text style={styles.modalCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity style={styles.timeConfirmBtn} onPress={confirm} activeOpacity={0.85}>
+                <Text style={styles.timeConfirmText}>Set Time</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
     </>
@@ -1278,6 +1343,69 @@ const styles = StyleSheet.create({
   modalOptionText: { fontFamily: FONTS.family, fontSize: 15, color: TEXT_DARK },
   modalCancel: { marginTop: 12, alignItems: 'center', paddingVertical: 10 },
   modalCancelText: { fontFamily: FONTS.family, fontSize: 15, fontWeight: '600', color: COLORS.RED },
+
+  /* Time picker */
+  timeInlineTrigger: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: COLORS.SURFACE, borderRadius: 12,
+    borderWidth: 1, borderColor: BORDER, paddingHorizontal: 14, height: 48,
+  },
+  timeInlineTriggerText: {
+    fontFamily: FONTS.family, fontSize: 15, color: TEXT_DARK, fontWeight: '600', flex: 1,
+  },
+  timePickerCard: {
+    backgroundColor: COLORS.CARD, borderRadius: 18, padding: 18,
+    width: '92%', maxWidth: 360, alignSelf: 'center',
+    borderWidth: 1, borderColor: 'rgba(30,136,229,0.18)',
+  },
+  timePreviewWrap: {
+    alignItems: 'center', paddingVertical: 12, marginBottom: 6,
+    backgroundColor: 'rgba(30,136,229,0.08)', borderRadius: 12,
+    borderWidth: 1, borderColor: 'rgba(30,136,229,0.18)',
+  },
+  timePreview: {
+    fontFamily: FONTS.family, fontSize: 26, fontWeight: '900', color: PRIMARY, letterSpacing: 1,
+  },
+  timeSectionLabel: {
+    fontFamily: FONTS.family, fontSize: 11, fontWeight: '700',
+    color: COLORS.TEXT_MUTED, letterSpacing: 0.8, textTransform: 'uppercase',
+    marginTop: 14, marginBottom: 8,
+  },
+  timeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  timeRow: { flexDirection: 'row', gap: 8 },
+  timeChip: {
+    width: 52, height: 40, borderRadius: 10,
+    backgroundColor: COLORS.SURFACE, borderWidth: 1, borderColor: BORDER,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  timeChipWide: {
+    flex: 1, height: 42, borderRadius: 10,
+    backgroundColor: COLORS.SURFACE, borderWidth: 1, borderColor: BORDER,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  timeMeridian: {
+    flex: 1, height: 44, borderRadius: 10,
+    backgroundColor: COLORS.SURFACE, borderWidth: 1, borderColor: BORDER,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  timeChipActive: {
+    backgroundColor: 'rgba(30,136,229,0.18)', borderColor: PRIMARY,
+  },
+  timeChipText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: TEXT_DARK },
+  timeChipTextActive: { color: PRIMARY },
+  timeMeridianText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '800', color: TEXT_DARK, letterSpacing: 1 },
+  timeActions: { flexDirection: 'row', gap: 10, marginTop: 18 },
+  timeCancelBtn: {
+    flex: 1, height: 44, borderRadius: 12,
+    backgroundColor: COLORS.SURFACE, borderWidth: 1, borderColor: BORDER,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  timeCancelText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT_SECONDARY },
+  timeConfirmBtn: {
+    flex: 1, height: 44, borderRadius: 12,
+    backgroundColor: PRIMARY, alignItems: 'center', justifyContent: 'center',
+  },
+  timeConfirmText: { fontFamily: FONTS.family, fontSize: 14, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
 
   /* Calendar picker */
   calendarWrap: {

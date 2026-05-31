@@ -34,23 +34,27 @@ const FavoriteButton = ({
   };
 
   const containerStyle = [
-    variant === 'card' ? s.cardOverlay : s.headerBtn,
-    isFav && variant === 'card' && s.cardOverlayActive,
+    variant === 'card' ? s.cardSlot : s.headerBtn,
     style,
   ];
 
+  const iconColor = isFav
+    ? COLORS.ACCENT_LIGHT
+    : (variant === 'card' ? 'rgba(255,255,255,0.78)' : COLORS.TEXT_MUTED);
+
   return (
     <TouchableOpacity
-      activeOpacity={0.7}
+      activeOpacity={0.6}
       onPress={onPress}
-      hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+      hitSlop={{ top: 12, right: 12, bottom: 12, left: 12 }}
       style={containerStyle}
     >
-      <Animated.View style={{ transform: [{ scale }] }}>
+      <Animated.View style={[s.iconWrap, { transform: [{ scale }] }]}>
         <MaterialCommunityIcons
           name={isFav ? 'heart' : 'heart-outline'}
           size={size}
-          color={isFav ? COLORS.ACCENT_LIGHT : (variant === 'card' ? COLORS.TEXT_SECONDARY : COLORS.TEXT_MUTED)}
+          color={iconColor}
+          style={variant === 'card' ? s.iconShadow : null}
         />
       </Animated.View>
     </TouchableOpacity>
@@ -58,28 +62,21 @@ const FavoriteButton = ({
 };
 
 const s = StyleSheet.create({
-  cardOverlay: {
+  cardSlot: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
+    top: 10,
+    right: 10,
+    padding: 4,
+    zIndex: 10,
+  },
+  iconWrap: {
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 10,
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4 },
-      android: { elevation: 3 },
-    }),
   },
-  cardOverlayActive: {
-    backgroundColor: 'rgba(30,136,229,0.20)',
-    borderColor: 'rgba(66,165,245,0.45)',
-  },
+  iconShadow: Platform.select({
+    ios: { textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
+    android: { textShadowColor: 'rgba(0,0,0,0.55)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
+  }),
   headerBtn: {
     width: 36,
     height: 36,

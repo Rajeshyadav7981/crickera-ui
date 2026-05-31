@@ -236,6 +236,7 @@ export const authAPI = {
 
 export const teamsAPI = {
   create: (data) => api.post('/api/teams', data),
+  update: (id, data) => api.patch(`/api/teams/${id}`, data),
   list: (params) => api.get('/api/teams', { params }),
   get: (id) => api.get(`/api/teams/${id}`),
   addPlayer: (teamId, data) => api.post(`/api/teams/${teamId}/players`, data),

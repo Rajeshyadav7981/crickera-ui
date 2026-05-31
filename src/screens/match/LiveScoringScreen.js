@@ -17,6 +17,7 @@ import InningsEndDialog from '../../components/InningsEndDialog';
 import ConfirmModal from '../../components/ConfirmModal';
 import { setCurrentMatch, clearCurrentMatch } from '../../services/notifications';
 import { subscribeToMatch } from '../../services/notifications';
+import { useMatchInvalidators } from '../../hooks/useMatchData';
 
 // Haptics removed — visual feedback only for smoother scoring UX
 
@@ -97,6 +98,9 @@ const LiveScoringScreen = ({ navigation, route }) => {
   const { matchId } = route.params;
   const [state, setState] = useState(null);
   const [matchData, setMatchData] = useState(null);
+  // After every write here, also bust the React-Query cache for this match so
+  // MatchDetail / Scorecard viewers don't see stale data on next focus.
+  const { invalidateLive, invalidateInnings, invalidateMatch, invalidateSquad, invalidateBroadcast } = useMatchInvalidators(matchId);
   const [loading, setLoading] = useState(true);
   const [scoring, setScoring] = useState(false);
   const [showExtras, setShowExtras] = useState(false);
@@ -168,6 +172,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
   const sendBroadcast = async (msg) => {
     try {
       await scoringAPI.broadcast(matchId, msg);
+      invalidateBroadcast();
       setActiveBroadcast(msg);
       setShowBroadcast(false);
       setBroadcastText('');
@@ -179,6 +184,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
   const clearBroadcast = async () => {
     try {
       await scoringAPI.clearBroadcast(matchId);
+      invalidateBroadcast();
       setActiveBroadcast(null);
     } catch {}
   };
@@ -335,6 +341,8 @@ const LiveScoringScreen = ({ navigation, route }) => {
 
     try {
       const res = await scoringAPI.score(matchId, data);
+      // Bust shared caches so viewers / other screens see this write immediately.
+      invalidateLive();
       if (res.data.innings_complete) {
         // The backend marks the innings as completed but never auto-completes
         // the match anymore. loadState() refetches and will pick up
@@ -386,6 +394,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
     setScoring(true);
     try {
       await scoringAPI.endOver(matchId, nextBowlerId);
+      invalidateLive();
       setShowEndOver(false);
       setNextBowlerId(null);
       await loadState();
@@ -402,6 +411,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
     try {
       // Step 1: End current innings (safe — idempotent)
       try { await scoringAPI.endInnings(matchId); } catch (_) {}
+      invalidateInnings();
 
       // Step 2: Get latest match state
       const matchRes = await matchesAPI.get(matchId);
@@ -421,6 +431,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
         // Both innings done — end match
         try {
           const endRes = await scoringAPI.endMatch(matchId);
+          invalidateMatch();
           if (endRes?.data?.is_tied) {
             setSoBatFirst(null);
             setShowSuperOverPrompt(true);
@@ -479,6 +490,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
     setShowSuperOverPrompt(false);
     try {
       await scoringAPI.endMatchAsTie(matchId);
+      invalidateMatch();
       navigation.replace('Scorecard', { matchId });
     } catch (e) {
       Alert.alert('Error', e.response?.data?.detail || 'Failed to end match');
@@ -495,6 +507,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
       try { await scoringAPI.endInnings(matchId); } catch (_) {}
       try {
         const endRes = await scoringAPI.endMatch(matchId);
+        invalidateMatch();
         if (endRes?.data?.is_tied) {
           setSoBatFirst(null);
           setShowSuperOverPrompt(true);
@@ -534,6 +547,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
     setShowNoResultModal(false);
     try {
       await scoringAPI.noResult(matchId, reason);
+      invalidateMatch();
       navigation.replace('Scorecard', { matchId });
     } catch (e) {
       Alert.alert('Error', e.response?.data?.detail || 'Failed to end match');
@@ -552,6 +566,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
     setScoring(true);
     try {
       await scoringAPI.undo(matchId);
+      invalidateLive();
       const liveRes = await scoringAPI.liveState(matchId);
       const newState = liveRes.data;
       setState(newState);
@@ -653,16 +668,19 @@ const LiveScoringScreen = ({ navigation, route }) => {
     }
   };
 
-  // Players available for next batsman (not already batting, not already dismissed)
+  const dismissedKey = useMemo(
+    () => (state?.dismissed_player_ids || []).join(','),
+    [state?.dismissed_player_ids]
+  );
   const availableBatsmen = useMemo(() => {
-    const dismissedIds = state?.dismissed_player_ids || [];
+    const dismissed = new Set(state?.dismissed_player_ids || []);
+    const strikerId = state?.striker?.player_id;
+    const nonStrikerId = state?.non_striker?.player_id;
     return battingSquad.filter(p => {
       const pid = p.player_id || p.id;
-      return pid !== state?.striker?.player_id
-        && pid !== state?.non_striker?.player_id
-        && !dismissedIds.includes(pid);
+      return pid !== strikerId && pid !== nonStrikerId && !dismissed.has(pid);
     });
-  }, [battingSquad, state?.dismissed_player_ids, state?.striker?.player_id, state?.non_striker?.player_id]);
+  }, [battingSquad, dismissedKey, state?.striker?.player_id, state?.non_striker?.player_id]);
 
   // --- Helper to get team names ---
   const battingTeamName = state?.batting_team_name || matchData?.team_a_name || 'TEAM A';
@@ -759,6 +777,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
     setRetiredSubmitting(true);
     try {
       await scoringAPI.retireHurt(matchId, retiredPlayerId, retiredReplacement);
+      invalidateLive();
       setShowRetiredHurt(false);
       setRetiredReplacement(null);
       await loadState();
@@ -773,6 +792,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
     setDeclaring(true);
     try {
       await scoringAPI.declareInnings(matchId);
+      invalidateInnings();
       setShowDeclare(false);
       await loadState();
     } catch (e) {
@@ -957,7 +977,13 @@ const LiveScoringScreen = ({ navigation, route }) => {
             <View style={s.scoreHeaderRow}>
               <Text style={s.scoreHeaderScore}>{state.total_runs}/{state.total_wickets}</Text>
               <View style={s.oversBadge}>
-                <Text style={s.oversBadgeText}>{state.total_overs} ov</Text>
+                <Text style={s.oversBadgeText}>
+                  {state.total_overs}{(() => {
+                    const innNum = state.innings_number || matchData?.current_innings || 1;
+                    const planned = innNum > 2 ? 1 : matchData?.overs;
+                    return planned ? ` / ${planned}` : '';
+                  })()} ov
+                </Text>
               </View>
             </View>
           </View>
@@ -1276,7 +1302,8 @@ const LiveScoringScreen = ({ navigation, route }) => {
 
       {/* ===== EXTRAS MODAL (Bye/LB detail) ===== */}
       <Modal visible={showExtras} transparent animationType="slide">
-        <View style={s.modalOverlay}>
+        {showExtras && (
+                <View style={s.modalOverlay}>
           <View style={s.modalContent}>
             <Text style={s.modalTitle}>Extras</Text>
             <View style={s.modalGrid}>
@@ -1301,11 +1328,13 @@ const LiveScoringScreen = ({ navigation, route }) => {
             </TouchableOpacity>
           </View>
         </View>
+        )}
       </Modal>
 
       {/* ===== WIDE MODAL ===== */}
       <Modal visible={showWide} transparent animationType="slide">
-        <View style={s.modalOverlay}>
+        {showWide && (
+                <View style={s.modalOverlay}>
           <View style={s.modalContent}>
             <Text style={s.modalTitle}>Wide Ball</Text>
             <Text style={s.modalSubtitle}>Wide = 1 run + any extra runs (byes)</Text>
@@ -1331,11 +1360,13 @@ const LiveScoringScreen = ({ navigation, route }) => {
             </TouchableOpacity>
           </View>
         </View>
+        )}
       </Modal>
 
       {/* ===== NO BALL MODAL ===== */}
       <Modal visible={showNoBall} transparent animationType="slide">
-        <View style={s.modalOverlay}>
+        {showNoBall && (
+                <View style={s.modalOverlay}>
           <View style={s.modalContent}>
             <Text style={s.modalTitle}>No Ball</Text>
             <Text style={s.modalSubtitle}>No Ball = 1 run + batsman runs</Text>
@@ -1368,11 +1399,13 @@ const LiveScoringScreen = ({ navigation, route }) => {
             </TouchableOpacity>
           </View>
         </View>
+        )}
       </Modal>
 
       {/* ===== WICKET MODAL (Multi-step) ===== */}
       <Modal visible={showWicket} transparent animationType="slide">
-        <View style={s.modalOverlay}>
+        {showWicket && (
+                <View style={s.modalOverlay}>
           <View style={s.modalContent}>
             {/* Step 1: Wicket Type with icons */}
             {wicketStep === 1 && (
@@ -1545,11 +1578,13 @@ const LiveScoringScreen = ({ navigation, route }) => {
             )}
           </View>
         </View>
+        )}
       </Modal>
 
       {/* ===== END OVER MODAL with over summary ===== */}
       <Modal visible={showEndOver} transparent animationType="slide">
-        <View style={s.modalOverlay}>
+        {showEndOver && (
+                <View style={s.modalOverlay}>
           <View style={s.modalContent}>
             {/* Over Summary */}
             <Text style={s.modalTitle}>Over Complete</Text>
@@ -1608,6 +1643,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
             </TouchableOpacity>
           </View>
         </View>
+        )}
       </Modal>
 
       {/* ===== INNINGS BREAK MODAL =====
@@ -1638,7 +1674,8 @@ const LiveScoringScreen = ({ navigation, route }) => {
       {declareConfirmModal}
 
       <Modal visible={showCustomRuns} transparent animationType="slide">
-        <View style={s.modalOverlay}>
+        {showCustomRuns && (
+                <View style={s.modalOverlay}>
           <View style={s.modalContent}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <MaterialCommunityIcons name="pencil-outline" size={20} color={COLORS.ACCENT_LIGHT} />
@@ -1694,11 +1731,13 @@ const LiveScoringScreen = ({ navigation, route }) => {
             </TouchableOpacity>
           </View>
         </View>
+        )}
       </Modal>
 
       {/* ===== BROADCAST MESSAGE MODAL ===== */}
       <Modal visible={showBroadcast} transparent animationType="slide">
-        <View style={s.modalOverlay}>
+        {showBroadcast && (
+                <View style={s.modalOverlay}>
           <View style={s.modalContent}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
               <MaterialCommunityIcons name="bullhorn" size={22} color={COLORS.WARNING} />
@@ -1744,10 +1783,12 @@ const LiveScoringScreen = ({ navigation, route }) => {
             </TouchableOpacity>
           </View>
         </View>
+        )}
       </Modal>
 
       <Modal visible={showRetiredHurt} transparent animationType="slide">
-        <View style={s.modalOverlay}>
+        {showRetiredHurt && (
+                <View style={s.modalOverlay}>
           <View style={s.modalContent}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
               <MaterialCommunityIcons name="bandage" size={22} color={COLORS.ACCENT_LIGHT} />
@@ -1832,11 +1873,13 @@ const LiveScoringScreen = ({ navigation, route }) => {
             </TouchableOpacity>
           </View>
         </View>
+        )}
       </Modal>
 
       {/* ── No Result / Abandon Modal ── */}
       <Modal visible={showNoResultModal} transparent animationType="slide">
-        <View style={s.modalOverlay}>
+        {showNoResultModal && (
+                <View style={s.modalOverlay}>
           <View style={s.modalContent}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <MaterialCommunityIcons name="weather-pouring" size={22} color={COLORS.DANGER} />
@@ -1893,6 +1936,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
             </TouchableOpacity>
           </View>
         </View>
+        )}
       </Modal>
 
     </View>

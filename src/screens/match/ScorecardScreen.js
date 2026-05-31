@@ -3,8 +3,10 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Share,
   InteractionManager, Alert,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scoringAPI, matchesAPI } from '../../services/api';
+import { useScorecard, useMatch, useMatchInvalidators } from '../../hooks/useMatchData';
 import { useAuth } from '../../context/AuthContext';
 import { COLORS, FONTS } from '../../theme';
 import Icon from '../../components/Icon';
@@ -13,7 +15,6 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Skeleton from '../../components/Skeleton';
 import ConfirmModal from '../../components/ConfirmModal';
 import ManhattanChart from '../../components/charts/ManhattanChart';
-import WormChart from '../../components/charts/WormChart';
 import FallOfWicketsChart from '../../components/charts/FallOfWicketsChart';
 
 
@@ -39,6 +40,16 @@ const formatBowlingStats = (bw) => {
   return `${bw.wickets}/${bw.runs_conceded} (${bw.overs_bowled} ov) | Econ ${(bw.economy_rate || 0).toFixed(1)}`;
 };
 
+const formatRoleLabel = (role) => {
+  if (!role) return '';
+  const r = String(role).toLowerCase();
+  if (r === 'batsman') return 'Batsman';
+  if (r === 'bowler') return 'Bowler';
+  if (r === 'all_rounder' || r === 'all-rounder') return 'All-rounder';
+  if (r === 'wicket_keeper' || r === 'wicket-keeper') return 'Wicket Keeper';
+  return r.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
+
 const getTeamInitial = (name) => {
   if (!name) return '?';
   return name.split(' ').map((w) => w[0]).join('').substring(0, 2).toUpperCase();
@@ -51,32 +62,28 @@ const ScorecardScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const { matchId } = route.params;
   const { user } = useAuth();
-  const [data, setData] = useState(null);
-  const [matchInfo, setMatchInfo] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [activeInnings, setActiveInnings] = useState(0);
   const [reverting, setReverting] = useState(false);
   const [showRevertConfirm, setShowRevertConfirm] = useState(false);
 
-  useEffect(() => {
+  const scQuery = useScorecard(matchId);
+  const matchQuery = useMatch(matchId);
+  const { invalidateMatch } = useMatchInvalidators(matchId);
+  const data = scQuery.data;
+  const matchInfo = matchQuery.data;
+  // Skeleton only while the first fetch is in flight AND we have no cached data.
+  // Returning visitors paint instantly from the React-Query cache.
+  const loading = scQuery.isPending && !scQuery.data;
+
+  // Re-focus refetch keeps the page live without flashing — keepPreviousData in
+  // the QueryClient default means cached data stays visible during the refetch.
+  useFocusEffect(useCallback(() => {
     const task = InteractionManager.runAfterInteractions(() => {
-      loadScorecard();
+      scQuery.refetch();
+      matchQuery.refetch();
     });
     return () => task.cancel();
-  }, []);
-
-  const loadScorecard = async () => {
-    try {
-      const [scRes, mRes] = await Promise.all([
-        scoringAPI.scorecard(matchId),
-        matchesAPI.get(matchId).catch(() => null),
-      ]);
-      setData(scRes.data);
-      if (mRes?.data) setMatchInfo(mRes.data);
-    } catch (e) {} finally {
-      setLoading(false);
-    }
-  };
+  }, [scQuery.refetch, matchQuery.refetch]));
 
   const isCreator = user?.id === matchInfo?.created_by;
   const isCompleted = data?.status === 'completed';
@@ -91,6 +98,9 @@ const ScorecardScreen = ({ navigation, route }) => {
     setReverting(true);
     try {
       await scoringAPI.revert(matchId);
+      // The match just transitioned back to live — blow away every cached
+      // subkey for this match so LiveScoring gets the fresh state on landing.
+      invalidateMatch();
       setShowRevertConfirm(false);
       navigation.replace('LiveScoring', { matchId });
     } catch (e) {
@@ -153,6 +163,43 @@ const ScorecardScreen = ({ navigation, route }) => {
         isSuperOver: false,
       });
     });
+
+    // Synthesise a pending tab for the team that hasn't batted yet while the match is live.
+    const isLive = data.status === 'live' || data.status === 'innings_break';
+    if (isLive && main.length === 1) {
+      const playedTeamId = main[0].batting_team_id;
+      const otherTeamId = playedTeamId === data.team_a_id ? data.team_b_id : data.team_a_id;
+      const otherTeamName = otherTeamId === data.team_a_id ? data.team_a_name : data.team_b_name;
+      const otherSquad = (data.team_squads && data.team_squads[String(otherTeamId)]) || [];
+      if (otherTeamId) {
+        const pendingInn = {
+          innings_number: 2,
+          batting_team_id: otherTeamId,
+          bowling_team_id: playedTeamId,
+          batting_team_name: otherTeamName || 'Team 2',
+          batting: [],
+          bowling: [],
+          fall_of_wickets: [],
+          partnerships: [],
+          yet_to_bat: otherSquad,
+          over_series: [],
+          total_runs: 0,
+          total_wickets: 0,
+          total_overs: 0,
+          total_extras: 0,
+          is_pending: true,
+        };
+        builtTabs.push({
+          key: 'inn-2-pending',
+          label: '2nd Innings',
+          shortLabel: '2nd Inn',
+          innings: pendingInn,
+          isSuperOver: false,
+          isPending: true,
+        });
+      }
+    }
+
     superOverPairs.forEach((pair, i) => {
       const soNum = superOverPairs.length > 1 ? ` ${i + 1}` : '';
       builtTabs.push({
@@ -185,21 +232,12 @@ const ScorecardScreen = ({ navigation, route }) => {
   const activeInningsData = activeTab?.innings || null;
 
   const manhattanOvers = useMemo(() => {
-    if (!activeInningsData?.over_by_over?.length) return null;
-    return activeInningsData.over_by_over.map((o, i) => ({
-      over: i + 1, runs: o.runs || 0, wickets: o.wickets || 0,
+    const series = activeInningsData?.over_series;
+    if (!series?.length) return null;
+    return series.map((o) => ({
+      over: o.over, runs: o.runs || 0, wickets: o.wickets || 0,
     }));
-  }, [activeInningsData?.over_by_over]);
-
-  const wormData = useMemo(() => {
-    if (mainInnings.length < 2) return null;
-    const result = mainInnings.map((inn, idx) => {
-      let cum = 0;
-      const d = (inn.over_by_over || []).map((o) => { cum += o.runs || 0; return { cumulativeRuns: cum }; });
-      return { teamName: inn.batting_team_name || `Innings ${idx + 1}`, color: idx === 0 ? COLORS.INFO_LIGHT : COLORS.RED, data: d };
-    });
-    return result.some(d => d.data.length > 0) ? result : null;
-  }, [mainInnings]);
+  }, [activeInningsData?.over_series]);
 
   const battingCard = useMemo(() => {
     if (!activeInningsData?.batting) return null;
@@ -434,8 +472,49 @@ const ScorecardScreen = ({ navigation, route }) => {
           })}
         </ScrollView>
 
-        {/* ====== SELECTED TAB CONTENT ====== */}
-        {activeTab && !activeTab.isSuperOver && innings && (
+        {activeTab?.isPending && innings && (
+          <View style={styles.card}>
+            <View style={styles.pendingHero}>
+              <MaterialCommunityIcons name="clock-outline" size={28} color={COLORS.ACCENT_LIGHT} />
+              <Text style={styles.pendingTitle}>{innings.batting_team_name}</Text>
+              <Text style={styles.pendingSub}>Innings not started yet</Text>
+            </View>
+            {innings.yet_to_bat?.length > 0 ? (
+              <>
+                {innings.yet_to_bat.map((p, i) => (
+                  <TouchableOpacity
+                    key={p.player_id}
+                    style={styles.squadRow}
+                    onPress={() => goToPlayer(p.player_id)}
+                    activeOpacity={0.6}
+                  >
+                    <Avatar name={p.player_name} image={p.profile} size={32} />
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={styles.squadName}>{p.player_name}</Text>
+                        {p.is_captain && <Text style={styles.capBadge}>C</Text>}
+                        {!p.is_captain && p.is_vice_captain && <Text style={styles.vcBadge}>VC</Text>}
+                        {p.is_wicket_keeper && <Text style={styles.wkBadge}>WK</Text>}
+                      </View>
+                      {p.role && (
+                        <Text style={styles.squadRole}>{formatRoleLabel(p.role)}</Text>
+                      )}
+                    </View>
+                    <Text style={styles.squadJersey}>#{p.batting_order || i + 1}</Text>
+                  </TouchableOpacity>
+                ))}
+              </>
+            ) : (
+              <View style={{ padding: 18, alignItems: 'center' }}>
+                <Text style={{ color: GRAY_500, fontSize: 13 }}>
+                  Squad not selected yet
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {activeTab && !activeTab.isSuperOver && !activeTab.isPending && innings && (
           <>
             {/* Innings Top Performer Strip */}
             {tp?.innings_top?.[activeInnings] && (
@@ -471,7 +550,12 @@ const ScorecardScreen = ({ navigation, route }) => {
               {innings.batting?.map((b, i) => (
                 <TouchableOpacity key={i} style={styles.tableDataRow} onPress={() => goToPlayer(b.player_id)} activeOpacity={0.6}>
                   <View style={[styles.cellName]}>
-                    <Text style={styles.batsmanName}>{b.player_name}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                      <Text style={styles.batsmanName}>{b.player_name}</Text>
+                      {b.is_captain && <Text style={styles.capBadgeSm}>C</Text>}
+                      {!b.is_captain && b.is_vice_captain && <Text style={styles.vcBadgeSm}>VC</Text>}
+                      {b.is_wicket_keeper && <Text style={styles.wkBadgeSm}>WK</Text>}
+                    </View>
                     <Text style={styles.dismissalText}>{b.how_out || 'not out'}</Text>
                   </View>
                   <Text style={[styles.tdCell, styles.cellStat, styles.runsBold]}>{b.runs}</Text>
@@ -488,10 +572,33 @@ const ScorecardScreen = ({ navigation, route }) => {
               <View style={styles.totalRow}>
                 <Text style={styles.totalLabel}>Total</Text>
                 <Text style={styles.totalValue}>
-                  {innings.total_runs}/{innings.total_wickets} ({innings.total_overs} ov)
+                  {innings.total_runs}/{innings.total_wickets} ({innings.total_overs}{data?.overs ? ` / ${innings.innings_number > 2 ? 1 : data.overs}` : ''} ov)
                   {innings.declared ? <Text style={styles.declaredTag}>{' declared'}</Text> : null}
                 </Text>
               </View>
+              {innings.yet_to_bat?.length > 0 && (
+                <View style={styles.yetRow}>
+                  <Text style={styles.yetLabel}>Yet to Bat</Text>
+                  <View style={styles.yetChipsRow}>
+                    {innings.yet_to_bat.map((p) => (
+                      <TouchableOpacity
+                        key={p.player_id}
+                        style={styles.yetChip}
+                        onPress={() => goToPlayer(p.player_id)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.yetChipText}>{p.player_name}</Text>
+                        {p.is_captain && <Text style={styles.capBadgeSm}>C</Text>}
+                        {!p.is_captain && p.is_vice_captain && <Text style={styles.vcBadgeSm}>VC</Text>}
+                        {p.is_wicket_keeper && <Text style={styles.wkBadgeSm}>WK</Text>}
+                        {p.role && (
+                          <Text style={styles.yetChipRole}>{formatRoleLabel(p.role)}</Text>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
             </View>
 
             {/* Bowling Scorecard */}
@@ -507,8 +614,11 @@ const ScorecardScreen = ({ navigation, route }) => {
               </View>
               {innings.bowling?.map((b, i) => (
                 <TouchableOpacity key={i} style={styles.tableDataRow} onPress={() => goToPlayer(b.player_id)} activeOpacity={0.6}>
-                  <View style={[styles.cellName]}>
+                  <View style={[styles.cellName, { flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' }]}>
                     <Text style={styles.bowlerName}>{b.player_name}</Text>
+                    {b.is_captain && <Text style={styles.capBadgeSm}>C</Text>}
+                    {!b.is_captain && b.is_vice_captain && <Text style={styles.vcBadgeSm}>VC</Text>}
+                    {b.is_wicket_keeper && <Text style={styles.wkBadgeSm}>WK</Text>}
                   </View>
                   <Text style={[styles.tdCell, styles.cellStat]}>{b.overs_bowled}</Text>
                   <Text style={[styles.tdCell, styles.cellStat]}>{b.maidens}</Text>
@@ -535,7 +645,6 @@ const ScorecardScreen = ({ navigation, route }) => {
               </View>
             )}
 
-            {/* ====== CHARTS - Manhattan, Worm, Partnerships ====== */}
             {manhattanOvers && (
               <View style={styles.chartsSection}>
                 <ManhattanChart
@@ -544,13 +653,6 @@ const ScorecardScreen = ({ navigation, route }) => {
                 />
               </View>
             )}
-
-            {/* Worm Chart - show when we have 2 innings */}
-            {wormData && activeInnings === mainInnings.length - 1 && (
-              <WormChart innings={wormData} style={{ marginHorizontal: 16, marginBottom: 14 }} />
-            )}
-
-            {/* Partnership Chart removed — available in MatchDetail Scorecard tab */}
           </>
         )}
 
@@ -991,6 +1093,142 @@ const styles = StyleSheet.create({
   declaredTag: {
     fontFamily: FONTS.family, fontSize: 12, fontWeight: '700',
     color: COLORS.SUCCESS_LIGHT, fontStyle: 'italic',
+  },
+  yetRow: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 14,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.BORDER,
+  },
+  yetLabel: {
+    fontFamily: FONTS.family,
+    fontSize: 11,
+    fontWeight: '700',
+    color: GRAY_400,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  yetNames: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  yetName: {
+    fontFamily: FONTS.family,
+    fontSize: 13,
+    color: GRAY_500,
+    lineHeight: 20,
+  },
+  capBadge: {
+    fontFamily: FONTS.family, fontSize: 9, fontWeight: '800', color: COLORS.ACCENT,
+    backgroundColor: 'rgba(30,136,229,0.15)', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1,
+    overflow: 'hidden', letterSpacing: 0.3,
+  },
+  vcBadge: {
+    fontFamily: FONTS.family, fontSize: 9, fontWeight: '800', color: COLORS.WARNING,
+    backgroundColor: 'rgba(245,158,11,0.15)', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1,
+    overflow: 'hidden', letterSpacing: 0.3,
+  },
+  wkBadge: {
+    fontFamily: FONTS.family, fontSize: 9, fontWeight: '800', color: COLORS.SUCCESS_LIGHT,
+    backgroundColor: 'rgba(34,197,94,0.15)', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1,
+    overflow: 'hidden', letterSpacing: 0.3,
+  },
+  capBadgeSm: {
+    fontFamily: FONTS.family, fontSize: 8, fontWeight: '800', color: COLORS.ACCENT,
+    backgroundColor: 'rgba(30,136,229,0.18)', borderRadius: 3, paddingHorizontal: 3,
+    overflow: 'hidden', letterSpacing: 0.3, marginLeft: 2,
+  },
+  vcBadgeSm: {
+    fontFamily: FONTS.family, fontSize: 8, fontWeight: '800', color: COLORS.WARNING,
+    backgroundColor: 'rgba(245,158,11,0.18)', borderRadius: 3, paddingHorizontal: 3,
+    overflow: 'hidden', letterSpacing: 0.3, marginLeft: 2,
+  },
+  wkBadgeSm: {
+    fontFamily: FONTS.family, fontSize: 8, fontWeight: '800', color: COLORS.SUCCESS_LIGHT,
+    backgroundColor: 'rgba(34,197,94,0.18)', borderRadius: 3, paddingHorizontal: 3,
+    overflow: 'hidden', letterSpacing: 0.3, marginLeft: 2,
+  },
+  yetChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  yetChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: COLORS.SURFACE,
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+    borderRadius: 14,
+  },
+  yetChipText: {
+    fontFamily: FONTS.family,
+    fontSize: 12,
+    fontWeight: '600',
+    color: DARK,
+  },
+  yetChipRole: {
+    fontFamily: FONTS.family,
+    fontSize: 10,
+    fontWeight: '600',
+    color: GRAY_400,
+    marginLeft: 2,
+  },
+  pendingHero: {
+    alignItems: 'center',
+    paddingVertical: 18,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.BORDER,
+  },
+  pendingTitle: {
+    fontFamily: FONTS.family,
+    fontSize: 18,
+    fontWeight: '800',
+    color: DARK,
+    marginTop: 6,
+    letterSpacing: -0.2,
+  },
+  pendingSub: {
+    fontFamily: FONTS.family,
+    fontSize: 12,
+    color: GRAY_400,
+    marginTop: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  squadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    gap: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: COLORS.BORDER,
+  },
+  squadName: {
+    fontFamily: FONTS.family,
+    fontSize: 14,
+    color: DARK,
+    fontWeight: '600',
+  },
+  squadRole: {
+    fontFamily: FONTS.family,
+    fontSize: 11,
+    color: GRAY_400,
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  squadJersey: {
+    fontFamily: FONTS.family,
+    fontSize: 11,
+    fontWeight: '600',
+    color: GRAY_400,
   },
 
   /* Fall of Wickets */

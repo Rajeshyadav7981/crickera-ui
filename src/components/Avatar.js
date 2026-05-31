@@ -40,11 +40,10 @@ const Avatar = ({
   const fontSize = Math.max(10, Math.round(size * 0.38));
   const iconSize = Math.max(16, Math.round(size * 0.5));
 
-  // Cricket-themed icons per type
   const defaultIcon = type === 'team' ? 'shield-half-full' : type === 'player' ? 'cricket' : 'account';
 
-  // Generate a stable gradient from the color
-  const gradientColors = [color + 'CC', color + '88'];
+  const safeColor = (typeof color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(color)) ? color : COLORS.ACCENT;
+  const gradientColors = [safeColor + 'CC', safeColor + '88'];
   const darkGradient = ['#1a2a3a', '#0d1b2a'];
 
   const renderContent = () => {

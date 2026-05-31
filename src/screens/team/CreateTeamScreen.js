@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert,
+  View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { teamsAPI, tournamentsAPI } from '../../services/api';
@@ -9,29 +9,60 @@ import { COLORS, FONTS } from '../../theme';
 import BackButton from '../../components/BackButton';
 import CurrentLocationButton from '../../components/CurrentLocationButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useToast } from '../../components/Toast';
 
 const TEAM_COLORS = [COLORS.SUCCESS, COLORS.ACCENT_DARK, COLORS.DANGER, '#F9A825', '#7B1FA2', '#FF6D00', '#00695C', '#0097A7', '#E91E63'];
 
 const CreateTeamScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
+  const toast = useToast();
   useAuthGate('create a team');
   const tournamentId = route.params?.tournamentId;
+  const editingTeamId = route.params?.teamId || null;
+  const isEditMode = !!editingTeamId;
   const [name, setName] = useState('');
   const [shortName, setShortName] = useState('');
   const [color, setColor] = useState(COLORS.SUCCESS);
   const [homeGround, setHomeGround] = useState('');
   const [city, setCity] = useState('');
-  const [coords, setCoords] = useState(null); // { latitude, longitude }
+  const [coords, setCoords] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [prefilling, setPrefilling] = useState(isEditMode);
 
-  const handleCreate = async () => {
-    if (!name.trim()) return Alert.alert('Error', 'Team name is required');
+  useEffect(() => {
+    if (!isEditMode) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await teamsAPI.get(editingTeamId);
+        if (cancelled) return;
+        const t = res.data?.team || {};
+        setName(t.name || '');
+        setShortName(t.short_name || '');
+        if (t.color) setColor(t.color);
+        setHomeGround(t.home_ground || '');
+        setCity(t.city || '');
+        if (t.latitude != null && t.longitude != null) {
+          setCoords({ latitude: t.latitude, longitude: t.longitude });
+        }
+      } catch (e) {
+        toast.error(e.response?.data?.detail || 'Failed to load team');
+        navigation.goBack();
+      } finally {
+        if (!cancelled) setPrefilling(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [editingTeamId, isEditMode]);
+
+  const handleSubmit = async () => {
+    if (!name.trim()) return toast.error('Team name is required');
     if (shortName.trim() && (shortName.trim().length < 3 || shortName.trim().length > 4)) {
-      return Alert.alert('Error', 'Short name must be 3-4 characters');
+      return toast.error('Short name must be 3-4 characters');
     }
     setLoading(true);
     try {
-      const res = await teamsAPI.create({
+      const payload = {
         name: name.trim(),
         short_name: shortName.trim() || null,
         color,
@@ -39,14 +70,21 @@ const CreateTeamScreen = ({ navigation, route }) => {
         city: city.trim() || null,
         latitude: coords?.latitude || null,
         longitude: coords?.longitude || null,
-      });
-      if (tournamentId) {
-        await tournamentsAPI.addTeam(tournamentId, res.data.id);
+      };
+      if (isEditMode) {
+        await teamsAPI.update(editingTeamId, payload);
+        toast.success('Team updated');
+        navigation.goBack();
+      } else {
+        const res = await teamsAPI.create(payload);
+        if (tournamentId) {
+          await tournamentsAPI.addTeam(tournamentId, res.data.id);
+        }
+        toast.success('Team created', `Code: ${res.data.team_code}`, 4500);
+        navigation.replace('TeamDetail', { teamId: res.data.id });
       }
-      Alert.alert('Team Created!', `Team Code: ${res.data.team_code}\nShare this code so others can find your team.`);
-      navigation.replace('TeamDetail', { teamId: res.data.id });
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to create team');
+      toast.error(e.response?.data?.detail || (isEditMode ? 'Failed to update team' : 'Failed to create team'));
     } finally {
       setLoading(false);
     }
@@ -57,10 +95,15 @@ const CreateTeamScreen = ({ navigation, route }) => {
       {/* Header */}
       <View style={styles.header}>
         <BackButton onPress={() => navigation.goBack()} />
-        <Text style={styles.headerTitle}>Create Team</Text>
+        <Text style={styles.headerTitle}>{isEditMode ? 'Edit Team' : 'Create Team'}</Text>
         <View style={{ width: 36 }} />
       </View>
 
+      {prefilling ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={COLORS.ACCENT} />
+        </View>
+      ) : (
       <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Form Card */}
         <View style={styles.formCard}>
@@ -146,16 +189,20 @@ const CreateTeamScreen = ({ navigation, route }) => {
           )}
         </View>
 
-        {/* Create Button */}
         <TouchableOpacity
           style={[styles.createBtn, loading && styles.createBtnDisabled]}
-          onPress={handleCreate}
+          onPress={handleSubmit}
           disabled={loading}
           activeOpacity={0.8}
         >
-          <Text style={styles.createBtnText}>{loading ? 'Creating...' : 'Create Team'}</Text>
+          <Text style={styles.createBtnText}>
+            {loading
+              ? (isEditMode ? 'Saving...' : 'Creating...')
+              : (isEditMode ? 'Save Changes' : 'Create Team')}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
+      )}
     </View>
   );
 };

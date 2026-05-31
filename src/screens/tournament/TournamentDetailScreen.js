@@ -733,16 +733,6 @@ const TournamentDetailScreen = ({ navigation, route }) => {
               }),
             });
           }
-          if (teams.length >= 2) {
-            cards.push({
-              key: 'add',
-              icon: 'cricket',
-              tint: COLORS.SUCCESS_LIGHT,
-              label: 'Add Match',
-              hint: 'One-off fixture',
-              onPress: () => navigation.navigate('CreateMatch', { tournamentId, teams }),
-            });
-          }
           cards.push({
             key: 'points',
             icon: 'trophy-outline',
@@ -1038,17 +1028,6 @@ const TournamentDetailScreen = ({ navigation, route }) => {
           </TouchableOpacity>
         )}
 
-        {isCreator && tournament?.status !== 'completed' && teams.length >= 2 && filteredMatches.length > 0 && (
-          <TouchableOpacity
-            style={styles.primaryCta}
-            onPress={() => navigation.navigate('CreateMatch', { tournamentId, teams })}
-            activeOpacity={0.85}
-          >
-            <MaterialCommunityIcons name="plus" size={18} color="#fff" />
-            <Text style={styles.primaryCtaText}>Create Match</Text>
-          </TouchableOpacity>
-        )}
-
         {filteredMatches.length === 0 && (
           <View style={styles.heroEmpty}>
             <View style={styles.heroEmptyIconWrap}>
@@ -1064,7 +1043,7 @@ const TournamentDetailScreen = ({ navigation, route }) => {
             <Text style={styles.heroEmptyText}>
               {matches.length === 0
                 ? (teams.length >= 2
-                    ? 'Run the setup wizard to pick a format and auto-generate fixtures — or add a one-off match.'
+                    ? 'Run the setup wizard to pick a format and auto-generate fixtures for every stage.'
                     : 'Add at least two teams first, then run the setup wizard to generate the bracket.')
                 : 'Switch the stage filter above, or generate fixtures for this stage.'}
             </Text>
@@ -1080,16 +1059,6 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                   <MaterialCommunityIcons name="cog-play-outline" size={18} color="#fff" />
                   <Text style={styles.primaryCtaText}>Setup Tournament</Text>
                 </TouchableOpacity>
-                {teams.length >= 2 && (
-                  <TouchableOpacity
-                    style={styles.secondaryCta}
-                    onPress={() => navigation.navigate('CreateMatch', { tournamentId, teams })}
-                    activeOpacity={0.85}
-                  >
-                    <MaterialCommunityIcons name="plus" size={18} color={COLORS.ACCENT} />
-                    <Text style={styles.secondaryCtaText}>Add Match</Text>
-                  </TouchableOpacity>
-                )}
               </View>
             )}
           </View>

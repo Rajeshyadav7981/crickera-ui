@@ -240,7 +240,7 @@ const MatchCard = ({ match, onPress, style, width, monochrome = false }) => {
       ) : null}
 
       <LinearGradient
-        colors={[status.glow, 'transparent']}
+        colors={[status.glow || 'rgba(30,136,229,0.08)', 'rgba(0,0,0,0)']}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
         style={s.topGlow}
@@ -330,7 +330,7 @@ const MatchCard = ({ match, onPress, style, width, monochrome = false }) => {
 
       {tossLine ? (
         <View style={s.tossRow}>
-          <MaterialCommunityIcons name="coin-outline" size={11} color={COLORS.WARNING_LIGHT} />
+          <MaterialCommunityIcons name="circle-outline" size={11} color={COLORS.WARNING_LIGHT} />
           <Text style={s.tossText} numberOfLines={1}>{tossLine}</Text>
         </View>
       ) : null}

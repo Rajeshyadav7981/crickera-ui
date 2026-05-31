@@ -147,7 +147,7 @@ const TournamentCard = ({ tournament, onPress, style, width, monochrome = false 
         </ImageBackground>
       ) : (
         <LinearGradient
-          colors={[status.glow, 'transparent']}
+          colors={[status.glow || 'rgba(30,136,229,0.08)', 'rgba(0,0,0,0)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
           style={s.topGlow}

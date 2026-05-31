@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
   InteractionManager,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -11,22 +11,70 @@ import { COLORS, FONTS } from '../../theme';
 import BackButton from '../../components/BackButton';
 import Skeleton from '../../components/Skeleton';
 import PlayerAvatar from '../../components/PlayerAvatar';
+import BottomSheet from '../../components/BottomSheet';
+import ConfirmModal from '../../components/ConfirmModal';
+import { useToast } from '../../components/Toast';
 
 const TeamDetailScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const { teamId } = route.params;
   const { user } = useAuth();
+  const toast = useToast();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [menuPlayer, setMenuPlayer] = useState(null);
+  const [removeTarget, setRemoveTarget] = useState(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
 
   const load = async () => {
     try {
       const res = await teamsAPI.get(teamId);
       setData(res.data);
     } catch (e) {
-      Alert.alert('Error', 'Failed to load team');
+      toast.error('Failed to load team');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRoleUpdate = async (player, updates, successMsg) => {
+    try {
+      await teamsAPI.updatePlayerRole(teamId, player.player_id, updates);
+      toast.success(successMsg);
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Failed to update role');
+    }
+  };
+
+  const buildMenuActions = (p) => {
+    if (!p) return [];
+    const actions = [];
+    if (!p.is_captain) actions.push({ label: 'Make Captain', icon: 'crown-outline',
+      onPress: () => handleRoleUpdate(p, { is_captain: true }, `${p.full_name} is captain`) });
+    if (p.is_captain) actions.push({ label: 'Remove Captain', icon: 'crown-remove',
+      onPress: () => handleRoleUpdate(p, { is_captain: false }, 'Captain removed') });
+    if (!p.is_vice_captain) actions.push({ label: 'Make Vice Captain', icon: 'star-outline',
+      onPress: () => handleRoleUpdate(p, { is_vice_captain: true }, `${p.full_name} is vice captain`) });
+    if (p.is_vice_captain) actions.push({ label: 'Remove Vice Captain', icon: 'star-off-outline',
+      onPress: () => handleRoleUpdate(p, { is_vice_captain: false }, 'Vice captain removed') });
+    actions.push({ label: 'Remove from Team', icon: 'account-remove-outline', destructive: true,
+      onPress: () => setRemoveTarget(p) });
+    return actions;
+  };
+
+  const handleRemoveConfirm = async () => {
+    if (!removeTarget) return;
+    setRemoveBusy(true);
+    try {
+      await teamsAPI.removePlayer(teamId, removeTarget.player_id);
+      toast.success(`${removeTarget.full_name} removed`);
+      setRemoveTarget(null);
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Failed to remove player');
+    } finally {
+      setRemoveBusy(false);
     }
   };
 
@@ -108,7 +156,7 @@ const TeamDetailScreen = ({ navigation, route }) => {
         <Text style={styles.headerTitle} numberOfLines={1}>{data.team.name}</Text>
         {isOwner ? (
           <TouchableOpacity
-            onPress={() => navigation.navigate('EditTeam', { teamId })}
+            onPress={() => navigation.navigate('CreateTeam', { teamId })}
             style={styles.editCircle}
             activeOpacity={0.7}
           >
@@ -208,23 +256,11 @@ const TeamDetailScreen = ({ navigation, route }) => {
                 ) : null}
               </View>
             </View>
-            {/* Quick role actions for owner */}
             {isOwner && (
               <TouchableOpacity
                 style={{ paddingHorizontal: 8 }}
-                onPress={() => {
-                  const options = [];
-                  if (!p.is_captain) options.push({ text: 'Make Captain', onPress: async () => {
-                    try { await teamsAPI.updatePlayerRole(teamId, p.player_id, { is_captain: true }); load(); } catch {} }});
-                  if (!p.is_vice_captain) options.push({ text: 'Make Vice Captain', onPress: async () => {
-                    try { await teamsAPI.updatePlayerRole(teamId, p.player_id, { is_vice_captain: true }); load(); } catch {} }});
-                  if (p.is_captain) options.push({ text: 'Remove Captain', onPress: async () => {
-                    try { await teamsAPI.updatePlayerRole(teamId, p.player_id, { is_captain: false }); load(); } catch {} }});
-                  if (p.is_vice_captain) options.push({ text: 'Remove Vice Captain', onPress: async () => {
-                    try { await teamsAPI.updatePlayerRole(teamId, p.player_id, { is_vice_captain: false }); load(); } catch {} }});
-                  options.push({ text: 'Cancel', style: 'cancel' });
-                  Alert.alert(p.full_name, 'Update role', options);
-                }}
+                onPress={() => setMenuPlayer(p)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={styles.chevron}>&#8942;</Text>
               </TouchableOpacity>
@@ -246,6 +282,26 @@ const TeamDetailScreen = ({ navigation, route }) => {
 
         <View style={{ height: 30 }} />
       </ScrollView>
+
+      <BottomSheet
+        visible={!!menuPlayer}
+        onClose={() => setMenuPlayer(null)}
+        title={menuPlayer?.full_name}
+        actions={buildMenuActions(menuPlayer)}
+      />
+
+      <ConfirmModal
+        visible={!!removeTarget}
+        icon="account-remove-outline"
+        title="Remove from team?"
+        message={removeTarget ? `${removeTarget.full_name} will no longer appear in this team's squad.` : ''}
+        confirmText="Remove"
+        cancelText="Keep"
+        destructive
+        loading={removeBusy}
+        onConfirm={handleRemoveConfirm}
+        onCancel={() => !removeBusy && setRemoveTarget(null)}
+      />
     </View>
   );
 };
