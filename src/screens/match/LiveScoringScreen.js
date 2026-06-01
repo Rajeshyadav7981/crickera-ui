@@ -17,7 +17,7 @@ import InningsEndDialog from '../../components/InningsEndDialog';
 import ConfirmModal from '../../components/ConfirmModal';
 import { setCurrentMatch, clearCurrentMatch } from '../../services/notifications';
 import { subscribeToMatch } from '../../services/notifications';
-import { useMatchInvalidators } from '../../hooks/useMatchData';
+import { useMatchInvalidators, useCommentary } from '../../hooks/useMatchData';
 
 // Haptics removed — visual feedback only for smoother scoring UX
 
@@ -219,6 +219,56 @@ const LiveScoringScreen = ({ navigation, route }) => {
   }, [matchId]));
 
   const isCreator = user?.id === matchData?.created_by;
+
+  const commentaryQ = useCommentary(matchId, state?.innings_number, { enabled: !!state?.innings_number });
+  const recentBalls = useMemo(() => {
+    const pages = commentaryQ.data?.pages || [];
+    const all = pages.flatMap(p => p.items || []);
+    return all.slice(0, 30);
+  }, [commentaryQ.data]);
+
+  const overGroups = useMemo(() => {
+    if (!recentBalls.length) return [];
+    const byOver = new Map();
+    for (const b of recentBalls) {
+      const k = b.over ?? 0;
+      if (!byOver.has(k)) byOver.set(k, []);
+      byOver.get(k).push(b);
+    }
+    const groups = [];
+    for (const [over, balls] of byOver) {
+      const sorted = [...balls].sort((a, b) => (b.ball ?? 0) - (a.ball ?? 0));
+      const runs = balls.reduce((s, b) => s + (b.total_runs ?? 0), 0);
+      const wkts = balls.reduce((s, b) => s + (b.is_wicket ? 1 : 0), 0);
+      const bowlerName = sorted[0]?.bowler_name || '';
+      const ballLabels = [...balls]
+        .sort((a, b) => (a.ball ?? 0) - (b.ball ?? 0))
+        .map((b) => {
+          if (b.is_wicket) return 'W';
+          if (b.is_legal === false) {
+            return b.extra_type === 'wide' ? 'wd'
+              : b.extra_type === 'noball' ? 'nb'
+              : b.extra_type === 'bye' ? 'b'
+              : 'lb';
+          }
+          return String(b.total_runs ?? 0);
+        });
+      groups.push({ over, bowlerName, runs, wkts, balls: sorted, ballLabels });
+    }
+    groups.sort((a, b) => b.over - a.over);
+    return groups.slice(0, 4);
+  }, [recentBalls]);
+  const previousBowler = useMemo(() => {
+    const curBowlerId = state?.bowler?.player_id;
+    if (!curBowlerId || !recentBalls.length) return null;
+    const prevOverNo = recentBalls.find(b => b.bowler_id && b.bowler_id !== curBowlerId);
+    if (!prevOverNo) return null;
+    const prevBowlerId = prevOverNo.bowler_id;
+    const ballsOfThatBowler = recentBalls.filter(b => b.bowler_id === prevBowlerId);
+    const runs = ballsOfThatBowler.reduce((sum, b) => sum + (b.total_runs ?? 0), 0);
+    const wkts = ballsOfThatBowler.reduce((sum, b) => sum + (b.is_wicket ? 1 : 0), 0);
+    return { name: prevOverNo.bowler_name, runs, wickets: wkts };
+  }, [recentBalls, state?.bowler?.player_id]);
 
   const scoreDelivery = async (data) => {
     if (scoring || !isCreator || activeBroadcast) return;
@@ -1070,13 +1120,133 @@ const LiveScoringScreen = ({ navigation, route }) => {
               {/* Pulsing dot for next ball */}
               {(state.this_over || []).length < 6 && <PulsingDot />}
             </View>
-            {/* ===== LAST BALL COMMENTARY ===== */}
             {lastCommentary ? (
               <View style={s.commentaryStrip}>
                 <Text style={s.commentaryIcon}>"</Text>
                 <Text style={s.commentaryText} numberOfLines={2}>{lastCommentary}</Text>
               </View>
             ) : null}
+          </View>
+        )}
+
+        {previousBowler && (
+          <View style={s.card}>
+            <View style={s.cardHeaderRow}>
+              <Text style={s.cardHeaderLabel}>LAST OVER BOWLER</Text>
+            </View>
+            <View style={s.bowlerRow}>
+              <Icon name="cricket" size={16} />
+              <Text style={s.bowlerName}>{previousBowler.name}</Text>
+              <Text style={s.bowlerStats}>
+                {previousBowler.runs} runs · {previousBowler.wickets} wkt{previousBowler.wickets === 1 ? '' : 's'}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {overGroups.length > 0 && (
+          <View style={s.commentarySection}>
+            <View style={s.commentarySectionHeader}>
+              <View style={s.commentarySectionDot} />
+              <Text style={s.commentarySectionTitle}>COMMENTARY</Text>
+            </View>
+
+            {overGroups.map((g, gi) => {
+              const isOverComplete = g.balls.filter(b => b.is_legal !== false).length >= 6;
+              return (
+                <View key={`over-${g.over}`} style={s.overCard}>
+                  <View style={s.overCardHeader}>
+                    <View style={s.overCardHeaderLeft}>
+                      <View style={s.overChip}>
+                        <Text style={s.overChipText}>OVER {g.over + 1}</Text>
+                      </View>
+                      <View>
+                        <Text style={s.overBowlerLabel}>BOWLING</Text>
+                        <Text style={s.overBowlerName}>{g.bowlerName || '—'}</Text>
+                      </View>
+                    </View>
+                    <View style={s.overCardHeaderRight}>
+                      <Text style={s.overRunsBig}>{g.runs}</Text>
+                      <Text style={s.overRunsLabel}>RUN{g.runs === 1 ? '' : 'S'}</Text>
+                      {g.wkts > 0 && (
+                        <View style={s.overWktsPill}>
+                          <Text style={s.overWktsPillText}>{g.wkts}W</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={s.overStripRow}>
+                    {g.ballLabels.map((lbl, bi) => {
+                      const kind = lbl === 'W' ? 'wicket'
+                        : lbl === '4' ? 'four'
+                        : lbl === '6' ? 'six'
+                        : lbl === '0' ? 'dot'
+                        : (lbl === 'wd' || lbl === 'nb' || lbl === 'b' || lbl === 'lb') ? 'extra'
+                        : 'default';
+                      return (
+                        <View key={bi} style={[s.bigBall, s[`bigBall_${kind}`]]}>
+                          <Text style={[s.bigBallText, s[`bigBallText_${kind}`]]}>{lbl}</Text>
+                        </View>
+                      );
+                    })}
+                    {isOverComplete && gi === 0 && (
+                      <View style={s.overEndPill}>
+                        <View style={s.overEndDot} />
+                        <Text style={s.overEndPillText}>OVER END</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={s.overDivider} />
+
+                  <View style={s.overBalls}>
+                    {g.balls.map((b, i) => {
+                      const isW = b.is_wicket;
+                      const isSix = b.is_six || b.batsman_runs === 6;
+                      const isFour = b.is_boundary || b.batsman_runs === 4;
+                      const kind = isW ? 'wicket' : isSix ? 'six' : isFour ? 'four' : null;
+                      const ballLabel = isW ? 'W' : b.is_legal === false
+                        ? (b.extra_type === 'wide' ? 'wd' : b.extra_type === 'noball' ? 'nb' : b.extra_type === 'bye' ? 'b' : 'lb')
+                        : String(b.total_runs ?? 0);
+                      const overText = `${(b.over ?? 0) + 1}.${b.ball ?? 0}`;
+                      const summary = isW
+                        ? `OUT! ${b.dismissed_player_name || b.striker_name || ''}${b.wicket_type ? ` (${b.wicket_type.replace('_', ' ')})` : ''}`
+                        : isSix ? 'SIX! Sent over the rope.'
+                        : isFour ? 'FOUR! Pierced the field.'
+                        : b.extra_type ? `${b.extra_type.toUpperCase()} — ${b.total_runs} run${b.total_runs === 1 ? '' : 's'}`
+                        : b.total_runs === 0 ? 'Dot ball.'
+                        : `${b.total_runs} run${b.total_runs === 1 ? '' : 's'} taken.`;
+                      const isLast = i === g.balls.length - 1;
+                      return (
+                        <View key={`b-${i}`} style={[s.ballRow, !isLast && s.ballRowDivider]}>
+                          <View style={s.ballRowLeft}>
+                            <Text style={s.ballRowOver}>{overText}</Text>
+                            <View style={[s.ballRowPill, s[`bigBall_${kind || 'default'}`]]}>
+                              <Text style={[s.ballRowPillText, s[`bigBallText_${kind || 'default'}`]]}>{ballLabel}</Text>
+                            </View>
+                          </View>
+                          <View style={s.ballRowBody}>
+                            <Text style={s.ballRowBatter}>{b.striker_name || ''}</Text>
+                            <Text
+                              style={[
+                                s.ballRowSummary,
+                                kind === 'wicket' && s.ballRowSummaryWicket,
+                                kind === 'six' && s.ballRowSummarySix,
+                                kind === 'four' && s.ballRowSummaryFour,
+                              ]}
+                              numberOfLines={3}
+                            >
+                              {b.commentary || summary}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+              );
+            })}
           </View>
         )}
 
@@ -2689,6 +2859,182 @@ const s = StyleSheet.create({
     borderColor: COLORS.LIVE,
   },
   freeHitText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '700', color: COLORS.LIVE },
+
+  commentarySection: {
+    marginHorizontal: 16,
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  commentarySectionHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginBottom: 10, paddingHorizontal: 4,
+  },
+  commentarySectionDot: {
+    width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.ACCENT,
+  },
+  commentarySectionTitle: {
+    fontFamily: FONTS.family, fontSize: 12, fontWeight: '900',
+    color: COLORS.TEXT_MUTED, letterSpacing: 1.6,
+  },
+
+  overCard: {
+    backgroundColor: COLORS.CARD,
+    borderRadius: 14,
+    borderWidth: 1, borderColor: COLORS.BORDER,
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  overCardHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 14, paddingVertical: 12,
+    backgroundColor: 'rgba(30,136,229,0.05)',
+  },
+  overCardHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  overChip: {
+    paddingHorizontal: 10, paddingVertical: 5,
+    backgroundColor: 'rgba(30,136,229,0.18)',
+    borderRadius: 6,
+    borderWidth: 1, borderColor: 'rgba(30,136,229,0.40)',
+  },
+  overChipText: {
+    fontFamily: FONTS.family, fontSize: 11, fontWeight: '900',
+    color: COLORS.ACCENT_LIGHT, letterSpacing: 1,
+  },
+  overBowlerLabel: {
+    fontFamily: FONTS.family, fontSize: 9, fontWeight: '700',
+    color: COLORS.TEXT_MUTED, letterSpacing: 1, marginBottom: 1,
+  },
+  overBowlerName: {
+    fontFamily: FONTS.family, fontSize: 14, fontWeight: '700', color: COLORS.TEXT,
+  },
+  overCardHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  overRunsBig: {
+    fontFamily: FONTS.family, fontSize: 22, fontWeight: '900', color: COLORS.TEXT,
+    letterSpacing: -0.5,
+  },
+  overRunsLabel: {
+    fontFamily: FONTS.family, fontSize: 9, fontWeight: '700',
+    color: COLORS.TEXT_MUTED, letterSpacing: 1, marginLeft: -4,
+  },
+  overWktsPill: {
+    paddingHorizontal: 7, paddingVertical: 3,
+    backgroundColor: 'rgba(229,57,53,0.18)',
+    borderRadius: 6,
+    borderWidth: 1, borderColor: 'rgba(229,57,53,0.45)',
+    marginLeft: 4,
+  },
+  overWktsPillText: {
+    fontFamily: FONTS.family, fontSize: 11, fontWeight: '900',
+    color: '#FF6B6B', letterSpacing: 0.5,
+  },
+
+  overStripRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 14, paddingVertical: 14,
+    backgroundColor: COLORS.SURFACE,
+  },
+  bigBall: {
+    minWidth: 34, height: 34, paddingHorizontal: 6, borderRadius: 17,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: COLORS.BORDER, backgroundColor: COLORS.CARD,
+  },
+  bigBall_default: {},
+  bigBall_dot:    { backgroundColor: COLORS.CARD, borderColor: COLORS.BORDER },
+  bigBall_wicket: { backgroundColor: 'rgba(229,57,53,0.22)',  borderColor: '#FF6B6B' },
+  bigBall_four:   { backgroundColor: 'rgba(30,136,229,0.22)', borderColor: COLORS.ACCENT_LIGHT },
+  bigBall_six:    { backgroundColor: 'rgba(168,85,247,0.25)', borderColor: '#C084FC' },
+  bigBall_extra:  { backgroundColor: 'rgba(245,158,11,0.20)', borderColor: COLORS.WARNING_LIGHT },
+  bigBallText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '900', color: COLORS.TEXT },
+  bigBallText_default: {},
+  bigBallText_dot:    { color: COLORS.TEXT_MUTED },
+  bigBallText_wicket: { color: '#FF6B6B' },
+  bigBallText_four:   { color: COLORS.ACCENT_LIGHT },
+  bigBallText_six:    { color: '#C084FC' },
+  bigBallText_extra:  { color: COLORS.WARNING_LIGHT },
+
+  overEndPill: {
+    marginLeft: 'auto',
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 10, paddingVertical: 5,
+    backgroundColor: 'rgba(34,197,94,0.15)',
+    borderRadius: 8,
+    borderWidth: 1, borderColor: 'rgba(34,197,94,0.45)',
+  },
+  overEndDot: {
+    width: 5, height: 5, borderRadius: 3, backgroundColor: COLORS.SUCCESS_LIGHT,
+  },
+  overEndPillText: {
+    fontFamily: FONTS.family, fontSize: 10, fontWeight: '900',
+    color: COLORS.SUCCESS_LIGHT, letterSpacing: 1,
+  },
+
+  overDivider: {
+    height: 1, backgroundColor: COLORS.BORDER,
+  },
+
+  overBalls: {
+    paddingHorizontal: 14, paddingVertical: 4,
+  },
+  ballRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 14,
+    paddingVertical: 12,
+  },
+  ballRowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.BORDER,
+  },
+  ballRowLeft: { alignItems: 'center', width: 48 },
+  ballRowOver: {
+    fontFamily: FONTS.family, fontSize: 10, fontWeight: '700',
+    color: COLORS.TEXT_MUTED, marginBottom: 4, letterSpacing: 0.5,
+  },
+  ballRowPill: {
+    minWidth: 30, height: 30, paddingHorizontal: 5, borderRadius: 15,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: COLORS.BORDER, backgroundColor: COLORS.SURFACE,
+  },
+  ballRowPillText: {
+    fontFamily: FONTS.family, fontSize: 12, fontWeight: '900', color: COLORS.TEXT,
+  },
+  ballRowBody: { flex: 1, paddingTop: 2 },
+  ballRowBatter: {
+    fontFamily: FONTS.family, fontSize: 13, fontWeight: '800',
+    color: COLORS.TEXT, marginBottom: 3,
+  },
+  ballRowSummary: {
+    fontFamily: FONTS.family, fontSize: 13, color: COLORS.TEXT_SECONDARY,
+    lineHeight: 19,
+  },
+  ballRowSummaryWicket: { color: '#FF6B6B', fontWeight: '700' },
+  ballRowSummarySix:    { color: '#C084FC', fontWeight: '700' },
+  ballRowSummaryFour:   { color: COLORS.ACCENT_LIGHT, fontWeight: '700' },
+
+  commFeedRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    paddingVertical: 6, paddingHorizontal: 6,
+  },
+  commFeedRow_wicket: { backgroundColor: 'rgba(229,57,53,0.06)' },
+  commFeedRow_four:   { backgroundColor: 'rgba(30,136,229,0.04)' },
+  commFeedRow_six:    { backgroundColor: 'rgba(168,85,247,0.06)' },
+  commFeedBall: {
+    width: 30, height: 30, borderRadius: 15,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: COLORS.BORDER, backgroundColor: COLORS.SURFACE,
+  },
+  commFeedBall_default: {},
+  commFeedBall_wicket: { backgroundColor: 'rgba(229,57,53,0.20)',  borderColor: 'rgba(229,57,53,0.65)' },
+  commFeedBall_four:   { backgroundColor: 'rgba(30,136,229,0.20)', borderColor: 'rgba(30,136,229,0.65)' },
+  commFeedBall_six:    { backgroundColor: 'rgba(168,85,247,0.22)', borderColor: 'rgba(168,85,247,0.65)' },
+  commFeedBallText: { fontFamily: FONTS.family, fontSize: 12, fontWeight: '800', color: COLORS.TEXT },
+  commFeedBallText_default: {},
+  commFeedBallText_wicket: { color: '#FF6B6B' },
+  commFeedBallText_four:   { color: COLORS.ACCENT_LIGHT },
+  commFeedBallText_six:    { color: '#C084FC' },
+  commFeedHeader: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.TEXT_MUTED, marginBottom: 2 },
+  commFeedOver:   { fontFamily: FONTS.family, fontWeight: '800', color: COLORS.TEXT_MUTED },
+  commFeedBowler: { fontFamily: FONTS.family, fontWeight: '700', color: COLORS.TEXT },
+  commFeedTo:     { fontFamily: FONTS.family, color: COLORS.TEXT_MUTED },
+  commFeedBatter: { fontFamily: FONTS.family, fontWeight: '700', color: COLORS.TEXT },
+  commFeedText:   { fontFamily: FONTS.family, fontSize: 13, color: COLORS.TEXT_SECONDARY, lineHeight: 18, fontStyle: 'italic' },
 });
 
 export default LiveScoringScreen;

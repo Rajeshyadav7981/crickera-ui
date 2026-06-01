@@ -54,21 +54,37 @@ const ForgotPasswordScreen = ({ navigation }) => {
 
   // Step 1 → Step 2: send OTP
   const handleSendOtp = async () => {
-    if (mobile.length !== 10) {
-      toast.warning('Enter a valid 10-digit mobile number');
+    if (mobile.length !== 10 || !/^\d{10}$/.test(mobile)) {
+      toast.warning('Invalid Mobile', 'Enter a valid 10-digit number');
+      return;
+    }
+    if (!/^[6-9]/.test(mobile)) {
+      toast.warning('Invalid Mobile', 'Mobile number must start with 6, 7, 8 or 9');
       return;
     }
     setLoading(true);
     try {
       const res = await authAPI.sendOTP(mobile, 'reset_password');
-      toast.success('OTP Sent', 'Check your phone for the verification code');
+      if (res.data?.reused) {
+        toast.info('Use the code we already sent', 'A code was sent to your mobile recently. Please enter that code.');
+      } else {
+        toast.success('OTP Sent', 'Check your phone for the verification code');
+      }
       setStep(2);
       otpTimer.start(res.data?.expires_in);
     } catch (err) {
-      const msg = err.response?.status === 429
-        ? (err.response?.data?.detail || 'Too many requests. Please wait a moment and try again.')
-        : (err.response?.data?.detail || 'Failed to send OTP');
-      toast.error('Failed', msg);
+      const status = err.response?.status;
+      const detail = err.response?.data?.detail;
+      if (status === 404) {
+        toast.error('Account Not Found', detail || 'No account exists for this mobile. Taking you to Register…');
+        setTimeout(() => navigation.replace('Register', { prefilledMobile: mobile }), 1200);
+      } else if (status === 400) {
+        toast.warning('Invalid Mobile', detail || 'Please enter a valid 10-digit Indian mobile number.');
+      } else if (status === 429) {
+        toast.warning('Please Wait', detail || 'Too many requests. Try again in a moment.');
+      } else {
+        toast.error('Failed', detail || 'Failed to send OTP');
+      }
     } finally {
       setLoading(false);
     }
@@ -79,7 +95,11 @@ const ForgotPasswordScreen = ({ navigation }) => {
     setLoading(true);
     try {
       const res = await authAPI.sendOTP(mobile, 'reset_password');
-      toast.success('OTP Resent', 'New code sent to your phone');
+      if (res.data?.reused) {
+        toast.info('Use the existing code', `Still valid for ~${res.data.expires_in || 60}s. Please check your phone.`);
+      } else {
+        toast.success('OTP Resent', 'New code sent to your phone');
+      }
       otpTimer.start(res.data?.expires_in);
       setOtp('');
     } catch (err) {

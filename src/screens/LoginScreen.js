@@ -14,13 +14,13 @@ import useOtpCountdown, { formatCountdown } from '../hooks/useOtpCountdown';
 import { COLORS, GRADIENTS, FONTS } from '../theme';
 import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 
-const LoginScreen = ({ navigation }) => {
+const LoginScreen = ({ navigation, route }) => {
   const { login } = useAuth();
   const toast = useToast();
 
   // Step: 1 = mobile, 2 = OTP, 3 = password
   const [step, setStep] = useState(1);
-  const [mobile, setMobile] = useState('');
+  const [mobile, setMobile] = useState(route?.params?.prefilledMobile || '');
   const [otp, setOtp] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -43,21 +43,37 @@ const LoginScreen = ({ navigation }) => {
   // Step 1 → Step 2: validate mobile + send OTP
   const handleSendOtp = async () => {
     const m = mobile.trim();
-    if (!m || m.length !== 10) {
-      toast.warning('Enter a valid 10-digit mobile number');
+    if (!m || m.length !== 10 || !/^\d{10}$/.test(m)) {
+      toast.warning('Invalid Mobile', 'Enter a valid 10-digit number');
+      return;
+    }
+    if (!/^[6-9]/.test(m)) {
+      toast.warning('Invalid Mobile', 'Mobile number must start with 6, 7, 8 or 9');
       return;
     }
     setLoading(true);
     try {
       const res = await authAPI.sendOTP(m, 'login');
-      toast.success('OTP Sent', 'Check your phone for the verification code');
+      if (res.data?.reused) {
+        toast.info('Use the existing code', 'A code was sent to your mobile recently. Please enter it below.');
+      } else {
+        toast.success('OTP Sent', 'Check your phone for the verification code');
+      }
       setStep(2);
       otpTimer.start(res.data?.expires_in);
     } catch (err) {
-      const detail = err.response?.status === 429
-        ? (err.response?.data?.detail || 'Too many requests. Please wait a moment and try again.')
-        : (err.response?.data?.detail || 'Could not send OTP');
-      toast.error('Failed', detail);
+      const status = err.response?.status;
+      const detail = err.response?.data?.detail;
+      if (status === 404) {
+        toast.error('Account Not Found', detail || 'No account exists for this mobile. Taking you to Register…');
+        setTimeout(() => navigation.replace('Register', { prefilledMobile: m }), 1200);
+      } else if (status === 400) {
+        toast.warning('Invalid Mobile', detail || 'Please enter a valid 10-digit Indian mobile number.');
+      } else if (status === 429) {
+        toast.warning('Please Wait', detail || 'Too many requests. Try again in a moment.');
+      } else {
+        toast.error('Failed', detail || 'Could not send OTP');
+      }
     } finally {
       setLoading(false);
     }
@@ -68,7 +84,11 @@ const LoginScreen = ({ navigation }) => {
     setLoading(true);
     try {
       const res = await authAPI.sendOTP(mobile.trim(), 'login');
-      toast.success('OTP Resent', 'New code sent');
+      if (res.data?.reused) {
+        toast.info('Use the existing code', `Still valid for ~${res.data.expires_in || 60}s.`);
+      } else {
+        toast.success('OTP Resent', 'New code sent');
+      }
       otpTimer.start(res.data?.expires_in);
       setOtp('');
     } catch (err) {

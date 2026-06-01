@@ -34,6 +34,16 @@ const PRIMARY = COLORS.ACCENT;
 const TABS = ['Summary', 'Scorecard', 'Commentary', 'Info'];
 const COMM_FILTERS = ['All', 'Wickets', 'Boundaries'];
 
+const getBallKind = (ball) => {
+  if (ball === 'W') return 'wicket';
+  if (ball === '4') return 'four';
+  if (ball === '6') return 'six';
+  if (ball === '0' || ball === '•') return 'dot';
+  const s = typeof ball === 'string' ? ball.toLowerCase() : '';
+  if (s.includes('wd') || s.includes('nb') || s.includes('lb') || s.includes('bye')) return 'extra';
+  return 'default';
+};
+
 const MatchDetailScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
@@ -1212,6 +1222,47 @@ const MatchDetailScreen = ({ navigation, route }) => {
                 })}
               </View>
             )}
+
+            {isLive && sumInnIdx === innings.length - 1 && liveState?.this_over?.length > 0 && (
+              <View style={st.thisOverCard}>
+                <Text style={st.thisOverLabel}>THIS OVER</Text>
+                <View style={st.thisOverRow}>
+                  {liveState.this_over.map((ball, i) => {
+                    const kind = getBallKind(ball);
+                    return (
+                      <View key={i} style={[st.ballPill, st[`ballPill_${kind}`]]}>
+                        <Text style={[st.ballPillText, st[`ballPillText_${kind}`]]}>{ball}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {isLive && sumInnIdx === innings.length - 1 && (() => {
+              const innNum = currentInn?.innings_number;
+              const lastBall = innNum && commData?.[0];
+              const commentaryText = liveCommentary || lastBall?.commentary || null;
+              if (!commentaryText) return null;
+              const cKind = celebration === 'six' ? 'six'
+                : celebration === 'four' ? 'four'
+                : (celebration && celebration.startsWith('wicket')) ? 'wicket'
+                : (lastBall?.is_six ? 'six'
+                  : lastBall?.is_wicket ? 'wicket'
+                  : (lastBall?.is_boundary || lastBall?.batsman_runs === 4) ? 'four'
+                  : null);
+              return (
+                <View style={[st.lastBallCard, cKind && st[`lastBallCard_${cKind}`]]}>
+                  {cKind && (
+                    <Text style={[st.lastBallTag, st[`lastBallTag_${cKind}`]]}>
+                      {cKind === 'six' ? 'SIX!' : cKind === 'four' ? 'FOUR!' : 'WICKET!'}
+                    </Text>
+                  )}
+                  <Text style={st.lastBallQuote}>"</Text>
+                  <Text style={st.lastBallText} numberOfLines={3}>{commentaryText}</Text>
+                </View>
+              );
+            })()}
 
             {/* Mini Scorecard */}
             {isLive && sumInnIdx === innings.length - 1 && liveState && !liveState.message && (
@@ -2844,6 +2895,57 @@ const st = StyleSheet.create({
   },
   keyStatValue: { fontFamily: FONTS.family, fontSize: 18, fontWeight: '900', color: COLORS.TEXT },
   keyStatLabel: { fontFamily: FONTS.family, fontSize: 10, fontWeight: '600', color: COLORS.TEXT_MUTED, marginTop: 3, textAlign: 'center' },
+
+  thisOverCard: {
+    marginHorizontal: 16, marginTop: 10, padding: 12,
+    backgroundColor: COLORS.CARD, borderRadius: 12,
+    borderWidth: 1, borderColor: COLORS.BORDER,
+  },
+  thisOverLabel: {
+    fontFamily: FONTS.family, fontSize: 10, fontWeight: '800',
+    color: COLORS.TEXT_MUTED, letterSpacing: 1, marginBottom: 8,
+  },
+  thisOverRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  ballPill: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: COLORS.BORDER, backgroundColor: COLORS.SURFACE,
+  },
+  ballPillText: { fontFamily: FONTS.family, fontSize: 13, fontWeight: '800', color: COLORS.TEXT },
+  ballPill_wicket:  { backgroundColor: 'rgba(229,57,53,0.18)',  borderColor: 'rgba(229,57,53,0.65)' },
+  ballPill_four:    { backgroundColor: 'rgba(30,136,229,0.18)', borderColor: 'rgba(30,136,229,0.65)' },
+  ballPill_six:     { backgroundColor: 'rgba(168,85,247,0.20)', borderColor: 'rgba(168,85,247,0.65)' },
+  ballPill_dot:     { backgroundColor: COLORS.SURFACE,           borderColor: COLORS.BORDER },
+  ballPill_extra:   { backgroundColor: 'rgba(245,158,11,0.18)', borderColor: 'rgba(245,158,11,0.55)' },
+  ballPill_default: {},
+  ballPillText_wicket:  { color: '#FF6B6B' },
+  ballPillText_four:    { color: COLORS.ACCENT_LIGHT },
+  ballPillText_six:     { color: '#C084FC' },
+  ballPillText_dot:     { color: COLORS.TEXT_MUTED },
+  ballPillText_extra:   { color: COLORS.WARNING_LIGHT },
+  ballPillText_default: {},
+
+  lastBallCard: {
+    marginHorizontal: 16, marginTop: 10, padding: 14,
+    backgroundColor: COLORS.CARD, borderRadius: 12,
+    borderWidth: 1, borderColor: COLORS.BORDER,
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+  },
+  lastBallCard_six:    { borderColor: 'rgba(168,85,247,0.65)', backgroundColor: 'rgba(168,85,247,0.06)' },
+  lastBallCard_four:   { borderColor: 'rgba(30,136,229,0.55)', backgroundColor: 'rgba(30,136,229,0.05)' },
+  lastBallCard_wicket: { borderColor: 'rgba(229,57,53,0.55)',  backgroundColor: 'rgba(229,57,53,0.05)' },
+  lastBallTag: {
+    fontFamily: FONTS.family, fontSize: 10, fontWeight: '900',
+    color: COLORS.TEXT, letterSpacing: 1.2,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
+    backgroundColor: COLORS.SURFACE, marginRight: 4,
+    overflow: 'hidden',
+  },
+  lastBallTag_six:    { backgroundColor: 'rgba(168,85,247,0.22)', color: '#C084FC' },
+  lastBallTag_four:   { backgroundColor: 'rgba(30,136,229,0.22)', color: COLORS.ACCENT_LIGHT },
+  lastBallTag_wicket: { backgroundColor: 'rgba(229,57,53,0.22)',  color: '#FF6B6B' },
+  lastBallQuote: { fontFamily: FONTS.family, fontSize: 22, fontWeight: '900', color: COLORS.ACCENT, lineHeight: 18 },
+  lastBallText: { fontFamily: FONTS.family, flex: 1, fontSize: 13, color: COLORS.TEXT, fontStyle: 'italic', lineHeight: 18 },
 });
 
 export default MatchDetailScreen;
