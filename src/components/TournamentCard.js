@@ -78,7 +78,6 @@ const TournamentCard = ({ tournament, onPress, style, width, monochrome = false 
   const roleLabel = ROLE_LABEL[t.role] || null;
   const overs = t.overs_per_match ? `T${t.overs_per_match}` : null;
   const prize = fmtMoney(t.prize_pool);
-  const entry = fmtMoney(t.entry_fee);
 
   const stages = t.stages_count;
   const matchesTotal = t.matches_total;
@@ -88,10 +87,9 @@ const TournamentCard = ({ tournament, onPress, style, width, monochrome = false 
   const showPrize = !!prize;
 
   const tiles = [];
-  if (showStages) tiles.push({ icon: 'flag-checkered', label: `${stages}`, value: stages === 1 ? 'stage' : 'stages' });
+  tiles.push({ icon: 'flag-checkered', label: showStages ? `${stages}` : 'NA', value: showStages && stages === 1 ? 'stage' : 'stages' });
   if (showMatches) tiles.push({ icon: 'cricket', label: `${matchesDone || 0}/${matchesTotal}`, value: 'matches' });
-  if (showPrize) tiles.push({ icon: 'cash-multiple', label: prize, value: 'prize pool' });
-  if (!showPrize && entry) tiles.push({ icon: 'ticket-outline', label: entry, value: 'entry' });
+  tiles.push({ icon: 'trophy-variant', label: showPrize ? prize : 'NA', value: 'prize pool' });
 
   const metaChips = [];
   if (venue) metaChips.push({ icon: 'map-marker-outline', text: venue });
