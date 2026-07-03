@@ -1,0 +1,42 @@
+name: Android Release
+
+# Build the production AAB on EAS and submit to Google Play.
+# Trigger by pushing a tag like v1.0.2, or via the manual button.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      track:
+        description: "Play track"
+        type: choice
+        default: internal
+        options: [internal, alpha, beta, production]
+
+jobs:
+  build-and-submit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}   # from expo.dev account settings
+
+      - run: npm ci
+
+      # Build the app-bundle (production profile already emits .aab) and wait.
+      - name: EAS build (AAB)
+        run: eas build --platform android --profile production --non-interactive --wait
+
+      # Submit the build that was just produced to the chosen track.
+      - name: Submit to Play
+        run: |
+          eas submit --platform android --profile production --latest --non-interactive \
+            ${{ github.event.inputs.track && format('--track {0}', github.event.inputs.track) || '' }}

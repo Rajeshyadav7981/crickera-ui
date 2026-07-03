@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Share,
-  InteractionManager, Alert,
+  InteractionManager,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,6 +16,7 @@ import Skeleton from '../../components/Skeleton';
 import ConfirmModal from '../../components/ConfirmModal';
 import ManhattanChart from '../../components/charts/ManhattanChart';
 import FallOfWicketsChart from '../../components/charts/FallOfWicketsChart';
+import { useToast } from '../../components/Toast';
 
 
 const PRIMARY = COLORS.ACCENT;
@@ -60,6 +61,7 @@ const getTeamColor = (index) => TEAM_COLORS[index % TEAM_COLORS.length];
 
 const ScorecardScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
+  const toast = useToast();
   const { matchId } = route.params;
   const { user } = useAuth();
   const [activeInnings, setActiveInnings] = useState(0);
@@ -104,7 +106,7 @@ const ScorecardScreen = ({ navigation, route }) => {
       setShowRevertConfirm(false);
       navigation.replace('LiveScoring', { matchId });
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to revert match');
+      toast.error(e.response?.data?.detail || 'Failed to revert match');
     } finally {
       setReverting(false);
     }

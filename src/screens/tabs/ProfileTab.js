@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../context/AuthContext';
 import { usersAPI } from '../../services/api';
 import { COLORS, FONTS } from '../../theme';
+import { isAvatarKey } from '../../constants/avatars';
 import Icon from '../../components/Icon';
 import Avatar from '../../components/Avatar';
 import Skeleton, { ProfileSkeleton } from '../../components/Skeleton';
@@ -79,6 +80,7 @@ const ProfileTab = () => {
   const profileImageUrl = (() => {
     const p = user?.profile;
     if (!p) return null;
+    if (isAvatarKey(p)) return p;   // preset avatar key — Avatar renders it directly
     if (p.startsWith('http')) return p;
     // Local path — prepend API base URL
     const { default: apiInstance } = require('../../services/api');
@@ -102,7 +104,7 @@ const ProfileTab = () => {
             <View style={s.guestIconCircle}>
               <Icon name="profile" size={40} color={COLORS.ACCENT} />
             </View>
-            <Text style={s.guestTitle}>Welcome to CrecKStars</Text>
+            <Text style={s.guestTitle}>Welcome to CRIXONE</Text>
             <Text style={s.guestSub}>
               Sign in to create matches, track your stats, build teams, and connect with the cricket community.
             </Text>
@@ -285,7 +287,7 @@ const ProfileTab = () => {
         <View style={s.appInfoCard}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <Icon name="cricket" size={20} color={COLORS.ACCENT} />
-            <Text style={s.appName}>CrecKStars</Text>
+            <Text style={s.appName}>CRIXONE</Text>
           </View>
           <Text style={s.appVersion}>Version 1.0.0</Text>
           <Text style={s.appTagline}>Your Cricket Companion</Text>

@@ -1,25 +1,30 @@
 {
   "expo": {
-    "name": "CrecKStars",
+    "name": "CRIXONE",
     "slug": "frontend",
-    "scheme": "creckstars",
+    "scheme": "crixone",
     "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0D1B2A"
+      "backgroundColor": "#010006"
     },
     "ios": {
       "supportsTablet": true
     },
     "android": {
-      "package": "com.creckstars.app",
+      "package": "com.crixone.app",
       "versionCode": 2,
+      "blockedPermissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECEIVE_BOOT_COMPLETED"
+      ],
       "adaptiveIcon": {
-        "backgroundColor": "#FFFFFF",
+        "backgroundColor": "#010006",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -27,10 +32,9 @@
       "intentFilters": [
         {
           "action": "VIEW",
-          "autoVerify": true,
           "data": [
             {
-              "scheme": "creckstars"
+              "scheme": "crixone"
             }
           ],
           "category": [
@@ -44,7 +48,7 @@
           "data": [
             {
               "scheme": "https",
-              "host": "creckstars.duckdns.org",
+              "host": "crixone.in",
               "pathPrefix": "/share"
             }
           ],

@@ -10,13 +10,13 @@ const prefix = Linking.createURL('/');
  * Set EXPO_PUBLIC_SHARE_BASE_URL in EAS build env to override. The default
  * points at production so a release build never ships a LAN IP in share links.
  */
-const PRODUCTION_SHARE_BASE = 'https://creckstars.duckdns.org';
+const PRODUCTION_SHARE_BASE = 'https://crixone.in';
 const SHARE_BASE = process.env.EXPO_PUBLIC_SHARE_BASE_URL || PRODUCTION_SHARE_BASE;
 
 export const linkingConfig = {
   prefixes: [
     prefix,
-    'creckstars://',
+    'crixone://',
     // Also handle web URLs from share links (so the app intercepts them when installed)
     `${SHARE_BASE}/share`,
   ],
@@ -31,7 +31,7 @@ export const linkingConfig = {
         },
       },
       MatchDetail: {
-        // Matches both creckstars://match/:matchId AND https://server/share/match/:matchId
+        // Matches both crixone://match/:matchId AND https://server/share/match/:matchId
         path: 'match/:matchId',
         parse: { matchId: Number },
       },

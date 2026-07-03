@@ -2,15 +2,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { scoringAPI } from './api';
 
-let Notifications = null;
-try {
-  Notifications = require('expo-notifications');
-  // Quick check if it actually works (Expo Go SDK 53+ doesn't support it)
-  if (!Notifications.getPermissionsAsync) Notifications = null;
-} catch { Notifications = null; }
+const Notifications = null;
 
 const QUEUE_KEY = 'offline_scoring_queue';
 const MAX_QUEUE_SIZE = 500; // Prevent AsyncStorage bloat
+const MAX_QUEUE_AGE_MS = 24 * 60 * 60 * 1000; // Drop queued actions older than 24h on load
 
 class OfflineScoringQueue {
   constructor() {
@@ -56,7 +52,16 @@ class OfflineScoringQueue {
   async init() {
     try {
       const stored = await AsyncStorage.getItem(QUEUE_KEY);
-      if (stored) this._queue = JSON.parse(stored);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const cutoff = Date.now() - MAX_QUEUE_AGE_MS;
+        this._queue = parsed.filter((e) => (e?.timestamp ?? 0) >= cutoff);
+        const pruned = parsed.length - this._queue.length;
+        if (pruned > 0) {
+          this._droppedSinceReset += pruned;
+          await this._persist();
+        }
+      }
     } catch {}
 
     this._unsubscribe = NetInfo.addEventListener((state) => {
@@ -105,7 +110,10 @@ class OfflineScoringQueue {
 
     if (this._isOnline) {
       try {
-        const result = await scoringAPI.score(matchId, data);
+        // Pass entry.id as the idempotency key on the FIRST attempt too: if this
+        // commits server-side but the response is lost and we fall into the
+        // queue below, the retry reuses the same key and the backend dedups.
+        const result = await scoringAPI.score(matchId, data, entry.id);
         return { success: true, result: result.data };
       } catch (error) {
         // If network error, queue it; otherwise throw
@@ -156,7 +164,7 @@ class OfflineScoringQueue {
       const entry = this._queue[0];
 
       try {
-        await scoringAPI.score(entry.matchId, entry.data);
+        await scoringAPI.score(entry.matchId, entry.data, entry.id);
         this._queue.shift();
         await this._persist();
       } catch (error) {

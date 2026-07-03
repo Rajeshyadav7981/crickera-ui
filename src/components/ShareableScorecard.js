@@ -38,7 +38,7 @@ const shareAsText = async (data) => {
 };
 
 const buildShareText = (data) => {
-  if (!data) return 'Match Scorecard - CreckStars';
+  if (!data) return 'Match Scorecard - CRIXONE';
 
   const innings = data.innings || [];
   const scores = innings.map(inn =>
@@ -48,7 +48,7 @@ const buildShareText = (data) => {
   const pom = data.top_performers?.player_of_match;
   const pomLine = pom ? `\nPlayer of the Match: ${pom.player_name}` : '';
 
-  return `Match Summary\n${data.result || ''}\n${scores}${pomLine}\n\nScored on CreckStars`;
+  return `Match Summary\n${data.result || ''}\n${scores}${pomLine}\n\nScored on CRIXONE`;
 };
 
 // Standalone scorecard image component for capture
@@ -66,7 +66,7 @@ export const ScorecardImage = React.forwardRef(({ data, style }, ref) => {
     <Wrapper {...wrapperProps} style={[styles.card, style]}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.appName}>CreckStars</Text>
+        <Text style={styles.appName}>CRIXONE</Text>
         {data.result && <Text style={styles.result}>{data.result}</Text>}
       </View>
 
@@ -103,7 +103,7 @@ export const ScorecardImage = React.forwardRef(({ data, style }, ref) => {
         </View>
       )}
 
-      <Text style={styles.watermark}>Scored on CreckStars</Text>
+      <Text style={styles.watermark}>Scored on CRIXONE</Text>
     </Wrapper>
   );
 });

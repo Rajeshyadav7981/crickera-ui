@@ -1,33 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, Image,
-  Alert, ActivityIndicator, ScrollView, Platform,
+  ActivityIndicator, ScrollView, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
-import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../context/AuthContext';
 import { useAuthGate } from '../../hooks/useRequireAuth';
-import { authAPI } from '../../services/api';
+import { usersAPI } from '../../services/api';
 import { COLORS, FONTS } from '../../theme';
+import { PROFILE_AVATARS } from '../../constants/avatars';
+import Avatar from '../../components/Avatar';
 import BackButton from '../../components/BackButton';
 import CalendarPicker from '../../components/CalendarPicker';
+import { useToast } from '../../components/Toast';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-
-const getProfileImageUrl = (profile) => {
-  if (!profile) return null;
-  if (profile.startsWith('http')) return profile;
-  // Local backend path — need to import API base dynamically
-  try {
-    const api = require('../services/api').default;
-    return `${api.defaults.baseURL}${profile}`;
-  } catch {
-    return profile;
-  }
-};
 
 const EditProfileScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
+  const toast = useToast();
   useAuthGate('edit your profile');
   const { user, updateUser, refreshUser } = useAuth();
   const [firstName, setFirstName] = useState(user?.first_name || '');
@@ -45,6 +37,45 @@ const EditProfileScreen = ({ navigation }) => {
   const [showDobPicker, setShowDobPicker] = useState(false);
   const [profileImage, setProfileImage] = useState(user?.profile || null);
 
+  // Username (editable, with debounced availability check)
+  const originalUsername = (user?.username || '').toLowerCase();
+  const [username, setUsername] = useState(originalUsername);
+  const [checkingUsername, setCheckingUsername] = useState(false);
+  const [usernameAvailable, setUsernameAvailable] = useState(null); // null = unchanged/unchecked
+  const [usernameError, setUsernameError] = useState('');
+  const usernameDebounce = useRef(null);
+
+  useEffect(() => () => clearTimeout(usernameDebounce.current), []);
+
+  const usernameChanged = username !== originalUsername;
+
+  const handleUsernameChange = (text) => {
+    const clean = text.toLowerCase().replace(/[^a-z0-9._]/g, '').slice(0, 30);
+    setUsername(clean);
+    setUsernameAvailable(null);
+    setUsernameError('');
+    if (usernameDebounce.current) clearTimeout(usernameDebounce.current);
+
+    if (clean === originalUsername) return; // back to current handle — nothing to check
+    if (clean.length < 3) {
+      setUsernameError(clean.length > 0 ? 'At least 3 characters' : '');
+      return;
+    }
+
+    usernameDebounce.current = setTimeout(async () => {
+      setCheckingUsername(true);
+      try {
+        const res = await usersAPI.checkUsername(clean);
+        setUsernameAvailable(res.data.available);
+        if (!res.data.available) setUsernameError(res.data.reason || 'Already taken');
+      } catch {
+        setUsernameError('Could not check availability');
+      } finally {
+        setCheckingUsername(false);
+      }
+    }, 500);
+  };
+
   const formatDobDisplay = (iso) => {
     if (!iso) return 'Select date of birth';
     try {
@@ -55,11 +86,25 @@ const EditProfileScreen = ({ navigation }) => {
 
   const handleSave = async () => {
     if (!firstName.trim() || !lastName.trim()) {
-      Alert.alert('Error', 'First name and last name are required');
+      toast.error('First name and last name are required');
       return;
+    }
+    if (usernameChanged) {
+      if (username.length < 3) {
+        toast.error('Username must be at least 3 characters');
+        return;
+      }
+      if (usernameAvailable === false) {
+        toast.error('That username is already taken. Choose another.');
+        return;
+      }
     }
     setSaving(true);
     try {
+      // Username goes through its own endpoint (uniqueness + validation).
+      if (usernameChanged) {
+        await usersAPI.setUsername(username);
+      }
       await updateUser({
         first_name: firstName.trim(),
         last_name: lastName.trim(),
@@ -72,88 +117,31 @@ const EditProfileScreen = ({ navigation }) => {
         bowling_style: bowlingStyle || null,
         player_role: playerRole || null,
       });
-      Alert.alert('Success', 'Profile updated successfully', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
+      toast.success('Profile updated successfully');
+      navigation.goBack();
     } catch (e) {
       const msg = e?.response?.data?.detail || 'Failed to update profile';
-      Alert.alert('Error', msg);
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
   };
 
-  const pickImage = async (source) => {
-    let result;
-
-    if (source === 'camera') {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Camera permission is required to take a photo.');
-        return;
-      }
-      result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.7,
-      });
-    } else {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Gallery permission is required to select a photo.');
-        return;
-      }
-      result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.7,
-      });
-    }
-
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      uploadImage(result.assets[0].uri);
-    }
-  };
-
-  const uploadImage = async (uri) => {
+  // Pick a preset avatar — saved as a short key in `profile`, no upload.
+  const selectAvatar = async (key) => {
+    const next = profileImage === key ? '' : key;
     setUploading(true);
     try {
-      const res = await authAPI.uploadProfilePhoto(uri);
-      setProfileImage(res.data.profile);
-      await refreshUser();
+      await updateUser({ profile: next });
+      setProfileImage(next || null);
     } catch (e) {
-      const msg = e?.response?.data?.detail || e?.message || 'Failed to upload photo';
-      Alert.alert('Upload Failed', msg);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const showImageOptions = () => {
-    Alert.alert('Change Profile Photo', 'Choose an option', [
-      { text: 'Take Photo', onPress: () => pickImage('camera') },
-      { text: 'Choose from Gallery', onPress: () => pickImage('gallery') },
-      ...(profileImage ? [{ text: 'Remove Photo', style: 'destructive', onPress: removePhoto }] : []),
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  };
-
-  const removePhoto = async () => {
-    setUploading(true);
-    try {
-      await updateUser({ profile: '' });
-      setProfileImage(null);
-    } catch (e) {
-      Alert.alert('Error', 'Failed to remove photo');
+      toast.error('Failed to update avatar');
     } finally {
       setUploading(false);
     }
   };
 
   const initials = `${firstName?.charAt(0)?.toUpperCase() || ''}${lastName?.charAt(0)?.toUpperCase() || ''}`;
-  const imageUrl = getProfileImageUrl(profileImage);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -171,36 +159,81 @@ const EditProfileScreen = ({ navigation }) => {
         enableOnAndroid
         extraScrollHeight={40}
       >
-          {/* Avatar with edit option */}
+          {/* Avatar — pick from preset avatars (no upload) */}
           <View style={styles.avatarWrap}>
-            <TouchableOpacity onPress={showImageOptions} activeOpacity={0.7} disabled={uploading}>
-              <View style={styles.avatarOuter}>
-                {imageUrl ? (
-                  <Image source={{ uri: imageUrl }} style={styles.avatarImage} />
-                ) : (
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{initials}</Text>
-                  </View>
-                )}
-                {uploading ? (
-                  <View style={styles.avatarOverlay}>
-                    <ActivityIndicator color="#fff" size="small" />
-                  </View>
-                ) : (
-                  <View style={styles.cameraBadge}>
-                    <Feather name="camera" size={12} color="#fff" />
-                  </View>
-                )}
-              </View>
-            </TouchableOpacity>
-            <Text style={styles.changePhotoText}>Tap to change photo</Text>
+            <View style={styles.avatarPreview}>
+              <Avatar uri={profileImage} name={`${firstName} ${lastName}`} size={100} />
+              {uploading && (
+                <View style={styles.avatarOverlay}>
+                  <ActivityIndicator color="#fff" size="small" />
+                </View>
+              )}
+            </View>
+            <Text style={styles.changePhotoText}>Choose your avatar</Text>
+            <View style={styles.avatarGrid}>
+              {PROFILE_AVATARS.map((a) => {
+                const selected = profileImage === a.key;
+                return (
+                  <TouchableOpacity
+                    key={a.key}
+                    activeOpacity={0.85}
+                    disabled={uploading}
+                    onPress={() => selectAvatar(a.key)}
+                  >
+                    <LinearGradient
+                      colors={a.colors}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={[styles.avatarTile, selected && styles.avatarTileSelected]}
+                    >
+                      {a.emoji ? (
+                        <Text style={{ fontSize: 28 }}>{a.emoji}</Text>
+                      ) : (
+                        <MaterialCommunityIcons name={a.icon} size={28} color="#fff" />
+                      )}
+                    </LinearGradient>
+                    {selected && (
+                      <View style={styles.tileCheck}>
+                        <Feather name="check" size={11} color="#fff" />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
 
-          {/* Username (read-only — change via Settings) */}
+          {/* Username (editable, with live availability check) */}
           <Text style={styles.label}>Username</Text>
-          <View style={[styles.inputWrap, styles.inputDisabled]}>
-            <Text style={styles.disabledText}>@{user?.username || 'not set'}</Text>
+          <View style={[
+            styles.inputWrap,
+            { flexDirection: 'row', alignItems: 'center' },
+            usernameChanged && usernameAvailable === true && styles.inputWrapValid,
+            usernameChanged && usernameAvailable === false && styles.inputWrapInvalid,
+          ]}>
+            <Text style={styles.atSign}>@</Text>
+            <TextInput
+              style={[styles.input, { flex: 1 }]}
+              value={username}
+              onChangeText={handleUsernameChange}
+              placeholder="username"
+              placeholderTextColor={COLORS.TEXT_MUTED}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {checkingUsername ? (
+              <ActivityIndicator size="small" color={COLORS.ACCENT} />
+            ) : usernameChanged && usernameAvailable === true ? (
+              <MaterialCommunityIcons name="check-circle" size={18} color={COLORS.SUCCESS} />
+            ) : usernameChanged && usernameAvailable === false ? (
+              <MaterialCommunityIcons name="close-circle" size={18} color={COLORS.DANGER} />
+            ) : null}
           </View>
+          {usernameChanged && usernameAvailable === true ? (
+            <Text style={styles.usernameOk}>@{username} is available</Text>
+          ) : usernameError ? (
+            <Text style={styles.usernameBad}>{usernameError}</Text>
+          ) : null}
 
           {/* Mobile (read-only) */}
           <Text style={styles.label}>Mobile</Text>
@@ -402,6 +435,25 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 40 },
 
   avatarWrap: { alignItems: 'center', marginBottom: 24 },
+  avatarPreview: { width: 100, height: 100 },
+  avatarGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center',
+    gap: 14, marginTop: 16, maxWidth: 344, alignSelf: 'center',
+  },
+  avatarTile: {
+    width: 56, height: 56, borderRadius: 28,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: 'transparent',
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 }, elevation: 3,
+  },
+  avatarTileSelected: { borderColor: COLORS.TEXT },
+  tileCheck: {
+    position: 'absolute', top: -2, right: -2,
+    width: 18, height: 18, borderRadius: 9, backgroundColor: COLORS.ACCENT,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: COLORS.BG,
+  },
   avatarOuter: { position: 'relative' },
   avatar: {
     width: 100, height: 100, borderRadius: 50, backgroundColor: COLORS.ACCENT,
@@ -433,8 +485,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 14 : 10,
   },
   inputDisabled: { backgroundColor: COLORS.CARD },
+  inputWrapValid: { borderColor: COLORS.SUCCESS },
+  inputWrapInvalid: { borderColor: COLORS.DANGER },
   disabledText: { fontFamily: FONTS.family, fontSize: 15, color: COLORS.TEXT_MUTED },
   input: { fontFamily: FONTS.family, fontSize: 15, color: COLORS.TEXT },
+  atSign: { fontFamily: FONTS.family, fontSize: 15, color: COLORS.TEXT_MUTED, marginRight: 2 },
+  usernameOk: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.SUCCESS, marginTop: 6, fontWeight: '600' },
+  usernameBad: { fontFamily: FONTS.family, fontSize: 12, color: COLORS.DANGER, marginTop: 6, fontWeight: '600' },
 
   saveBtn: {
     backgroundColor: COLORS.ACCENT, borderRadius: 14, paddingVertical: 16,

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, TextInput, InteractionManager,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { tournamentsAPI, teamsAPI } from '../../services/api';
+import { useToast } from '../../components/Toast';
 import { COLORS, FONTS } from '../../theme';
 import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { useLocation } from '../../hooks/useLocation';
@@ -50,6 +51,7 @@ const MUTED = COLORS.TEXT_MUTED;
  * names directly.
  */
 const TournamentSetupScreen = ({ navigation, route }) => {
+  const toast = useToast();
   const insets = useSafeAreaInsets();
   const { location: userLocation } = useLocation();
   const {
@@ -260,7 +262,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
       await tournamentsAPI.addTeam(tournamentId, team.id);
       setTournamentTeams((prev) => [...prev, team]);
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to add team');
+      toast.error(e.response?.data?.detail || 'Failed to add team');
     }
   };
 
@@ -269,7 +271,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
       await tournamentsAPI.removeTeam(tournamentId, teamId);
       setTournamentTeams((prev) => prev.filter((t) => t.id !== teamId));
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to remove team');
+      toast.error(e.response?.data?.detail || 'Failed to remove team');
     }
   };
 
@@ -318,7 +320,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
   const createKnockoutRound = async () => {
     const round = knockoutRoundForTeams(tournamentTeams.length);
     if (!round) {
-      return Alert.alert(
+      return toast.warning(
         'Unsupported team count',
         `Knockout needs 2 (Final), 3–4 (Semi Final), 5–8 (Quarter Final), or 16 (Round of 16) teams. You have ${tournamentTeams.length}.`,
       );
@@ -336,7 +338,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
       await tournamentsAPI.generateMatches(tournamentId, stageId);
       navigation.replace('TournamentDetail', { tournamentId });
     } catch (e) {
-      Alert.alert(
+      toast.error(
         'Setup failed',
         e.response?.data?.detail || e.message || 'Could not create the knockout round',
       );
@@ -348,12 +350,12 @@ const TournamentSetupScreen = ({ navigation, route }) => {
   // ===== Initial flow: create the league round =====
   const createLeagueRound = async () => {
     if (tournamentTeams.length < 2) {
-      return Alert.alert('Need teams', 'Add at least 2 teams before creating the league round');
+      return toast.warning('Need teams', 'Add at least 2 teams before creating the league round');
     }
     // Validate every group has at least 2 teams (need a pair to play)
     const tooSmall = groupAssignments.findIndex((g) => g.length < 2);
     if (tooSmall >= 0) {
-      return Alert.alert(
+      return toast.warning(
         'Group too small',
         `Group ${String.fromCharCode(65 + tooSmall)} only has ${groupAssignments[tooSmall].length} team(s). Pick a different "teams per group" or add more teams.`,
       );
@@ -361,7 +363,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
     // Qualifying count must be ≤ smallest group size
     const minGroupSize = Math.min(...groupAssignments.map((g) => g.length));
     if (topNPerGroup > minGroupSize) {
-      return Alert.alert(
+      return toast.warning(
         'Top N too high',
         `Smallest group has ${minGroupSize} teams — qualifying count must be at most ${minGroupSize}.`,
       );
@@ -397,7 +399,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
 
       navigation.replace('TournamentDetail', { tournamentId });
     } catch (e) {
-      Alert.alert(
+      toast.error(
         'Setup failed',
         e.response?.data?.detail || e.message || 'Could not create the league round',
       );
@@ -424,7 +426,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
       ? roundByName(chosenRoundName)
       : nextRoundFor(tournamentTeams.length);
     if (!round) {
-      return Alert.alert(
+      return toast.warning(
         'Cannot pick a round',
         `No round in the catalog matches ${tournamentTeams.length} teams.`,
       );
@@ -435,21 +437,21 @@ const TournamentSetupScreen = ({ navigation, route }) => {
     // per group). Same backend chain as the initial league round.
     if (round.kind === 'league') {
       if (tournamentTeams.length < 3) {
-        return Alert.alert(
+        return toast.warning(
           'Need more teams',
           'A league round needs at least 3 teams.',
         );
       }
       const tooSmall = groupAssignments.findIndex((g) => g.length < 2);
       if (tooSmall >= 0) {
-        return Alert.alert(
+        return toast.warning(
           'Group too small',
           `Group ${String.fromCharCode(65 + tooSmall)} only has ${groupAssignments[tooSmall].length} team(s). Pick a different "teams per group".`,
         );
       }
       const minGroupSize = Math.min(...groupAssignments.map((g) => g.length));
       if (topNPerGroup > minGroupSize) {
-        return Alert.alert(
+        return toast.warning(
           'Top N too high',
           `Smallest group has ${minGroupSize} teams — qualifying count must be at most ${minGroupSize}.`,
         );
@@ -476,7 +478,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
 
         navigation.replace('TournamentDetail', { tournamentId });
       } catch (e) {
-        Alert.alert(
+        toast.error(
           'Failed to create round',
           e.response?.data?.detail || e.message || 'Could not create the league round',
         );
@@ -488,7 +490,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
 
     // ── KNOCKOUT-KIND BRANCH ────────────────────────────────────────────
     if (pairsDraft.length === 0) {
-      return Alert.alert('No pairs', 'Need at least one pair to create this round.');
+      return toast.warning('No pairs', 'Need at least one pair to create this round.');
     }
     setLoading(true);
     try {
@@ -521,7 +523,7 @@ const TournamentSetupScreen = ({ navigation, route }) => {
 
       navigation.replace('TournamentDetail', { tournamentId });
     } catch (e) {
-      Alert.alert(
+      toast.error(
         'Failed to create round',
         e.response?.data?.detail || e.message || 'Could not create the next round',
       );

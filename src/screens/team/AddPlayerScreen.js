@@ -302,10 +302,11 @@ const AddPlayerScreen = ({ navigation, route }) => {
               <TextInput
                 style={styles.inputField}
                 value={jersey}
-                onChangeText={setJersey}
+                onChangeText={(t) => setJersey(t.replace(/[^0-9]/g, ''))}
                 placeholder="Jersey number"
                 placeholderTextColor={COLORS.TEXT_MUTED}
                 keyboardType="numeric"
+                maxLength={3}
               />
             </View>
 

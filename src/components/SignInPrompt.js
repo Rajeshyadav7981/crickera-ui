@@ -128,7 +128,7 @@ const SignInPromptModal = ({ visible, label, onClose }) => {
               <Text style={s.title}>Sign in required</Text>
               <Text style={s.subtitle}>
                 You need an account to <Text style={s.subtitleStrong}>{actionText}</Text>.
-                {'\n'}Join CrecKStars — it only takes a minute.
+                {'\n'}Join CRIXONE — it only takes a minute.
               </Text>
 
               {/* Primary action — Sign In */}

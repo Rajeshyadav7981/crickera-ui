@@ -1,4 +1,4 @@
-// CreckStars Theme System
+// CRIXONE Theme System
 // Like CSS custom properties — COLORS/GRADIENTS are mutable refs
 // that ThemeContext updates. All screens auto-reflect the current theme.
 

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator,
+  View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { teamsAPI, tournamentsAPI } from '../../services/api';
 import { useAuthGate } from '../../hooks/useRequireAuth';
@@ -104,7 +105,14 @@ const CreateTeamScreen = ({ navigation, route }) => {
           <ActivityIndicator color={COLORS.ACCENT} />
         </View>
       ) : (
-      <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <KeyboardAwareScrollView
+        style={styles.scrollArea}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        enableOnAndroid
+        extraScrollHeight={40}
+      >
         {/* Form Card */}
         <View style={styles.formCard}>
           {/* Team Name */}
@@ -178,10 +186,13 @@ const CreateTeamScreen = ({ navigation, route }) => {
               placeholderTextColor={COLORS.TEXT_MUTED}
             />
           </View>
-          <CurrentLocationButton onLocation={(loc) => {
-            setCity(loc.displayName);
-            setCoords({ latitude: loc.latitude, longitude: loc.longitude });
-          }} />
+          <CurrentLocationButton
+            onLocation={(loc) => {
+              setCity(loc.displayName);
+              setCoords({ latitude: loc.latitude, longitude: loc.longitude });
+            }}
+            onError={(msg) => toast.error(msg)}
+          />
           {coords && (
             <Text style={{ fontSize: 11, color: COLORS.SUCCESS, marginTop: 4 }}>
               <MaterialCommunityIcons name="check" size={11} /> Location set
@@ -201,7 +212,7 @@ const CreateTeamScreen = ({ navigation, route }) => {
               : (isEditMode ? 'Save Changes' : 'Create Team')}
           </Text>
         </TouchableOpacity>
-      </ScrollView>
+      </KeyboardAwareScrollView>
       )}
     </View>
   );

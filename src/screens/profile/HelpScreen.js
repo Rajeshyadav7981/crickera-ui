@@ -75,12 +75,12 @@ const HelpScreen = ({ navigation }) => {
         <View style={styles.card}>
           <TouchableOpacity
             style={styles.contactRow}
-            onPress={() => Linking.openURL('mailto:support@creckstars.com')}
+            onPress={() => Linking.openURL('mailto:support@crixone.in')}
           >
             <Text style={styles.contactIcon}>{'\u2709'}</Text>
             <View style={{ flex: 1 }}>
               <Text style={styles.contactTitle}>Email Support</Text>
-              <Text style={styles.contactDesc}>support@creckstars.com</Text>
+              <Text style={styles.contactDesc}>support@crixone.in</Text>
             </View>
             <Text style={styles.faqArrow}>{'\u203A'}</Text>
           </TouchableOpacity>
@@ -88,7 +88,7 @@ const HelpScreen = ({ navigation }) => {
 
         {/* App Info */}
         <View style={styles.appInfo}>
-          <Text style={styles.appInfoText}>CrecKStars v1.0.0</Text>
+          <Text style={styles.appInfoText}>CRIXONE v1.0.0</Text>
           <Text style={styles.appInfoText}>Made with {'\u2764'} for cricket</Text>
         </View>
       </ScrollView>

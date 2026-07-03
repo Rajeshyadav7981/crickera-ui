@@ -1,6 +1,9 @@
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
+import * as SplashScreen from 'expo-splash-screen';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { initHaptics } from './src/utils/haptics';
 import queryClient from './src/hooks/useQueryClient';
 import { ThemeProvider, useThemeContext } from './src/context/ThemeContext';
 import { AuthProvider } from './src/context/AuthContext';
@@ -10,12 +13,17 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import NetworkBar from './src/components/NetworkBar';
 import AppNavigator from './src/navigation/AppNavigator';
 
+SplashScreen.preventAutoHideAsync().catch(() => {});
+
 const StatusBarWithTheme = () => {
   const { isDark } = useThemeContext();
   return <StatusBar style={isDark ? 'light' : 'dark'} />;
 };
 
 export default function App() {
+  // Load the saved haptics on/off preference once so scoring feedback respects it.
+  useEffect(() => { initHaptics(); }, []);
+
   const appContent = (
     <ErrorBoundary>
       <SafeAreaProvider>

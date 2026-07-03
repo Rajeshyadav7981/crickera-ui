@@ -8,7 +8,7 @@ import { Image as ExpoImage } from 'expo-image';
 import { FlashList } from '@shopify/flash-list';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { tournamentsAPI, matchesAPI, teamsAPI } from '../../services/api';
+import { tournamentsAPI, matchesAPI } from '../../services/api';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
 import { useLocation } from '../../hooks/useLocation';
 import { COLORS, getStatusInfo as themeGetStatusInfo, FONTS } from '../../theme';
@@ -116,14 +116,10 @@ const TournamentsTab = () => {
   const [liveMatches, setLiveMatches] = useState([]);
 
   // Shared
-  const [teams, setTeams] = useState({});
 
   // Debounce refs
   const tournSearchTimer = useRef(null);
   const matchSearchTimer = useRef(null);
-
-  const getTeamName = useCallback((id) => teams[id]?.short_name || teams[id]?.name || `Team ${id}`, [teams]);
-  const getTeamColor = useCallback((id) => teams[id]?.color || PRIMARY, [teams]);
 
   // Stable keyExtractor shared by both FlashLists — prevents unnecessary
   // re-mounts when the list config object identity changes.
@@ -131,16 +127,6 @@ const TournamentsTab = () => {
 
   // Tournament lookup for match tournament badges
   const tournMapRef = useRef({});
-
-  /* ── Load Teams (once) ── */
-  const loadTeams = async () => {
-    try {
-      const res = await teamsAPI.list({});
-      const teamMap = {};
-      (res.data || []).forEach(t => { teamMap[t.id] = t; });
-      setTeams(teamMap);
-    } catch {}
-  };
 
   /* ── Load Live Data ── */
   const loadLiveData = async () => {
@@ -263,7 +249,6 @@ const TournamentsTab = () => {
     dataLoadedRef.current = true;
 
     const task = InteractionManager.runAfterInteractions(() => {
-      loadTeams();
       loadLiveData();
     });
     return () => task.cancel();

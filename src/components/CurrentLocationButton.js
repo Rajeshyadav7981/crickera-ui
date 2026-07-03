@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { TouchableOpacity, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { TouchableOpacity, Text, ActivityIndicator, StyleSheet, Alert } from 'react-native';
 import * as Location from 'expo-location';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, FONTS } from '../theme';
@@ -9,19 +9,35 @@ import { COLORS, FONTS } from '../theme';
  * On press: requests permission → gets GPS → reverse geocodes → calls onLocation.
  *
  * @param {Function} onLocation - Called with { latitude, longitude, city, state, country, displayName }
+ * @param {Function} onError    - Optional. Called with a message string on failure; defaults to an Alert.
  * @param {object}   style      - Optional extra style
  */
-const CurrentLocationButton = ({ onLocation, style }) => {
+const CurrentLocationButton = ({ onLocation, onError, style }) => {
   const [loading, setLoading] = useState(false);
+
+  const notify = (msg) => {
+    if (onError) onError(msg);
+    else Alert.alert('Location', msg);
+  };
 
   const handlePress = async () => {
     setLoading(true);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setLoading(false);
+      // Bail early if the device has location services turned off entirely.
+      const enabled = await Location.hasServicesEnabledAsync();
+      if (!enabled) {
+        notify('Location services are off. Turn them on in your device settings and try again.');
         return;
       }
+
+      const { status, canAskAgain } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        notify(canAskAgain
+          ? 'Location permission is needed to use your current location.'
+          : 'Location permission is blocked. Enable it for CRIXONE in your device settings.');
+        return;
+      }
+
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const { latitude, longitude } = pos.coords;
 
@@ -40,8 +56,11 @@ const CurrentLocationButton = ({ onLocation, style }) => {
       if (!displayName) displayName = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
 
       onLocation({ latitude, longitude, city, state, country, displayName });
-    } catch {}
-    setLoading(false);
+    } catch (e) {
+      notify('Could not get your location. Make sure GPS is on and try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

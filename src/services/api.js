@@ -6,13 +6,13 @@ import { getSecureItem, setSecureItem, removeAuthItems } from './tokenStorage';
 // API URL configuration
 // Resolution order:
 //   1. EXPO_PUBLIC_API_URL from .env — explicit override, wins everywhere.
-//      Set this to https://creckstars.duckdns.org to point dev builds at
+//      Set this to https://crixone.in to point dev builds at
 //      production, or to a LAN IP / localhost for local backend testing.
 //   2. Production builds → PRODUCTION_URL.
 //   3. Dev builds with no env override → auto-detect Metro host's LAN IP
 //      so physical devices on the same Wi-Fi can reach a locally-running
 //      backend on port 7981.
-const PRODUCTION_URL = 'https://creckstars.duckdns.org';
+const PRODUCTION_URL = 'https://crixone.in';
 const LOCAL_PORT = 7981;
 
 const getLocalBaseUrl = () => {
@@ -45,6 +45,11 @@ export const setTokenCache = (token) => {
 
 export const clearTokenCache = () => {
   _cachedToken = null;
+};
+
+let _onAuthFailure = null;
+export const setAuthFailureHandler = (fn) => {
+  _onAuthFailure = fn;
 };
 
 // 15s timeout: long enough for cold-starts and image uploads, short enough
@@ -132,6 +137,7 @@ api.interceptors.response.use(
         if (explicitAuthFailure || noRefreshAvailable) {
           await removeAuthItems(['token', 'refreshToken', 'user']);
           clearTokenCache();
+          if (_onAuthFailure) _onAuthFailure();
         }
         // Surface the ORIGINAL 401 so callers see a consistent failure mode.
         return Promise.reject(error);
@@ -208,30 +214,7 @@ export const authAPI = {
     api.post('/api/auth/reset-password', { mobile, otp, new_password: newPassword }),
   getMe: () => api.get('/api/auth/me'),
   updateProfile: (data) => api.put('/api/auth/me', data),
-  uploadProfilePhoto: async (uri) => {
-    // Compress on client before upload
-    let compressedUri = uri;
-    try {
-      const ImageManipulator = require('expo-image-manipulator');
-      const result = await ImageManipulator.manipulateAsync(
-        uri,
-        [{ resize: { width: 512 } }],
-        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG },
-      );
-      compressedUri = result.uri;
-    } catch {}
-
-    const formData = new FormData();
-    formData.append('file', {
-      uri: compressedUri,
-      type: 'image/jpeg',
-      name: `profile_${Date.now()}.jpg`,
-    });
-    const res = await api.post('/api/auth/me/upload-photo', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-    return res;
-  },
+  deleteAccount: () => api.delete('/api/auth/me'),
 };
 
 export const teamsAPI = {
@@ -283,28 +266,6 @@ export const tournamentsAPI = {
   deleteMatch: (tournamentId, matchId) => api.delete(`/api/tournaments/${tournamentId}/matches/${matchId}`),
   resetStage: (tournamentId, stageId) => api.post(`/api/tournaments/${tournamentId}/stages/${stageId}/reset`),
   deleteStage: (tournamentId, stageId) => api.delete(`/api/tournaments/${tournamentId}/stages/${stageId}`),
-  uploadBanner: async (uri) => {
-    let compressedUri = uri;
-    try {
-      const ImageManipulator = require('expo-image-manipulator');
-      const result = await ImageManipulator.manipulateAsync(
-        uri,
-        [{ resize: { width: 1600 } }],
-        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG },
-      );
-      compressedUri = result.uri;
-    } catch {}
-    const formData = new FormData();
-    formData.append('file', {
-      uri: compressedUri,
-      type: 'image/jpeg',
-      name: `banner_${Date.now()}.jpg`,
-    });
-    const res = await api.post('/api/tournaments/upload-banner', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-    return res.data.image_url || res.data.banner_url;
-  },
 };
 
 export const matchesAPI = {
@@ -321,7 +282,16 @@ export const matchesAPI = {
 };
 
 export const scoringAPI = {
-  score: (matchId, data) => api.post(`/api/matches/${matchId}/score`, data),
+  // idempotencyKey: a stable per-delivery key (the offline-queue entry id). The
+  // backend (@idempotent) caches the response for it, so a delivery that commits
+  // server-side but whose response is lost to a network blip is replayed, not
+  // double-counted, when the offline queue retries with the same key.
+  score: (matchId, data, idempotencyKey) =>
+    api.post(
+      `/api/matches/${matchId}/score`,
+      data,
+      idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : undefined
+    ),
   undo: (matchId) => api.post(`/api/matches/${matchId}/undo`),
   abandon: (matchId, reason) => api.post(`/api/matches/${matchId}/abandon`, { reason }),
   noResult: (matchId, reason) => api.post(`/api/matches/${matchId}/no-result`, { reason }),
@@ -348,27 +318,6 @@ export const scoringAPI = {
 
 export const communityAPI = {
   createPost: (text, title, tag, image_url) => api.post('/api/community/posts', { text, title, tag, image_url }),
-  uploadPostImage: async (uri) => {
-    let compressedUri = uri;
-    try {
-      const ImageManipulator = require('expo-image-manipulator');
-      const result = await ImageManipulator.manipulateAsync(
-        uri,
-        [{ resize: { width: 1024 } }],
-        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG },
-      );
-      compressedUri = result.uri;
-    } catch {}
-    const formData = new FormData();
-    formData.append('file', {
-      uri: compressedUri,
-      type: 'image/jpeg',
-      name: `post_${Date.now()}.jpg`,
-    });
-    return api.post('/api/community/upload-image', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-  },
   updatePost: (postId, data) => api.put(`/api/community/posts/${postId}`, data),
   listPosts: (limit = 20, offset = 0, sort = 'hot', cursor = null) =>
     api.get('/api/community/posts', { params: { limit, offset, sort, ...(cursor ? { cursor } : {}) } }),

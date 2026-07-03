@@ -34,6 +34,10 @@ yarn-error.*
 .env
 .env*.local
 
+# Play Store / signing secrets — never commit
+play-service-account.json
+*.keystore
+
 # Claude Code memory (local only)
 .claude/
 

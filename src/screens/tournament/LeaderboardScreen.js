@@ -303,7 +303,7 @@ const LeaderboardScreen = ({ route }) => {
       const { getTournamentLink } = require('../../services/linking');
       const link = getTournamentLink(tournamentId);
       await Share.share({
-        message: `Check out the leaderboard on CrecKStars\n${link}`,
+        message: `Check out the leaderboard on CRIXONE\n${link}`,
         url: link,
       });
     } catch (_) {}

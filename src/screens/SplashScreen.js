@@ -1,99 +1,80 @@
 import React, { useEffect, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Animated,
-  ActivityIndicator,
-  StatusBar,
-} from 'react-native';
+import { View, Image, StyleSheet, Animated, StatusBar } from 'react-native';
+import * as ExpoSplash from 'expo-splash-screen';
 import { LinearGradient } from 'expo-linear-gradient';
-import { COLORS, GRADIENTS, FONTS } from '../theme';
+
+const BG = '#010006';
+const HOLD_MS = 1700;
+const LOGO = 210;
 
 const SplashScreen = ({ onFinish }) => {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(1)).current;
+  const glow = useRef(new Animated.Value(0)).current;
+  const line = useRef(new Animated.Value(0)).current;
+  const shine = useRef(new Animated.Value(0)).current;
+  const done = useRef(false);
+
+  const hideNative = () => { ExpoSplash.hideAsync().catch(() => {}); };
 
   useEffect(() => {
-    Animated.sequence([
-      // Fade in the entire screen
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      // Hold for a moment
-      Animated.delay(1200),
-    ]).start(() => {
-      onFinish();
-    });
+    Animated.timing(glow, { toValue: 1, duration: 900, useNativeDriver: true }).start();
+    Animated.timing(line, { toValue: 1, duration: 700, delay: 350, useNativeDriver: true }).start();
+    Animated.timing(shine, { toValue: 1, duration: 950, delay: 250, useNativeDriver: true }).start();
+
+    const t = setTimeout(() => {
+      if (done.current) return;
+      done.current = true;
+      Animated.timing(opacity, { toValue: 0, duration: 280, useNativeDriver: true }).start(({ finished }) => {
+        if (finished) onFinish();
+      });
+    }, HOLD_MS);
+    return () => clearTimeout(t);
   }, []);
 
+  const shineX = shine.interpolate({ inputRange: [0, 1], outputRange: [-LOGO * 0.7, LOGO * 0.95] });
+
   return (
-    <LinearGradient colors={GRADIENTS.SCREEN} style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.BG} />
-
-      <Animated.View style={[styles.centerContent, { opacity: fadeAnim }]}>
-        {/* Cricket ball icon */}
-        <Text style={styles.icon}>&#127951;</Text>
-
-        {/* Title */}
-        <Text style={styles.title}>CreckStars</Text>
-
-        {/* Subtitle */}
-        <Text style={styles.subtitle}>Your Cricket Companion</Text>
-
-        {/* Loading indicator */}
-        <ActivityIndicator
-          size="large"
-          color={COLORS.ACCENT}
-          style={styles.loader}
-        />
+    <View style={styles.container} onLayout={hideNative}>
+      <StatusBar barStyle="light-content" backgroundColor={BG} />
+      <Animated.View style={{ opacity, alignItems: 'center' }}>
+        <Animated.View style={[styles.glow, { opacity: glow.interpolate({ inputRange: [0, 1], outputRange: [0, 0.5] }) }]} />
+        <View style={styles.logoClip}>
+          <Image source={require('../../assets/icon.png')} style={styles.logo} resizeMode="contain" />
+          <Animated.View style={[styles.shine, { transform: [{ translateX: shineX }, { rotate: '18deg' }] }]}>
+            <LinearGradient
+              colors={['transparent', 'rgba(255,255,255,0.32)', 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.shineFill}
+            />
+          </Animated.View>
+        </View>
+        <Animated.View style={[styles.line, { transform: [{ scaleX: line }] }]} />
       </Animated.View>
-
-      {/* Bottom branding */}
-      <Animated.View style={[styles.bottomContainer, { opacity: fadeAnim }]}>
-        <Text style={styles.poweredBy}>Powered by CreckStars</Text>
-      </Animated.View>
-    </LinearGradient>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  centerContent: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  icon: {
-    fontFamily: FONTS.family,    fontSize: 64,
-    marginBottom: 16,
-  },
-  title: {
-    fontFamily: FONTS.family,    fontSize: 32,
-    fontWeight: 'bold',
-    color: COLORS.TEXT,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontFamily: FONTS.family,    fontSize: 14,
-    color: COLORS.TEXT_SECONDARY,
-    marginBottom: 32,
-  },
-  loader: {
-    marginTop: 8,
-  },
-  bottomContainer: {
+  container: { flex: 1, backgroundColor: BG, alignItems: 'center', justifyContent: 'center' },
+  glow: {
     position: 'absolute',
-    bottom: 40,
-    alignItems: 'center',
+    width: LOGO * 1.6,
+    height: LOGO * 1.6,
+    borderRadius: LOGO,
+    backgroundColor: '#1E88E5',
+    top: -LOGO * 0.3,
   },
-  poweredBy: {
-    fontFamily: FONTS.family,    fontSize: 11,
-    color: COLORS.TEXT_MUTED,
+  logoClip: { width: LOGO, height: LOGO, overflow: 'hidden', borderRadius: 44 },
+  logo: { width: LOGO, height: LOGO },
+  shine: { position: 'absolute', top: -LOGO * 0.4, width: LOGO * 0.42, height: LOGO * 1.8 },
+  shineFill: { flex: 1 },
+  line: {
+    marginTop: 22,
+    width: 132,
+    height: 3,
+    borderRadius: 3,
+    backgroundColor: '#1E88E5',
   },
 });
 

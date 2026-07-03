@@ -269,35 +269,11 @@ const HomeTab = () => {
   // Live matches count
   const liveCount = myMatches.filter(m => m.status === 'in_progress' || m.status === 'live').length;
 
-  // Animated loader
-  const pulseAnim = useRef(new Animated.Value(0.3)).current;
-  useEffect(() => {
-    if (loading) {
-      Animated.loop(Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 0.3, duration: 1000, useNativeDriver: true }),
-      ])).start();
-    }
-  }, [loading]);
-
   if (loading) {
     return (
-      <LinearGradient colors={GRADIENTS.LOADER} style={[s.container, s.loaderWrap, { paddingTop: insets.top }]}>
-        <Animated.View style={{ opacity: pulseAnim, alignItems: 'center' }}>
-          <Animated.View style={{
-            transform: [{ scale: pulseAnim.interpolate({ inputRange: [0.3, 1], outputRange: [0.9, 1.05] }) }],
-          }}>
-            <Image source={require('../../../assets/creckstars-logo.png')} style={s.loaderLogo} />
-          </Animated.View>
-          <Text style={s.loaderTitle}>CrecKStars</Text>
-          <Text style={s.loaderSub}>Your Cricket Companion</Text>
-          <View style={s.loaderDots}>
-            <Animated.View style={[s.loaderDot, { opacity: pulseAnim }]} />
-            <Animated.View style={[s.loaderDot, { opacity: pulseAnim.interpolate({ inputRange: [0.3, 1], outputRange: [1, 0.3] }) }]} />
-            <Animated.View style={[s.loaderDot, { opacity: pulseAnim }]} />
-          </View>
-        </Animated.View>
-      </LinearGradient>
+      <View style={[s.container, { paddingTop: insets.top, alignItems: 'center', justifyContent: 'center' }]}>
+        <ActivityIndicator size="large" color={COLORS.ACCENT} />
+      </View>
     );
   }
 
@@ -516,7 +492,7 @@ const HomeTab = () => {
           {myMatches.length === 0 && myTeams.length === 0 && myTournaments.length === 0 && (
             <View style={s.emptyWrap}>
               <Icon name="cricket" size={56} color={COLORS.TEXT_MUTED} />
-              <Text style={s.emptyTitle}>Welcome to CrecKStars!</Text>
+              <Text style={s.emptyTitle}>Welcome to CRIXONE!</Text>
               <Text style={s.emptyText}>Create your first match, team or tournament using the quick actions above</Text>
             </View>
           )}

@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, ImageBackground, StyleSheet, Platform } f
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, FONTS } from '../theme';
+import { getAvatar } from '../constants/avatars';
 import FavoriteButton from './FavoriteButton';
 
 const fmtDate = (d) => {
@@ -102,6 +103,10 @@ const TournamentCard = ({ tournament, onPress, style, width, monochrome = false 
     ? Math.min(100, Math.round(((matchesDone || 0) / matchesTotal) * 100))
     : 0;
 
+  // Preset banner (e.g. "tav:2") — render emoji on a themed gradient instead
+  // of loading it as an image URL.
+  const bannerPreset = getAvatar(t.banner_url);
+
   return (
     <TouchableOpacity
       activeOpacity={0.88}
@@ -134,7 +139,21 @@ const TournamentCard = ({ tournament, onPress, style, width, monochrome = false 
           />
         </>
       ) : null}
-      {t.banner_url ? (
+      {bannerPreset ? (
+        <LinearGradient
+          colors={bannerPreset.colors}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[s.banner, { alignItems: 'center', justifyContent: 'center' }]}
+        >
+          {bannerPreset.emoji ? (
+            <Text style={{ fontSize: 38 }}>{bannerPreset.emoji}</Text>
+          ) : (
+            <MaterialCommunityIcons name={bannerPreset.icon} size={38} color="rgba(255,255,255,0.95)" />
+          )}
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.45)']} style={s.bannerShade} pointerEvents="none" />
+        </LinearGradient>
+      ) : t.banner_url ? (
         <ImageBackground
           source={{ uri: t.banner_url }}
           style={s.banner}

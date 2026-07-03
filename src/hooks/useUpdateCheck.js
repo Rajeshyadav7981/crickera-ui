@@ -34,14 +34,14 @@ export const useUpdateCheck = () => {
         if (data.force_update) {
           Alert.alert(
             'Update Required',
-            `A new version (v${data.latest_version}) is required to continue using CrecKStars.\n\n${data.release_notes || ''}`,
+            `A new version (v${data.latest_version}) is required to continue using CRIXONE.\n\n${data.release_notes || ''}`,
             [{ text: 'Update Now', onPress: openDownload }],
             { cancelable: false },
           );
         } else if (data.update_available) {
           Alert.alert(
             'Update Available',
-            `CrecKStars v${data.latest_version} is available (you have v${APP_VERSION}).\n\n${data.release_notes || ''}`,
+            `CRIXONE v${data.latest_version} is available (you have v${APP_VERSION}).\n\n${data.release_notes || ''}`,
             [
               { text: 'Later', style: 'cancel' },
               { text: 'Update', onPress: openDownload },

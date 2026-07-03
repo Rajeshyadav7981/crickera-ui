@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, TextInput, Platform, Modal, FlatList, InteractionManager,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { useAuthGate } from '../../hooks/useRequireAuth';
 import { COLORS, FONTS } from '../../theme';
 import StepIndicator from '../../components/StepIndicator';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useToast } from '../../components/Toast';
 
 const PRIMARY = COLORS.ACCENT;
 const BG = COLORS.BG;
@@ -37,6 +38,7 @@ const PITCH_TYPES = ['Turf', 'Cement', 'Matting', 'Artificial'];
 
 const QuickMatchScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
+  const toast = useToast();
   useAuthGate('create a match');
 
   // Step state
@@ -79,10 +81,21 @@ const QuickMatchScreen = ({ navigation }) => {
     return () => task.cancel();
   }, []);
 
-  const loadTeams = async () => {
+  const teamSearchDebounce = useRef(null);
+  const teamSearchMounted = useRef(false);
+  useEffect(() => {
+    if (!teamSearchMounted.current) { teamSearchMounted.current = true; return; }
+    if (teamSearchDebounce.current) clearTimeout(teamSearchDebounce.current);
+    teamSearchDebounce.current = setTimeout(() => { loadTeams(teamSearch); }, 300);
+    return () => { if (teamSearchDebounce.current) clearTimeout(teamSearchDebounce.current); };
+  }, [teamSearch]);
+
+  const loadTeams = async (search) => {
     setTeamsLoading(true);
     try {
-      const res = await teamsAPI.list();
+      const params = { limit: 50 };
+      if (search && search.trim()) params.search = search.trim();
+      const res = await teamsAPI.list(params);
       setAllTeams(res.data || []);
     } catch (_) {}
     setTeamsLoading(false);
@@ -136,13 +149,13 @@ const QuickMatchScreen = ({ navigation }) => {
       setVenueNameInput('');
       setVenueModal(false);
     } catch (e) {
-      Alert.alert('Error', 'Failed to create venue');
+      toast.error('Failed to create venue');
     }
   };
 
   const handleCreateMatch = async () => {
-    if (!teamA || !teamB) return Alert.alert('Error', 'Select both teams');
-    if (teamA.id === teamB.id) return Alert.alert('Error', 'Teams must be different');
+    if (!teamA || !teamB) { toast.error('Select both teams'); return; }
+    if (teamA.id === teamB.id) { toast.error('Teams must be different'); return; }
 
     setCreating(true);
     try {
@@ -164,7 +177,7 @@ const QuickMatchScreen = ({ navigation }) => {
         teams: [teamA, teamB],
       });
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to create match');
+      toast.error(e.response?.data?.detail || 'Failed to create match');
     } finally {
       setCreating(false);
     }
@@ -177,8 +190,8 @@ const QuickMatchScreen = ({ navigation }) => {
       }
       setStep(1);
     } else if (step === 1) {
-      if (!teamA || !teamB) return Alert.alert('Select Teams', 'Choose both Team A and Team B');
-      if (teamA.id === teamB.id) return Alert.alert('Error', 'Teams must be different');
+      if (!teamA || !teamB) { toast.error('Select Teams', 'Choose both Team A and Team B'); return; }
+      if (teamA.id === teamB.id) { toast.error('Teams must be different'); return; }
       setStep(2);
     } else if (step === 2) {
       // Mandatory fields for step 2 → step 3:
@@ -187,10 +200,12 @@ const QuickMatchScreen = ({ navigation }) => {
       //   • Match date        ← required
       // Check in order so the user gets a single, specific error each time.
       if (!venue) {
-        return Alert.alert('Venue required', 'Please select a venue or location for the match.');
+        toast.error('Venue required', 'Please select a venue or location for the match.');
+        return;
       }
       if (!matchDate) {
-        return Alert.alert('Date required', 'Please select the match date.');
+        toast.error('Date required', 'Please select the match date.');
+        return;
       }
       setStep(3);
     }
@@ -423,7 +438,7 @@ const QuickMatchScreen = ({ navigation }) => {
             onPress={() => {
               const n = parseInt(customOversVal);
               if (n && n > 0 && n <= 100) { setOvers(n); setShowCustomOvers(false); }
-              else Alert.alert('Invalid', 'Enter a number between 1-100');
+              else toast.error('Enter a number between 1-100');
             }}
           >
             <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.TEXT }}>OK</Text>

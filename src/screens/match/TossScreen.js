@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, TextInput,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { matchesAPI } from '../../services/api';
 import { COLORS, FONTS } from '../../theme';
 import StepIndicator from '../../components/StepIndicator';
+import { useToast } from '../../components/Toast';
 
 const TOSS_COLORS = {
   primary: COLORS.ACCENT,
@@ -27,6 +28,7 @@ const OVERS_PRESETS = [5, 10, 15, 20, 25, 30, 40, 50];
 
 const TossScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
+  const toast = useToast();
   const { matchId, match, teams } = route.params;
   const [winner, setWinner] = useState(null);
   const [decision, setDecision] = useState(null);
@@ -45,8 +47,8 @@ const TossScreen = ({ navigation, route }) => {
   const isFormComplete = winner && decision && isOversValid;
 
   const handleToss = async () => {
-    if (!winner || !decision) return Alert.alert('Error', 'Select toss winner and decision');
-    if (!isOversValid) return Alert.alert('Invalid overs', 'Overs must be between 1 and 50');
+    if (!winner || !decision) { toast.error('Select toss winner and decision'); return; }
+    if (!isOversValid) { toast.error('Invalid overs', 'Overs must be between 1 and 50'); return; }
     setLoading(true);
     try {
       // If the user changed overs from the original, persist it before recording the toss.
@@ -60,7 +62,7 @@ const TossScreen = ({ navigation, route }) => {
         teams,
       });
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed');
+      toast.error(e.response?.data?.detail || 'Failed');
     } finally {
       setLoading(false);
     }

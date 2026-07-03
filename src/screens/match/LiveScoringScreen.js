@@ -7,6 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { scoringAPI, matchesAPI } from '../../services/api';
+import { haptics } from '../../utils/haptics';
 import matchWS from '../../services/websocket';
 import { COLORS, FONTS } from '../../theme';
 import Icon from '../../components/Icon';
@@ -18,6 +19,8 @@ import ConfirmModal from '../../components/ConfirmModal';
 import { setCurrentMatch, clearCurrentMatch } from '../../services/notifications';
 import { subscribeToMatch } from '../../services/notifications';
 import { useMatchInvalidators, useCommentary } from '../../hooks/useMatchData';
+import { useToast } from '../../components/Toast';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // Haptics removed — visual feedback only for smoother scoring UX
 
@@ -93,6 +96,7 @@ const WICKET_ICONS = {
 };
 
 const LiveScoringScreen = ({ navigation, route }) => {
+  const toast = useToast();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { matchId } = route.params;
@@ -156,7 +160,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
       setState(stateRes.data);
       setMatchData(matchRes.data);
     } catch (e) {
-      Alert.alert('Error', 'Failed to load match state');
+      toast.error('Failed to load match state');
     } finally {
       setLoading(false);
     }
@@ -177,7 +181,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
       setShowBroadcast(false);
       setBroadcastText('');
     } catch (e) {
-      Alert.alert('Error', 'Failed to send message');
+      toast.error('Failed to send message');
     }
   };
 
@@ -309,8 +313,10 @@ const LiveScoringScreen = ({ navigation, route }) => {
       return String(total);
     };
 
+    let preBallSnapshot = null;
     setState(prev => {
       if (!prev) return prev;
+      preBallSnapshot = prev;
       const newBall = isLegalBall ? (prev.current_ball || 0) + 1 : (prev.current_ball || 0);
       const overIncrement = newBall >= 6 ? 1 : 0;
       const nextOver = (prev.current_over || 0) + overIncrement;
@@ -372,6 +378,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
     const isChaseWin = target && (state?.innings_number || 1) >= 2 && newTotal >= target && !data.is_wicket;
     if (isChaseWin) {
       setCelebration('match_won');
+      haptics.win();
     } else if (data.is_wicket) {
       const wt = data.wicket_type;
       if (wt === 'bowled') setCelebration('wicket_bowled');
@@ -379,14 +386,22 @@ const LiveScoringScreen = ({ navigation, route }) => {
       else if (wt === 'lbw') setCelebration('wicket_lbw');
       else if (wt === 'run_out') setCelebration('wicket_runout');
       else setCelebration('wicket');
+      haptics.wicket();
     } else if (prevStrikerRuns < 100 && newStrikerRuns >= 100) {
       setCelebration('hundred');
+      haptics.six();
     } else if (prevStrikerRuns < 50 && newStrikerRuns >= 50) {
       setCelebration('fifty');
+      haptics.six();
     } else if (data.is_six || data.batsman_runs === 6) {
       setCelebration('six');
+      haptics.six();
     } else if (data.is_boundary || data.batsman_runs === 4) {
       setCelebration('four');
+      haptics.four();
+    } else if (data.batsman_runs > 0) {
+      // Plain runs (1/2/3) — light tap, no celebration overlay.
+      haptics.run();
     }
 
     try {
@@ -417,8 +432,16 @@ const LiveScoringScreen = ({ navigation, route }) => {
         setShowEndOver(true);
       }
     } catch (e) {
-      await loadState();
-      Alert.alert('Error', e.response?.data?.detail || 'Scoring failed');
+      try {
+        await loadState();
+      } catch {
+        if (preBallSnapshot) setState(preBallSnapshot);
+      }
+      if (!e.response) {
+        toast.error('Network issue. Please check your connection and try again.');
+      } else {
+        toast.error(getErrorMessage(e, 'Scoring failed'));
+      }
     } finally {
       setScoring(false);
     }
@@ -440,7 +463,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
 
   const handleEndOver = async () => {
     if (scoring) return;
-    if (!nextBowlerId) return Alert.alert('Error', 'Select next bowler');
+    if (!nextBowlerId) return toast.warning('Select next bowler');
     setScoring(true);
     try {
       await scoringAPI.endOver(matchId, nextBowlerId);
@@ -449,7 +472,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
       setNextBowlerId(null);
       await loadState();
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed');
+      toast.error(e.response?.data?.detail || 'Failed');
     } finally {
       setScoring(false);
     }
@@ -488,7 +511,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
             return;
           }
         } catch (e) {
-          Alert.alert('Error', e.response?.data?.detail || 'Failed to end match');
+          toast.error(e.response?.data?.detail || 'Failed to end match');
           // Still navigate if match is completed in the meantime
           const check = await matchesAPI.get(matchId);
           if (check.data.status === 'completed') {
@@ -499,15 +522,27 @@ const LiveScoringScreen = ({ navigation, route }) => {
         navigation.replace('Scorecard', { matchId });
       } else {
         // First innings done — go to select openers for 2nd innings
+        const isSO = completedInnings >= 2;
+        let soBatFirstId;
+        if (isSO) {
+          const lastInn = allInnings[allInnings.length - 1];
+          const prevBatTeam = lastInn?.batting_team_id;
+          if (prevBatTeam) {
+            soBatFirstId = prevBatTeam === matchRes.data.team_a_id
+              ? matchRes.data.team_b_id
+              : matchRes.data.team_a_id;
+          }
+        }
         navigation.replace('SelectOpeners', {
           matchId,
           match: matchRes.data,
           teams: route.params.teams || [],
-          isSuperOver: completedInnings >= 2,
+          isSuperOver: isSO,
+          ...(soBatFirstId ? { soBatFirstId } : {}),
         });
       }
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to end innings');
+      toast.error(e.response?.data?.detail || 'Failed to end innings');
     } finally {
       setScoring(false);
     }
@@ -518,7 +553,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
   const handleStartSuperOver = async (batFirstId) => {
     const teamId = batFirstId || soBatFirst;
     if (!teamId) {
-      Alert.alert('Select Team', 'Choose which team bats first in the Super Over');
+      toast.warning('Choose which team bats first in the Super Over');
       return;
     }
     setShowSuperOverPrompt(false);
@@ -532,7 +567,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
         soBatFirstId: teamId,
       });
     } catch (e) {
-      Alert.alert('Error', 'Failed to start super over');
+      toast.error('Failed to start super over');
     }
   };
 
@@ -543,7 +578,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
       invalidateMatch();
       navigation.replace('Scorecard', { matchId });
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to end match');
+      toast.error(e.response?.data?.detail || 'Failed to end match');
     }
   };
 
@@ -565,7 +600,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
         }
       } catch (e) {
         const msg = e.response?.data?.detail || 'Failed to end match';
-        Alert.alert('Error', msg);
+        toast.error(msg);
         if (msg.toLowerCase().includes('creator')) return;
       }
       navigation.replace('Scorecard', { matchId });
@@ -587,11 +622,11 @@ const LiveScoringScreen = ({ navigation, route }) => {
   const confirmNoResult = async () => {
     const reason = noResultReason.trim();
     if (!reason || reason.length < 8) {
-      Alert.alert('Reason Required', 'Please enter a reason (at least 8 characters).');
+      toast.warning('Please enter a reason (at least 8 characters).');
       return;
     }
     if (reason.length > 100) {
-      Alert.alert('Too Long', 'Reason must be under 100 characters.');
+      toast.warning('Reason must be under 100 characters.');
       return;
     }
     setShowNoResultModal(false);
@@ -600,7 +635,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
       invalidateMatch();
       navigation.replace('Scorecard', { matchId });
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to end match');
+      toast.error(e.response?.data?.detail || 'Failed to end match');
     }
   };
 
@@ -633,7 +668,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
         setShowEndOver(true);
       }
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Nothing to undo');
+      toast.error(e.response?.data?.detail || 'Nothing to undo');
     } finally {
       setUndoLoading(false);
       setScoring(false);
@@ -712,7 +747,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
     } catch (e) {
       // Revert on failure
       setState(prev => prev ? { ...prev, striker: prev.non_striker, non_striker: prev.striker } : prev);
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to swap batters');
+      toast.error(e.response?.data?.detail || 'Failed to swap batters');
     } finally {
       setSwapping(false);
     }
@@ -799,7 +834,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
       await scoringAPI.revert(matchId);
       await loadState();
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to revert');
+      toast.error(e.response?.data?.detail || 'Failed to revert');
     } finally {
       setReverting(false);
     }
@@ -817,11 +852,11 @@ const LiveScoringScreen = ({ navigation, route }) => {
       ? state?.striker?.player_id
       : state?.non_striker?.player_id;
     if (!retiredPlayerId) {
-      Alert.alert('Error', 'No batter to retire');
+      toast.error('No batter to retire');
       return;
     }
     if (!retiredReplacement) {
-      Alert.alert('Pick replacement', 'Select the batter coming in');
+      toast.warning('Select the batter coming in');
       return;
     }
     setRetiredSubmitting(true);
@@ -832,7 +867,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
       setRetiredReplacement(null);
       await loadState();
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to retire batter');
+      toast.error(e.response?.data?.detail || 'Failed to retire batter');
     } finally {
       setRetiredSubmitting(false);
     }
@@ -846,7 +881,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
       setShowDeclare(false);
       await loadState();
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to declare innings');
+      toast.error(e.response?.data?.detail || 'Failed to declare innings');
     } finally {
       setDeclaring(false);
     }
@@ -1219,7 +1254,7 @@ const LiveScoringScreen = ({ navigation, route }) => {
                         : `${b.total_runs} run${b.total_runs === 1 ? '' : 's'} taken.`;
                       const isLast = i === g.balls.length - 1;
                       return (
-                        <View key={`b-${i}`} style={[s.ballRow, !isLast && s.ballRowDivider]}>
+                        <View key={`b-${b.over ?? 0}.${b.ball ?? i}`} style={[s.ballRow, !isLast && s.ballRowDivider]}>
                           <View style={s.ballRowLeft}>
                             <Text style={s.ballRowOver}>{overText}</Text>
                             <View style={[s.ballRowPill, s[`bigBall_${kind || 'default'}`]]}>

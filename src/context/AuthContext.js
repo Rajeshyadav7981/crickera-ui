@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { authAPI, clearTokenCache, setTokenCache } from '../services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { authAPI, clearTokenCache, setTokenCache, setAuthFailureHandler } from '../services/api';
 import {
   getSecureItem,
   setSecureItem,
@@ -9,6 +10,8 @@ import {
 import { registerForPushNotifications, unregisterPushToken } from '../services/notifications';
 
 const AuthContext = createContext({});
+
+const USER_CACHE_KEY = 'auth_user';
 
 export const useAuth = () => useContext(AuthContext);
 
@@ -20,6 +23,16 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     loadStoredAuth();
+  }, []);
+
+  useEffect(() => {
+    setAuthFailureHandler(() => {
+      clearTokenCache();
+      setToken(null);
+      setUser(null);
+      AsyncStorage.removeItem(USER_CACHE_KEY).catch(() => {});
+    });
+    return () => setAuthFailureHandler(null);
   }, []);
 
   // Register push notifications when user is logged in.
@@ -50,14 +63,27 @@ export const AuthProvider = ({ children }) => {
       // out of AsyncStorage so the app picks up where the user left off.
       await migrateLegacyTokens();
       const storedToken = await getSecureItem('token');
-      if (storedToken) {
-        setTokenCache(storedToken);
-        setToken(storedToken);
+      if (!storedToken) return;
+      setTokenCache(storedToken);
+      setToken(storedToken);
+      try {
         const res = await authAPI.getMe();
         setUser(res.data);
+        AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(res.data)).catch(() => {});
+      } catch (e) {
+        const status = e?.response?.status;
+        if (status === 401 || status === 403) {
+          await removeAuthItems(['token', 'refreshToken']);
+          await AsyncStorage.removeItem(USER_CACHE_KEY).catch(() => {});
+          clearTokenCache();
+          setToken(null);
+        } else {
+          try {
+            const cached = await AsyncStorage.getItem(USER_CACHE_KEY);
+            if (cached) setUser(JSON.parse(cached));
+          } catch {}
+        }
       }
-    } catch {
-      await removeAuthItems(['token', 'refreshToken']);
     } finally {
       setLoading(false);
     }
@@ -72,6 +98,7 @@ export const AuthProvider = ({ children }) => {
     setTokenCache(access_token);
     setToken(access_token);
     setUser(userData);
+    AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(userData)).catch(() => {});
   };
 
   const register = async (first_name, last_name, mobile, email, password, username, cricketProfile = {}) => {
@@ -125,6 +152,7 @@ export const AuthProvider = ({ children }) => {
       }
     }
     await removeAuthItems(['token', 'refreshToken']);
+    await AsyncStorage.removeItem(USER_CACHE_KEY).catch(() => {});
     clearTokenCache();
     setToken(null);
     setUser(null);

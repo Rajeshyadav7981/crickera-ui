@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Modal, FlatList, ActivityIndicator, TextInput, InteractionManager,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { useAuthGate } from '../../hooks/useRequireAuth';
 import { COLORS, FONTS } from '../../theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import CurrentLocationButton from '../../components/CurrentLocationButton';
+import { useToast } from '../../components/Toast';
 
 const PRIMARY = COLORS.ACCENT;
 const PRIMARY_20 = COLORS.ACCENT_SOFT;
@@ -310,6 +311,7 @@ const formatDateDisplay = (dateStr) => {
 const OVERS_OPTIONS = [5, 10, 15, 20, 25, 30, 50];
 
 const OversInput = ({ label, value, onChange }) => {
+  const toast = useToast();
   const [showCustom, setShowCustom] = useState(false);
   const [customVal, setCustomVal] = useState('');
   const isCustom = value && !OVERS_OPTIONS.includes(value);
@@ -352,7 +354,7 @@ const OversInput = ({ label, value, onChange }) => {
             onPress={() => {
               const n = parseInt(customVal);
               if (n && n > 0 && n <= 100) { onChange(n); setShowCustom(false); }
-              else Alert.alert('Invalid', 'Enter a number between 1-100');
+              else toast.error('Enter a number between 1-100');
             }}
           >
             <Text style={styles.customOversOkText}>OK</Text>
@@ -366,6 +368,7 @@ const OversInput = ({ label, value, onChange }) => {
 /* ========== MAIN SCREEN ========== */
 const CreateMatchScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
+  const toast = useToast();
   const { ready } = useAuthGate('create a match');
   const { tournamentId, teams } = route.params || {};
 
@@ -522,7 +525,7 @@ const CreateMatchScreen = ({ navigation, route }) => {
       setVenueNameInput('');
       setVenueModalVisible(false);
     } catch (e) {
-      Alert.alert('Error', 'Failed to create venue');
+      toast.error('Failed to create venue');
     }
   };
 
@@ -554,24 +557,25 @@ const CreateMatchScreen = ({ navigation, route }) => {
       .filter(s => s.match_date || s.time_slot);
 
     if (schedule.length === 0) {
-      return Alert.alert('No Changes', 'Set dates or time slots for at least one match.');
+      toast.info('No Changes', 'Set dates or time slots for at least one match.');
+      return;
     }
 
     setSaving(true);
     try {
       await tournamentsAPI.scheduleMatches(tournamentId, stageId, schedule);
-      Alert.alert('Saved', `${schedule.length} match(es) scheduled!`);
+      toast.success(`${schedule.length} match(es) scheduled!`);
       loadData();
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to save schedule');
+      toast.error(e.response?.data?.detail || 'Failed to save schedule');
     }
     setSaving(false);
   };
 
   // Create a new individual match
   const handleCreateMatch = async () => {
-    if (!teamA || !teamB) return Alert.alert('Error', 'Select both teams');
-    if (teamA.id === teamB.id) return Alert.alert('Error', 'Teams must be different');
+    if (!teamA || !teamB) { toast.error('Select both teams'); return; }
+    if (teamA.id === teamB.id) { toast.error('Teams must be different'); return; }
     setSaving(true);
     try {
       const cleanName = matchName.trim();
@@ -589,13 +593,13 @@ const CreateMatchScreen = ({ navigation, route }) => {
         ...(cleanName && { name: cleanName }),
       };
       await matchesAPI.create(payload);
-      Alert.alert('Success', 'Match created!');
+      toast.success('Match created!');
       setSelectedStage(null); setSelectedGroup(null);
       setTeamA(null); setTeamB(null); setMatchDate(''); setTimeSlot(''); setVenue(null); setMatchType('Group'); setOvers(20);
       setMatchName('');
       loadData();
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to create match');
+      toast.error(e.response?.data?.detail || 'Failed to create match');
     }
     setSaving(false);
   };

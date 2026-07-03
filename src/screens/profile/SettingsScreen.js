@@ -1,32 +1,52 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Linking,
 } from 'react-native';
+import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { useThemeContext } from '../../context/ThemeContext';
 import { COLORS, FONTS } from '../../theme';
+import { authAPI } from '../../services/api';
 import BackButton from '../../components/BackButton';
+import { useToast } from '../../components/Toast';
+import { isHapticsEnabled, setHapticsEnabled, initHaptics } from '../../utils/haptics';
+
+// TODO: swap these for the final hosted policy URLs before Play Store submission.
+const PRIVACY_POLICY_URL = 'https://crixone.in/privacy';
+const TERMS_URL = 'https://crixone.in/terms';
+const APP_VERSION = Constants.expoConfig?.version || '1.0.1';
 
 const SettingsScreen = ({ navigation }) => {
+  const toast = useToast();
   const insets = useSafeAreaInsets();
   const { logout } = useAuth();
-  const { isDark, toggleTheme, colors: C } = useThemeContext();
-  const [notifications, setNotifications] = useState(true);
-  const [liveUpdates, setLiveUpdates] = useState(true);
-  const [soundEffects, setSoundEffects] = useState(false);
+  const { colors: C } = useThemeContext();
+  const [hapticsOn, setHapticsOn] = useState(isHapticsEnabled());
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => { initHaptics().then(setHapticsOn); }, []);
+  const toggleHaptics = (v) => { setHapticsOn(v); setHapticsEnabled(v); };
 
   const handleDeleteAccount = () => {
+    if (deleting) return;
     Alert.alert(
       'Delete Account',
-      'Are you sure you want to delete your account? This action cannot be undone.',
+      'This permanently deletes your account and personal data. Matches you scored stay on record but are no longer linked to you. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => {
-            Alert.alert('Info', 'Please contact support to delete your account.');
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await authAPI.deleteAccount();
+              await logout();
+            } catch (e) {
+              setDeleting(false);
+              toast.error(e?.response?.data?.detail || 'Something went wrong. Please try again.');
+            }
           },
         },
       ],
@@ -43,95 +63,19 @@ const SettingsScreen = ({ navigation }) => {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Appearance Section */}
-        <Text style={[styles.sectionLabel, { color: C.TEXT_SECONDARY }]}>Appearance</Text>
-        <View style={[styles.card, { backgroundColor: C.CARD, borderColor: C.BORDER }]}>
-          <View style={styles.themeRow}>
-            {/* Light option */}
-            <TouchableOpacity
-              style={[
-                styles.themeOption,
-                { backgroundColor: '#FFFFFF', borderColor: !isDark ? C.ACCENT : '#E0E2EA' },
-                !isDark && styles.themeOptionActive,
-              ]}
-              onPress={() => { if (isDark) toggleTheme(); }}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.themePreview, { backgroundColor: '#F5F6FA' }]}>
-                <View style={[styles.themePreviewBar, { backgroundColor: '#FFFFFF' }]} />
-                <View style={{ flexDirection: 'row', gap: 4, padding: 4 }}>
-                  <View style={[styles.themePreviewCard, { backgroundColor: '#FFFFFF', borderColor: '#E0E2EA' }]} />
-                  <View style={[styles.themePreviewCard, { backgroundColor: '#FFFFFF', borderColor: '#E0E2EA' }]} />
-                </View>
-                <View style={[styles.themePreviewNav, { backgroundColor: '#FFFFFF' }]} />
-              </View>
-              <Text style={[styles.themeLabel, { color: '#1A1A2E' }]}>Light</Text>
-              {!isDark && <View style={[styles.themeCheck, { backgroundColor: C.ACCENT }]}><Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>✓</Text></View>}
-            </TouchableOpacity>
-
-            {/* Dark option */}
-            <TouchableOpacity
-              style={[
-                styles.themeOption,
-                { backgroundColor: '#16161F', borderColor: isDark ? C.ACCENT : '#2A2A3C' },
-                isDark && styles.themeOptionActive,
-              ]}
-              onPress={() => { if (!isDark) toggleTheme(); }}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.themePreview, { backgroundColor: '#0B0B12' }]}>
-                <View style={[styles.themePreviewBar, { backgroundColor: '#16161F' }]} />
-                <View style={{ flexDirection: 'row', gap: 4, padding: 4 }}>
-                  <View style={[styles.themePreviewCard, { backgroundColor: '#1C1C28', borderColor: '#2A2A3C' }]} />
-                  <View style={[styles.themePreviewCard, { backgroundColor: '#1C1C28', borderColor: '#2A2A3C' }]} />
-                </View>
-                <View style={[styles.themePreviewNav, { backgroundColor: '#16161F' }]} />
-              </View>
-              <Text style={[styles.themeLabel, { color: '#FFFFFF' }]}>Dark</Text>
-              {isDark && <View style={[styles.themeCheck, { backgroundColor: C.ACCENT }]}><Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>✓</Text></View>}
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Notifications Section */}
-        <Text style={[styles.sectionLabel, { color: C.TEXT_SECONDARY }]}>Notifications</Text>
+        {/* Effects Section */}
+        <Text style={[styles.sectionLabel, { color: C.TEXT_SECONDARY }]}>Effects</Text>
         <View style={[styles.card, { backgroundColor: C.CARD, borderColor: C.BORDER }]}>
           <View style={styles.settingRow}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.settingTitle, { color: C.TEXT }]}>Push Notifications</Text>
-              <Text style={[styles.settingDesc, { color: C.TEXT_SECONDARY }]}>Get notified about match updates</Text>
+              <Text style={[styles.settingTitle, { color: C.TEXT }]}>Haptic Feedback</Text>
+              <Text style={[styles.settingDesc, { color: C.TEXT_SECONDARY }]}>Vibrate on six, four, wicket & win while scoring</Text>
             </View>
             <Switch
-              value={notifications}
-              onValueChange={setNotifications}
+              value={hapticsOn}
+              onValueChange={toggleHaptics}
               trackColor={{ false: C.SURFACE, true: C.ACCENT + '66' }}
-              thumbColor={notifications ? C.ACCENT : C.TEXT_MUTED}
-            />
-          </View>
-          <View style={[styles.divider, { backgroundColor: C.BORDER }]} />
-          <View style={styles.settingRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.settingTitle, { color: C.TEXT }]}>Live Score Updates</Text>
-              <Text style={[styles.settingDesc, { color: C.TEXT_SECONDARY }]}>Real-time scoring notifications</Text>
-            </View>
-            <Switch
-              value={liveUpdates}
-              onValueChange={setLiveUpdates}
-              trackColor={{ false: C.SURFACE, true: C.ACCENT + '66' }}
-              thumbColor={liveUpdates ? C.ACCENT : C.TEXT_MUTED}
-            />
-          </View>
-          <View style={[styles.divider, { backgroundColor: C.BORDER }]} />
-          <View style={styles.settingRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.settingTitle, { color: C.TEXT }]}>Sound Effects</Text>
-              <Text style={[styles.settingDesc, { color: C.TEXT_SECONDARY }]}>Play sounds for wickets, boundaries</Text>
-            </View>
-            <Switch
-              value={soundEffects}
-              onValueChange={setSoundEffects}
-              trackColor={{ false: C.SURFACE, true: C.ACCENT + '66' }}
-              thumbColor={soundEffects ? C.ACCENT : C.TEXT_MUTED}
+              thumbColor={hapticsOn ? C.ACCENT : C.TEXT_MUTED}
             />
           </View>
         </View>
@@ -141,8 +85,28 @@ const SettingsScreen = ({ navigation }) => {
         <View style={[styles.card, { backgroundColor: C.CARD, borderColor: C.BORDER }]}>
           <View style={styles.settingRow}>
             <Text style={[styles.settingTitle, { color: C.TEXT }]}>App Version</Text>
-            <Text style={[styles.settingValue, { color: C.TEXT_SECONDARY }]}>1.0.0</Text>
+            <Text style={[styles.settingValue, { color: C.TEXT_SECONDARY }]}>{APP_VERSION}</Text>
           </View>
+        </View>
+
+        {/* Legal Section */}
+        <Text style={[styles.sectionLabel, { color: C.TEXT_SECONDARY }]}>Legal</Text>
+        <View style={[styles.card, { backgroundColor: C.CARD, borderColor: C.BORDER }]}>
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
+          >
+            <Text style={[styles.settingTitle, { color: C.TEXT }]}>Privacy Policy</Text>
+            <Text style={[styles.settingValue, { color: C.TEXT_SECONDARY }]}>›</Text>
+          </TouchableOpacity>
+          <View style={[styles.divider, { backgroundColor: C.BORDER }]} />
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => Linking.openURL(TERMS_URL)}
+          >
+            <Text style={[styles.settingTitle, { color: C.TEXT }]}>Terms of Service</Text>
+            <Text style={[styles.settingValue, { color: C.TEXT_SECONDARY }]}>›</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Account Section */}
@@ -152,8 +116,10 @@ const SettingsScreen = ({ navigation }) => {
             <Text style={[styles.settingTitle, { color: C.ACCENT }]}>Sign Out</Text>
           </TouchableOpacity>
           <View style={[styles.divider, { backgroundColor: C.BORDER }]} />
-          <TouchableOpacity style={styles.settingRow} onPress={handleDeleteAccount}>
-            <Text style={[styles.settingTitle, { color: C.DANGER }]}>Delete Account</Text>
+          <TouchableOpacity style={styles.settingRow} onPress={handleDeleteAccount} disabled={deleting}>
+            <Text style={[styles.settingTitle, { color: C.DANGER }]}>
+              {deleting ? 'Deleting…' : 'Delete Account'}
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

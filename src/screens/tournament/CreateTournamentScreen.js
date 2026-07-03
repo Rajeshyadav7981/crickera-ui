@@ -5,8 +5,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
-import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
 import { tournamentsAPI, venuesAPI } from '../../services/api';
+import { TOURNAMENT_AVATARS } from '../../constants/avatars';
 import { useAuthGate } from '../../hooks/useRequireAuth';
 import { COLORS, FONTS } from '../../theme';
 import BackButton from '../../components/BackButton';
@@ -178,8 +179,7 @@ const CreateTournamentScreen = ({ navigation }) => {
   const [entryFee, setEntryFee] = useState('');
   const [prizePool, setPrizePool] = useState('');
   const [loading, setLoading] = useState(false);
-  const [bannerUri, setBannerUri] = useState(null);
-  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const [bannerKey, setBannerKey] = useState(null); // preset tournament image key (e.g. "tav:2")
 
   // Match format
   const [matchFormat, setMatchFormat] = useState('T20');
@@ -219,46 +219,17 @@ const CreateTournamentScreen = ({ navigation }) => {
     return d.toISOString().split('T')[0];
   };
 
-  const pickBanner = async () => {
-    Alert.alert('Tournament Banner', 'Choose an option', [
-      { text: 'Take Photo', onPress: async () => {
-        const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        if (status !== 'granted') return toast.warning('Permission needed', 'Camera access is required');
-        const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [2, 1], quality: 0.7 });
-        if (!result.canceled && result.assets?.[0]?.uri) setBannerUri(result.assets[0].uri);
-      }},
-      { text: 'Choose from Gallery', onPress: async () => {
-        const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [2, 1], quality: 0.7 });
-        if (!result.canceled && result.assets?.[0]?.uri) setBannerUri(result.assets[0].uri);
-      }},
-      ...(bannerUri ? [{ text: 'Remove Banner', style: 'destructive', onPress: () => setBannerUri(null) }] : []),
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  };
-
-  const uploadBanner = async () => {
-    if (!bannerUri) return null;
-    // Dedicated tournament endpoint — stores under uploads/tournaments/ on the VM.
-    return await tournamentsAPI.uploadBanner(bannerUri);
-  };
-
   const handleCreate = async () => {
     if (!name.trim()) return toast.warning('Tournament name is required');
     if (!organizerName.trim()) return toast.warning('Organizer name is required');
     if (!startDateObj) return toast.warning('Start date is required');
     if (!endDateObj) return toast.warning('End date is required');
     if (!location.trim()) return toast.warning('Location is required');
-    if (matchFormat === 'Custom' && (!customOvers || parseInt(customOvers) < 1)) return toast.warning('Enter valid number of overs');
+    if (matchFormat === 'Custom' && (!customOvers || parseInt(customOvers) < 1 || parseInt(customOvers) > 100)) return toast.warning('Enter overs between 1 and 100');
     setLoading(true);
     try {
       const oversMap = { T5: 5, T10: 10, T20: 20 };
       const overs = matchFormat === 'Custom' ? (parseInt(customOvers, 10) || 20) : (oversMap[matchFormat] || 20);
-      let bannerUrl = null;
-      if (bannerUri) {
-        setUploadingBanner(true);
-        bannerUrl = await uploadBanner();
-        setUploadingBanner(false);
-      }
       const res = await tournamentsAPI.create({
         name: name.trim(),
         tournament_type: 'league_knockout',
@@ -270,7 +241,7 @@ const CreateTournamentScreen = ({ navigation }) => {
         location: location.trim() || undefined,
         entry_fee: parseFloat(entryFee) || 0,
         prize_pool: parseFloat(prizePool) || 0,
-        banner_url: bannerUrl || undefined,
+        banner_url: bannerKey || undefined,
       });
       toast.success('Tournament created! Now let\'s set it up.');
       navigation.replace('TournamentSetup', {
@@ -315,31 +286,38 @@ const CreateTournamentScreen = ({ navigation }) => {
         enableOnAndroid
         extraScrollHeight={40}
       >
-        {/* ---- MEDIA ---- */}
-        {renderSectionLabel('MEDIA')}
-        <TouchableOpacity style={styles.bannerUpload} activeOpacity={0.7} onPress={pickBanner}>
-          {bannerUri ? (
-            <View>
-              <Image source={{ uri: bannerUri }} style={styles.bannerImage} resizeMode="cover" />
-              <View style={styles.bannerEditOverlay}>
-                <Feather name="edit-2" size={16} color="#fff" />
-                <Text style={styles.bannerEditText}>Change Banner</Text>
-              </View>
-              {uploadingBanner && (
-                <View style={styles.bannerLoadingOverlay}>
-                  <ActivityIndicator color="#fff" size="small" />
-                  <Text style={{ color: '#fff', fontSize: 12, marginTop: 4 }}>Uploading...</Text>
-                </View>
-              )}
-            </View>
-          ) : (
-            <View style={styles.bannerOverlay}>
-              <Feather name="camera" size={32} color={COLORS.TEXT_MUTED} />
-              <Text style={styles.bannerText}>Upload Tournament Banner</Text>
-              <Text style={styles.bannerSubtext}>Tap to select from gallery or camera</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        {/* ---- LOGO (pick a preset — no upload) ---- */}
+        {renderSectionLabel('LOGO')}
+        <View style={styles.avatarGrid}>
+          {TOURNAMENT_AVATARS.map((a) => {
+            const selected = bannerKey === a.key;
+            return (
+              <TouchableOpacity
+                key={a.key}
+                activeOpacity={0.85}
+                onPress={() => setBannerKey(selected ? null : a.key)}
+              >
+                <LinearGradient
+                  colors={a.colors}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.bannerTile, selected && styles.tileSelected]}
+                >
+                  {a.emoji ? (
+                    <Text style={{ fontSize: 32 }}>{a.emoji}</Text>
+                  ) : (
+                    <MaterialCommunityIcons name={a.icon} size={32} color="#fff" />
+                  )}
+                </LinearGradient>
+                {selected && (
+                  <View style={styles.tileCheck}>
+                    <Feather name="check" size={12} color="#fff" />
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
 
         {/* ---- BASIC INFORMATION ---- */}
         {renderSectionLabel('BASIC INFORMATION')}
@@ -413,10 +391,11 @@ const CreateTournamentScreen = ({ navigation }) => {
             <TextInput
               style={styles.input}
               value={customOvers}
-              onChangeText={setCustomOvers}
+              onChangeText={(t) => setCustomOvers(t.replace(/[^0-9]/g, ''))}
               placeholder="e.g. 15"
               placeholderTextColor={COLORS.TEXT_MUTED}
               keyboardType="numeric"
+              maxLength={3}
             />
           </>
         )}
@@ -540,7 +519,7 @@ const CreateTournamentScreen = ({ navigation }) => {
               <TextInput
                 style={styles.inputInner}
                 value={entryFee}
-                onChangeText={setEntryFee}
+                onChangeText={(t) => setEntryFee(t.replace(/[^0-9.]/g, ''))}
                 placeholder="0"
                 placeholderTextColor={COLORS.TEXT_MUTED}
                 keyboardType="numeric"
@@ -554,7 +533,7 @@ const CreateTournamentScreen = ({ navigation }) => {
               <TextInput
                 style={styles.inputInner}
                 value={prizePool}
-                onChangeText={setPrizePool}
+                onChangeText={(t) => setPrizePool(t.replace(/[^0-9.]/g, ''))}
                 placeholder="0"
                 placeholderTextColor={COLORS.TEXT_MUTED}
                 keyboardType="numeric"
@@ -652,7 +631,27 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
 
-  /* ── Banner upload ── */
+  /* ── Tournament image preset grid ── */
+  avatarGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center',
+    gap: 14, maxWidth: 222, alignSelf: 'center', marginTop: 4,
+  },
+  bannerTile: {
+    width: 60, height: 60, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: 'transparent',
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 }, elevation: 3,
+  },
+  tileSelected: { borderColor: COLORS.TEXT },
+  tileCheck: {
+    position: 'absolute', top: -4, right: -4,
+    width: 20, height: 20, borderRadius: 10, backgroundColor: COLORS.ACCENT,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: COLORS.BG,
+  },
+
+  /* ── Banner upload (legacy styles, retained) ── */
   bannerUpload: {
     width: '100%',
     height: 192,

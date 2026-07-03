@@ -2,6 +2,8 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import api from './api';
 
+const NOTIFICATIONS_ENABLED = false;
+
 // Lazy-loaded — only imported when actually registering (avoids Expo Go SDK 53+ errors at startup)
 let Notifications = null;
 let _initialized = false;
@@ -49,6 +51,7 @@ export const clearCurrentMatch = () => {
  * Call this on app startup after login.
  */
 export async function registerForPushNotifications() {
+  if (!NOTIFICATIONS_ENABLED) return null;
   _initNotifications();
   if (!Notifications) return null;
 
@@ -96,6 +99,7 @@ export async function registerForPushNotifications() {
  * Remove push token from backend (call on logout).
  */
 export async function unregisterPushToken(token) {
+  if (!NOTIFICATIONS_ENABLED) return;
   try {
     if (token) {
       await api.delete('/api/notifications/push-token', { data: { token } });
@@ -107,6 +111,7 @@ export async function unregisterPushToken(token) {
  * Subscribe to notifications for a match.
  */
 export async function subscribeToMatch(matchId) {
+  if (!NOTIFICATIONS_ENABLED) return;
   try {
     await api.post(`/api/notifications/subscribe/${matchId}`);
   } catch {}
@@ -116,6 +121,7 @@ export async function subscribeToMatch(matchId) {
  * Unsubscribe from a match.
  */
 export async function unsubscribeFromMatch(matchId) {
+  if (!NOTIFICATIONS_ENABLED) return;
   try {
     await api.delete(`/api/notifications/subscribe/${matchId}`);
   } catch {}

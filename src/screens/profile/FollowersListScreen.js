@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl,
+  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { usersAPI } from '../../services/api';
@@ -207,10 +208,11 @@ const FollowersListScreen = ({ navigation, route }) => {
           </Text>
         </View>
       ) : (
-        <FlatList
+        <FlashList
           data={items}
           keyExtractor={(u) => String(u.id)}
           renderItem={renderItem}
+          estimatedItemSize={72}
           contentContainerStyle={s.listContent}
           ItemSeparatorComponent={() => <View style={s.separator} />}
           onEndReached={onEndReached}

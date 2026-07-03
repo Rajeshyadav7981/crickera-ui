@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator,
   InteractionManager,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import BackButton from '../../components/BackButton';
 import StepIndicator from '../../components/StepIndicator';
 import Skeleton from '../../components/Skeleton';
+import { useToast } from '../../components/Toast';
 
 const PRIMARY = COLORS.ACCENT;
 const BG = COLORS.BG;
@@ -28,6 +29,7 @@ const getInitials = (name) => {
 
 const SelectSquadScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
+  const toast = useToast();
   const { matchId, match, teams } = route.params;
   const [currentTeamIdx, setCurrentTeamIdx] = useState(0);
   const [teamPlayers, setTeamPlayers] = useState({});
@@ -59,7 +61,7 @@ const SelectSquadScreen = ({ navigation, route }) => {
         }));
       }
     } catch (e) {
-      Alert.alert('Error', 'Failed to load team players');
+      toast.error('Failed to load team players');
     } finally {
       setLoading(false);
     }
@@ -70,14 +72,14 @@ const SelectSquadScreen = ({ navigation, route }) => {
     if (list.includes(playerId)) {
       setSelected(prev => ({ ...prev, [currentTeamId]: list.filter(id => id !== playerId) }));
     } else {
-      if (list.length >= 11) return Alert.alert('Max 11', 'You can select max 11 players');
+      if (list.length >= 11) { toast.warning('You can select max 11 players'); return; }
       setSelected(prev => ({ ...prev, [currentTeamId]: [...list, playerId] }));
     }
   };
 
   const handleNext = async () => {
     const sel = selected[currentTeamId] || [];
-    if (sel.length < 2) return Alert.alert('Error', 'Select at least 2 players');
+    if (sel.length < 2) { toast.error('Select at least 2 players'); return; }
 
     setSaving(true);
     try {
@@ -92,7 +94,7 @@ const SelectSquadScreen = ({ navigation, route }) => {
         navigation.replace('SelectOpeners', { matchId, match, teams, selected });
       }
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to set squad');
+      toast.error(e.response?.data?.detail || 'Failed to set squad');
     } finally {
       setSaving(false);
     }

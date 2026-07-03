@@ -154,7 +154,7 @@ const AppNavigator = () => {
   const { user, loading } = useAuth();
   const { isDark, colors: C } = useThemeContext();
   const insets = useSafeAreaInsets();
-  const [showSplash, setShowSplash] = useState(true);
+  const [splashDone, setSplashDone] = useState(false);
 
   useEffect(() => {
     offlineQueue.init();
@@ -164,8 +164,8 @@ const AppNavigator = () => {
   // Check for app updates on launch
   useUpdateCheck();
 
-  if (loading || showSplash) {
-    return <SplashScreen onFinish={() => setShowSplash(false)} />;
+  if (loading || !splashDone) {
+    return <SplashScreen onFinish={() => setSplashDone(true)} />;
   }
 
   return (

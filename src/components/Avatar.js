@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../theme';
 import api from '../services/api';
+import { getAvatar } from '../constants/avatars';
 
 /**
  * Universal Avatar component with cricket-themed fallbacks:
@@ -23,9 +24,13 @@ const Avatar = ({
 }) => {
   const [imgError, setImgError] = useState(false);
 
+  // Preset avatar key (e.g. "avatar:b3") — render the emoji/image on a themed
+  // gradient circle instead of treating it as an uploaded image URL.
+  const preset = getAvatar(uri);
+
   // Accept absolute URLs verbatim; treat anything else as a backend-relative
   // path (e.g. `/uploads/profiles/42_abc.jpg`) and prepend the API base URL.
-  const imageUri = uri
+  const imageUri = (uri && !preset)
     ? (uri.startsWith('http') ? uri : `${api.defaults.baseURL}${uri.startsWith('/') ? '' : '/'}${uri}`)
     : null;
 
@@ -47,6 +52,30 @@ const Avatar = ({
   const darkGradient = ['#1a2a3a', '#0d1b2a'];
 
   const renderContent = () => {
+    // Preset avatar — emoji (or future branded image) on a themed gradient.
+    if (preset) {
+      return (
+        <LinearGradient
+          colors={preset.colors}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.initialsWrap, { width: innerSize, height: innerSize, borderRadius: innerSize / 2 }]}
+        >
+          {preset.image ? (
+            <Image
+              source={preset.image}
+              style={{ width: innerSize, height: innerSize, borderRadius: innerSize / 2 }}
+              contentFit="cover"
+            />
+          ) : preset.emoji ? (
+            <Text style={{ fontSize: Math.round(innerSize * 0.55) }}>{preset.emoji}</Text>
+          ) : (
+            <MaterialCommunityIcons name={preset.icon} size={Math.round(innerSize * 0.52)} color="#fff" />
+          )}
+        </LinearGradient>
+      );
+    }
+
     if (hasImage) {
       return (
         <Image

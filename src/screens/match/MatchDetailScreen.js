@@ -17,6 +17,7 @@ import { useAuth } from '../../context/AuthContext';
 import api, { matchesAPI, scoringAPI, teamsAPI } from '../../services/api';
 import matchWS from '../../services/websocket';
 import { COLORS, FONTS } from '../../theme';
+import { isAvatarKey } from '../../constants/avatars';
 import BackButton from '../../components/BackButton';
 import CelebrationOverlay from '../../components/CelebrationOverlay';
 import TabContentSkeleton from '../../components/TabContentSkeleton';
@@ -81,6 +82,7 @@ const MatchDetailScreen = ({ navigation, route }) => {
   const [activeTab, setActiveTab] = useState(0);
   const [scorecard, setScorecard] = useState(null);
   const [commentary, setCommentary] = useState({});
+  const [commRefreshTick, setCommRefreshTick] = useState(0);
   const [commLoading, setCommLoading] = useState(false);
   const [commFilter, setCommFilter] = useState('All');
   const [activeInnings, setActiveInnings] = useState(0);
@@ -192,12 +194,6 @@ const MatchDetailScreen = ({ navigation, route }) => {
       const m = {};
       (Array.isArray(passedTeams) ? passedTeams : []).forEach(t => { m[t.id] = t; });
       setTeamMap(m);
-    } else {
-      teamsAPI.list({}).then(r => {
-        const m = {};
-        (r.data || []).forEach(t => { m[t.id] = t; });
-        setTeamMap(m);
-      }).catch(() => {});
     }
 
     // Only connect WebSocket for live/in-progress matches (not completed ones)
@@ -232,20 +228,20 @@ const MatchDetailScreen = ({ navigation, route }) => {
           if (_wsDebounceTimer.current) clearTimeout(_wsDebounceTimer.current);
           _wsDebounceTimer.current = setTimeout(() => {
             invalidateLive();
-            setCommentary({});
+            setCommRefreshTick((t) => t + 1);
           }, 500);
         } else if (msg.type === 'over_end') {
           if (_wsDebounceTimer.current) clearTimeout(_wsDebounceTimer.current);
           _wsDebounceTimer.current = setTimeout(() => {
             invalidateLive();
-            setCommentary({});
+            setCommRefreshTick((t) => t + 1);
           }, 500);
         } else if (['innings_end', 'match_end'].includes(msg.type)) {
           // Major event — wipe every cached subtree for this match.
           if (_wsDebounceTimer.current) clearTimeout(_wsDebounceTimer.current);
           _wsDebounceTimer.current = setTimeout(() => {
             invalidateMatch();
-            setCommentary({});
+            setCommRefreshTick((t) => t + 1);
           }, 500);
         }
       });
@@ -262,10 +258,27 @@ const MatchDetailScreen = ({ navigation, route }) => {
     if (match) loadSquads(match);
   }, [match?.id]);
 
+  useEffect(() => {
+    if (passedTeams || !match?.team_a_id || !match?.team_b_id) return;
+    let cancelled = false;
+    Promise.all([
+      teamsAPI.get(match.team_a_id).catch(() => null),
+      teamsAPI.get(match.team_b_id).catch(() => null),
+    ]).then(([a, b]) => {
+      if (cancelled) return;
+      const m = {};
+      if (a?.data) m[a.data.id] = a.data;
+      if (b?.data) m[b.data.id] = b.data;
+      setTeamMap(m);
+    });
+    return () => { cancelled = true; };
+  }, [passedTeams, match?.team_a_id, match?.team_b_id]);
+
   // Load scorecard + commentary when data is available.
   // On first load, default activeInnings to the LATEST innings (current / most recent)
   // so Commentary opens on what's happening now, not the 1st innings by default.
   const inningsAutoSet = useRef(false);
+  const commRefreshRef = useRef(0);
   useEffect(() => {
     if (!scorecard) {
       loadScorecard();
@@ -281,17 +294,19 @@ const MatchDetailScreen = ({ navigation, route }) => {
           return;
         }
       }
+      const forced = commRefreshTick !== commRefreshRef.current;
+      commRefreshRef.current = commRefreshTick;
       // Load commentary for active innings (used by Commentary tab).
       // Chart data comes from innings.over_series on the scorecard payload — no extra fetch.
       const innNum = scorecard.innings[activeInnings]?.innings_number;
-      if (innNum) loadCommentary(innNum);
+      if (innNum) loadCommentary(innNum, forced);
       // Also load latest innings commentary (used by Summary tab's recent overs)
       const latestInn = scorecard.innings[scorecard.innings.length - 1];
       if (latestInn?.innings_number && latestInn.innings_number !== innNum) {
-        loadCommentary(latestInn.innings_number);
+        loadCommentary(latestInn.innings_number, forced);
       }
     }
-  }, [scorecard?.innings?.length, activeInnings]);
+  }, [scorecard?.innings?.length, activeInnings, commRefreshTick]);
 
   // Ensure inningsReady flips true for the currently-viewed innings after interactions
   // settle. Covers the initial auto-set to the latest innings (where onInningsChange
@@ -481,7 +496,7 @@ const MatchDetailScreen = ({ navigation, route }) => {
       const tB = getTeamShort(match?.team_b_id);
       const link = getMatchLink(matchId);
       await Share.share({
-        message: `${tA} vs ${tB} - Match on CrecKStars\n${link}`,
+        message: `${tA} vs ${tB} - Match on CRIXONE\n${link}`,
         url: link,
       });
     } catch (e) {}
@@ -891,7 +906,9 @@ const MatchDetailScreen = ({ navigation, route }) => {
                  remains legible. Live / upcoming keep the flat treatment. */}
             {(() => {
               const pom = scorecard?.top_performers?.player_of_match;
-              const heroImageUri = isCompleted && pom?.profile
+              // Preset emoji avatars aren't real images — don't stretch them as a
+              // hero background; fall through to the team-color gradient instead.
+              const heroImageUri = isCompleted && pom?.profile && !isAvatarKey(pom.profile)
                 ? (pom.profile.startsWith('http')
                     ? pom.profile
                     : `${api.defaults.baseURL}${pom.profile}`)
@@ -1387,8 +1404,7 @@ const MatchDetailScreen = ({ navigation, route }) => {
 
         {/* ── PAGE 1: SCORECARD ── */}
         <ScrollView style={{ width: SCREEN_WIDTH }} showsVerticalScrollIndicator={false} nestedScrollEnabled>
-        {/* Skeleton only until scorecard data arrives. If it's already cached,
-            render immediately — don't wait for the content-ready tick. */}
+        {visitedTabs[1] && (<>
         {!scorecard && (
           <TabContentSkeleton variant="scorecard" />
         )}
@@ -1811,6 +1827,7 @@ const MatchDetailScreen = ({ navigation, route }) => {
         )}
 
           <View style={{ height: insets.bottom + 30 }} />
+        </>)}
         </ScrollView>
 
         {/* ── PAGE 2: COMMENTARY ── */}
@@ -1829,8 +1846,7 @@ const MatchDetailScreen = ({ navigation, route }) => {
           }}
           scrollEventThrottle={400}
         >
-        {/* Show skeleton until scorecard is cached (gives us innings info
-            needed to render the tab). Cached = render instantly. */}
+        {visitedTabs[2] && (<>
         {!scorecard && (
           <TabContentSkeleton variant="commentary" />
         )}
@@ -1965,10 +1981,12 @@ const MatchDetailScreen = ({ navigation, route }) => {
         )}
 
           <View style={{ height: insets.bottom + 30 }} />
+        </>)}
         </ScrollView>
 
         {/* ── PAGE 3: INFO ── */}
         <ScrollView style={{ width: SCREEN_WIDTH }} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+        {visitedTabs[3] && (
           <View style={st.tabContent}>
             {/* Result Banner */}
             {match.result_summary && (
@@ -2050,6 +2068,7 @@ const MatchDetailScreen = ({ navigation, route }) => {
               </TouchableOpacity>
             )}
           </View>
+        )}
 
           <View style={{ height: insets.bottom + 30 }} />
         </ScrollView>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator,
   InteractionManager,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +8,7 @@ import { matchesAPI } from '../../services/api';
 import { COLORS, FONTS } from '../../theme';
 import Skeleton from '../../components/Skeleton';
 import StepIndicator from '../../components/StepIndicator';
+import { useToast } from '../../components/Toast';
 
 const PRIMARY = COLORS.ACCENT;
 const BG = COLORS.BG;
@@ -56,6 +57,7 @@ const PlayerCard = ({ player, selected, onPress, mode = 'checkbox' }) => {
 
 const SelectOpenersScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
+  const toast = useToast();
   const { matchId, match, teams, selected, isSuperOver, soBatFirstId } = route.params;
   const [battingTeamId, setBattingTeamId] = useState(null);
   const [squad, setSquad] = useState([]);
@@ -116,7 +118,7 @@ const SelectOpenersScreen = ({ navigation, route }) => {
       setSquad(batRes.data);
       setBowlingSquad(bowlRes.data);
     } catch (e) {
-      Alert.alert('Error', 'Failed to load squads');
+      toast.error('Failed to load squads');
     } finally {
       setLoading(false);
     }
@@ -134,7 +136,8 @@ const SelectOpenersScreen = ({ navigation, route }) => {
 
   const handleStart = async () => {
     if (selectedBatsmen.length < 2 || !bowler) {
-      return Alert.alert('Error', 'Select 2 opening batsmen and 1 opening bowler');
+      toast.error('Select 2 opening batsmen and 1 opening bowler');
+      return;
     }
     setStarting(true);
     try {
@@ -146,7 +149,7 @@ const SelectOpenersScreen = ({ navigation, route }) => {
       });
       navigation.replace('LiveScoring', { matchId });
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to start innings');
+      toast.error(e.response?.data?.detail || 'Failed to start innings');
     } finally {
       setStarting(false);
     }

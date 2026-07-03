@@ -8,7 +8,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import api, { tournamentsAPI, matchesAPI } from '../../services/api';
+import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, FONTS } from '../../theme';
+import { TOURNAMENT_AVATARS } from '../../constants/avatars';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Skeleton, { MatchCardSkeleton, ListSkeleton } from '../../components/Skeleton';
 import TabContentSkeleton from '../../components/TabContentSkeleton';
@@ -16,6 +18,7 @@ import MatchCard from '../../components/MatchCard';
 import Avatar from '../../components/Avatar';
 import ConfirmModal from '../../components/ConfirmModal';
 import FavoriteButton from '../../components/FavoriteButton';
+import { useToast } from '../../components/Toast';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PRIMARY = COLORS.ACCENT;
@@ -81,6 +84,7 @@ const formatOversLabel = (overs) => {
 
 /* ─── main component ─── */
 const TournamentDetailScreen = ({ navigation, route }) => {
+  const toast = useToast();
   const insets = useSafeAreaInsets();
   const { tournamentId } = route.params;
   const { user } = useAuth();
@@ -190,7 +194,7 @@ const TournamentDetailScreen = ({ navigation, route }) => {
       setSwapMode(false);
       load(); // Refresh
     } catch (e) {
-      Alert.alert('Swap Failed', e?.response?.data?.detail || 'Could not swap teams');
+      toast.error(e?.response?.data?.detail || 'Could not swap teams');
     }
   };
 
@@ -207,13 +211,14 @@ const TournamentDetailScreen = ({ navigation, route }) => {
       prize_pool: String(tournament?.prize_pool || '0'),
       start_date: parseDate(tournament?.start_date),
       end_date: parseDate(tournament?.end_date),
+      banner_url: tournament?.banner_url || null,
     });
     setShowEditModal(true);
   };
 
   const saveEdit = async () => {
     if (!editForm.name?.trim()) {
-      Alert.alert('Required', 'Tournament name is required');
+      toast.warning('Tournament name is required');
       return;
     }
     setEditSaving(true);
@@ -237,6 +242,7 @@ const TournamentDetailScreen = ({ navigation, route }) => {
       if (sd && sd !== tournament?.start_date) payload.start_date = sd;
       const ed = formatDateForAPI(editForm.end_date);
       if (ed && ed !== tournament?.end_date) payload.end_date = ed;
+      if ((editForm.banner_url || null) !== (tournament?.banner_url || null)) payload.banner_url = editForm.banner_url || '';
 
       if (Object.keys(payload).length === 0) {
         setShowEditModal(false);
@@ -246,7 +252,7 @@ const TournamentDetailScreen = ({ navigation, route }) => {
       setShowEditModal(false);
       load();
     } catch (e) {
-      Alert.alert('Error', e?.response?.data?.detail || 'Failed to update tournament');
+      toast.error(e?.response?.data?.detail || 'Failed to update tournament');
     } finally {
       setEditSaving(false);
     }
@@ -257,7 +263,7 @@ const TournamentDetailScreen = ({ navigation, route }) => {
       const res = await tournamentsAPI.get(tournamentId);
       setData(res.data);
     } catch (e) {
-      Alert.alert('Error', 'Failed to load tournament');
+      toast.error('Failed to load tournament');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -301,7 +307,7 @@ const TournamentDetailScreen = ({ navigation, route }) => {
       const { getTournamentLink } = require('../../services/linking');
       const link = getTournamentLink(tournamentId);
       await Share.share({
-        message: `Check out ${data?.tournament?.name || 'this tournament'} on CrecKStars\n${link}`,
+        message: `Check out ${data?.tournament?.name || 'this tournament'} on CRIXONE\n${link}`,
         url: link,
       });
     } catch (_) {}
@@ -660,7 +666,7 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                                 await api.put(`/api/tournaments/${tournament.id}`, { status: 'completed' });
                                 load();
                               } catch (e) {
-                                Alert.alert('Error', e.response?.data?.detail || 'Failed');
+                                toast.error(e.response?.data?.detail || 'Failed');
                               }
                             }},
                           ]
@@ -1814,6 +1820,39 @@ const TournamentDetailScreen = ({ navigation, route }) => {
 
             <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
+              {/* ── LOGO ── */}
+              <Text style={eStyles.sectionLabel}>LOGO</Text>
+              <View style={eStyles.logoGrid}>
+                {TOURNAMENT_AVATARS.map((a) => {
+                  const selected = editForm.banner_url === a.key;
+                  return (
+                    <TouchableOpacity
+                      key={a.key}
+                      activeOpacity={0.85}
+                      onPress={() => setEditForm(f => ({ ...f, banner_url: selected ? null : a.key }))}
+                    >
+                      <LinearGradient
+                        colors={a.colors}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={[eStyles.logoTile, selected && eStyles.logoTileSelected]}
+                      >
+                        {a.emoji ? (
+                          <Text style={{ fontSize: 30 }}>{a.emoji}</Text>
+                        ) : (
+                          <MaterialCommunityIcons name={a.icon} size={30} color="#fff" />
+                        )}
+                      </LinearGradient>
+                      {selected && (
+                        <View style={eStyles.logoCheck}>
+                          <MaterialCommunityIcons name="check" size={11} color="#fff" />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
               {/* ── BASIC INFORMATION ── */}
               <Text style={eStyles.sectionLabel}>BASIC INFORMATION</Text>
 
@@ -1855,10 +1894,11 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                   <TextInput
                     style={eStyles.input}
                     value={editForm.customOvers}
-                    onChangeText={(v) => setEditForm(f => ({ ...f, customOvers: v }))}
+                    onChangeText={(v) => setEditForm(f => ({ ...f, customOvers: v.replace(/[^0-9]/g, '') }))}
                     placeholder="e.g. 15"
                     placeholderTextColor={COLORS.TEXT_MUTED}
                     keyboardType="numeric"
+                    maxLength={3}
                   />
                 </>
               )}
@@ -1989,7 +2029,7 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                     <TextInput
                       style={eStyles.inputInner}
                       value={editForm.entry_fee}
-                      onChangeText={(v) => setEditForm(f => ({ ...f, entry_fee: v }))}
+                      onChangeText={(v) => setEditForm(f => ({ ...f, entry_fee: v.replace(/[^0-9.]/g, '') }))}
                       placeholder="0"
                       placeholderTextColor={COLORS.TEXT_MUTED}
                       keyboardType="numeric"
@@ -2003,7 +2043,7 @@ const TournamentDetailScreen = ({ navigation, route }) => {
                     <TextInput
                       style={eStyles.inputInner}
                       value={editForm.prize_pool}
-                      onChangeText={(v) => setEditForm(f => ({ ...f, prize_pool: v }))}
+                      onChangeText={(v) => setEditForm(f => ({ ...f, prize_pool: v.replace(/[^0-9.]/g, '') }))}
                       placeholder="0"
                       placeholderTextColor={COLORS.TEXT_MUTED}
                       keyboardType="numeric"
@@ -2066,7 +2106,7 @@ const TournamentDetailScreen = ({ navigation, route }) => {
             setAdminPrompt(null);
             await load();
           } catch (e) {
-            Alert.alert('Error', e.response?.data?.detail || 'Action failed');
+            toast.error(e.response?.data?.detail || 'Action failed');
           } finally {
             setAdminBusy(false);
           }
@@ -2698,6 +2738,24 @@ const styles = StyleSheet.create({
 /* ── Edit Modal Styles (matches CreateTournamentScreen) ── */
 const eStyles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.BG },
+  logoGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center',
+    gap: 14, maxWidth: 222, alignSelf: 'center', marginTop: 4, marginBottom: 8,
+  },
+  logoTile: {
+    width: 60, height: 60, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: 'transparent',
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 }, elevation: 3,
+  },
+  logoTileSelected: { borderColor: COLORS.TEXT },
+  logoCheck: {
+    position: 'absolute', top: -4, right: -4,
+    width: 20, height: 20, borderRadius: 10, backgroundColor: COLORS.ACCENT,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: COLORS.BG,
+  },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 12,
