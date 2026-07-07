@@ -75,12 +75,12 @@ const HelpScreen = ({ navigation }) => {
         <View style={styles.card}>
           <TouchableOpacity
             style={styles.contactRow}
-            onPress={() => Linking.openURL('mailto:support@crixone.in')}
+            onPress={() => Linking.openURL('mailto:crixone.in@gmail.com')}
           >
             <Text style={styles.contactIcon}>{'\u2709'}</Text>
             <View style={{ flex: 1 }}>
               <Text style={styles.contactTitle}>Email Support</Text>
-              <Text style={styles.contactDesc}>support@crixone.in</Text>
+              <Text style={styles.contactDesc}>crixone.in@gmail.com</Text>
             </View>
             <Text style={styles.faqArrow}>{'\u203A'}</Text>
           </TouchableOpacity>
